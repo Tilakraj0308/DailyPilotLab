@@ -1,6 +1,9 @@
-def main():
-    print("Hello from dailypilotlab!")
+
+from fastapi import FastAPI
+
+app = FastAPI()
 
 
-if __name__ == "__main__":
-    main()
+@app.get("/ideas")
+async def root():
+    return {"message": "Hello World"}
