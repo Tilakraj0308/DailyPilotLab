@@ -9,47 +9,36 @@ class IdeaService:
     def __init__(self):
         pass
 
-    async def create_idea(self, idea: IdeaCreate):
-        insert_data = idea.model_dump(exclude_unset=True)
+    def get_all_ideas(self):
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT * FROM rawIdea")
+                return cur.fetchall()
+
+    def get_idea(self, idea_id: int):
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT * FROM rawIdea WHERE id = %s", (idea_id,))
+                return cur.fetchone()
+
+    def create_idea(self, insert_data: Dict[str, Any]):
         
         with get_connection() as conn:
             with conn.cursor() as cur:
                 if not insert_data:
-                    cur.execute("INSERT INTO ideas DEFAULT VALUES")
+                    cur.execute("INSERT INTO rawIdea DEFAULT VALUES")
                 else:
-                    if not idea.embeddings and idea.content != "":
-                        embeddings = await get_embeddings(idea.content)
-                        insert_data["embeddings"] = embeddings[0].embedding
                     columns = list(insert_data.keys())
                     values = list(insert_data.values())
                     placeholders = ["%s"] * len(values)
-                    # print(insert_data)
-                    query = f"INSERT INTO ideas ({', '.join(columns)}) VALUES ({', '.join(placeholders)})"
+                    query = f"INSERT INTO rawIdea ({', '.join(columns)}) VALUES ({', '.join(placeholders)})"
                     cur.execute(query, tuple(values))
                 
                 conn.commit()
 
-    async def bulk_create_ideas(self, ideas: List[IdeaCreate]):
-        if not ideas:
-            return
-
-        texts_to_embed = []
-        idea_indices_to_embed = []
-
-        for i, idea in enumerate(ideas):
-            if not idea.embeddings and idea.content != "":
-                texts_to_embed.append(idea.content)
-                idea_indices_to_embed.append(i)
-
-        if texts_to_embed:
-            embeddings_data = await get_embeddings(texts_to_embed)
-            for idx, embedding_obj in zip(idea_indices_to_embed, embeddings_data):
-                ideas[idx].embeddings = embedding_obj.embedding
-
+    def bulk_create_ideas(self, data_list: List[Dict[str, Any]]):
         with get_connection() as conn:
             with conn.cursor() as cur:
-                data_list = [idea.model_dump(exclude_unset=True) for idea in ideas]
-                
                 if not data_list:
                     return
                 all_columns = set()
@@ -63,25 +52,14 @@ class IdeaService:
                     values_list.append(tuple(row))
 
                 placeholders = ["%s"] * len(columns)
-                query = f"INSERT INTO ideas ({', '.join(columns)}) VALUES ({', '.join(placeholders)})"
+                query = f"INSERT INTO rawIdea ({', '.join(columns)}) VALUES ({', '.join(placeholders)})"
                 
                 cur.executemany(query, values_list)
                 conn.commit()
 
-    def get_idea(self, idea_id: int):
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT * FROM ideas WHERE id = %s", (idea_id,))
-                return cur.fetchone()
 
-    async def get_all_ideas(self):
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT * FROM ideas")
-                return cur.fetchall()
-
-    def update_idea(self, idea_id: int, idea: IdeaUpdate):
-        update_data = idea.model_dump(exclude_unset=True)
+    def update_idea(self, idea_id: int, update_data: Dict[str, Any]):
+        # update_data = idea.model_dump(exclude_unset=True)
         if not update_data:
             return
         
@@ -89,7 +67,7 @@ class IdeaService:
         values = list(update_data.values())
         values.append(idea_id)
 
-        query = f"UPDATE ideas SET {', '.join(set_clauses)} WHERE id = %s"
+        query = f"UPDATE rawIdea SET {', '.join(set_clauses)} WHERE id = %s"
 
         with get_connection() as conn:
             with conn.cursor() as cur:
@@ -99,13 +77,17 @@ class IdeaService:
     def delete_idea(self, idea_id: int):
         with get_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute("DELETE FROM ideas WHERE id = %s", (idea_id,))
+                cur.execute("DELETE FROM rawIdea WHERE id = %s", (idea_id,))
                 conn.commit()
 
     def bulk_delete_ideas(self, idea_ids: List[int]):
-        if not idea_ids:
-            return
         with get_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute("DELETE FROM ideas WHERE id = ANY(%s)", (idea_ids,))
+                cur.execute("DELETE FROM rawIdea WHERE id = ANY(%s)", (idea_ids,))
+                conn.commit()
+
+    def delete_all_ideas(self):
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM rawIdea")
                 conn.commit()
