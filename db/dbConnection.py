@@ -2,6 +2,7 @@ import psycopg2
 from dotenv import load_dotenv
 import os
 from contextlib import contextmanager
+from psycopg2 import extras
 # Load environment variables from .env
 load_dotenv()
 
@@ -28,3 +29,10 @@ def get_connection():
     finally:
         if connection:
             connection.close()
+
+@contextmanager
+def get_dict_cursor():
+    with get_connection() as conn:
+        with conn.cursor(cursor_factory=extras.RealDictCursor) as cur:
+            yield cur
+        conn.commit()
