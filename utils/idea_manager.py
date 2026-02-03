@@ -11,7 +11,7 @@ def get_ideas():
     print(all_ideas)
     return all_ideas
 
-def get_idea(idea_id: int):
+def get_idea(idea_id: int): 
     service = IdeaService()
     return service.get_idea(idea_id)
 

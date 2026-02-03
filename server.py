@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from managers.idea_manager import get_ideas, create_idea, create_ideas, update_idea, delete_idea, delete_ideas, delete_all_ideas, update_ideas
+from utils.idea_manager import get_ideas, create_idea, create_ideas, update_idea, delete_idea, delete_ideas, delete_all_ideas, update_ideas
 from models.ideas import IdeaCreateInput, IdeaOut, IdeaUpdateInput, IdeaDeleteInput
 from typing import List 
 
@@ -38,6 +38,14 @@ def deleteIdeas(idea_ids: List[int]):
 @app.post("/ideas/delete/all")
 def deleteAllIdeas():
     return delete_all_ideas()
+
+@app.get("/topics")
+def getTopics():
+    return get_topics()
+
+@app.post("topics/create")
+def createTopic(topic: TopicCreateInput):
+    return create_topic(topic)
 
 
 
