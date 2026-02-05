@@ -1,19 +1,24 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Response, Request
 from utils.idea_manager import get_ideas, create_idea, create_ideas, update_idea, delete_idea, delete_ideas, delete_all_ideas, update_ideas
 from models.ideas import IdeaCreateInput, IdeaOut, IdeaUpdateInput, IdeaDeleteInput
 from typing import List 
+from dotenv import load_dotenv
+from utils.openAi import OpenAI
 
+load_dotenv()
 app = FastAPI()
-
-
+    
 @app.get("/ideas", response_model=List[IdeaOut])
 # @app.get("/ideas")
 def root():
     return get_ideas()
 
 @app.post("/ideas")
-def createIdea(idea: IdeaCreateInput):
-    return create_idea(idea)
+def createIdea(idea: IdeaCreateInput, response: Response):
+    creation_response = create_idea(idea)
+    return creation_response
+    # response.status_code = creation_response['status']
+    # return {'message': creation_response['message']}
 
 @app.post("/ideas/bulk")
 def createIdeas(ideas: List[IdeaCreateInput]):
@@ -38,14 +43,6 @@ def deleteIdeas(idea_ids: List[int]):
 @app.post("/ideas/delete/all")
 def deleteAllIdeas():
     return delete_all_ideas()
-
-@app.get("/topics")
-def getTopics():
-    return get_topics()
-
-@app.post("topics/create")
-def createTopic(topic: TopicCreateInput):
-    return create_topic(topic)
 
 
 

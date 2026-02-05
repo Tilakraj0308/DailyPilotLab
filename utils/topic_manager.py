@@ -1,3 +1,5 @@
+from models.ideas import TopicCreateInput
+
 def create_topic(topic: TopicCreateInput):
     pass
 
