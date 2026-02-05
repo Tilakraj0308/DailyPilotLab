@@ -19,18 +19,17 @@ def get_idea(idea_id: int):
 
 def create_idea(idea: IdeaCreateInput):
     if idea.content != "":
-        # if type(idea.embeddings) == str:
-        #     idea.embeddings = json.loads(idea.embeddings)
-        # if not idea.embeddings or len(idea.embeddings) != 1536:
         classification = classify_idea(idea.content)
         category = classification.category
         if category == 'idea':
             pass
         elif category == 'gibberish':
             return {'status': 200, 'message': 'Gibberish text'}
+        elif category == 'secrets':
+            return {'status': 200, 'message': 'Can\'t save sensitive data'}
         elif category == 'personal_information':
-            updated_personal_state = update_personal_state(idea.content)
-            return None
+            update_personal_state(idea.content)
+            return {'status': 200, 'message': 'Updated personal state successfully'}
         embeddings = openai_client.get_embeddings(idea.content)
         insert_data = idea.model_dump(exclude_unset=True)
         insert_data['embeddings'] = embeddings[0].embedding
@@ -46,8 +45,6 @@ def create_ideas(ideas: List[IdeaCreateInput]):
     idea_indices_to_embed = []
 
     ideas = list(filter(lambda x: x.content!="", ideas))
-    print("This is the filtered ideas")
-    print(ideas)
 
     for i, idea in enumerate(ideas):
         texts_to_embed.append(idea.content)

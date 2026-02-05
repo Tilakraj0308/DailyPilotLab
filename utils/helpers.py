@@ -62,5 +62,3 @@ def update_personal_state(user_input_text: str):
 
     with open(personal_state_path, "w") as f:
         json.dump(final_dict, f, indent=2)
-    
-    return completion

@@ -16,9 +16,8 @@ def root():
 @app.post("/ideas")
 def createIdea(idea: IdeaCreateInput, response: Response):
     creation_response = create_idea(idea)
-    return creation_response
-    # response.status_code = creation_response['status']
-    # return {'message': creation_response['message']}
+    response.status_code = creation_response['status']
+    return {'message': creation_response['message']}
 
 @app.post("/ideas/bulk")
 def createIdeas(ideas: List[IdeaCreateInput]):
@@ -43,6 +42,10 @@ def deleteIdeas(idea_ids: List[int]):
 @app.post("/ideas/delete/all")
 def deleteAllIdeas():
     return delete_all_ideas()
+
+@app.get("/topics/assign")
+def assignTopics():
+    return assign_topics()
 
 
 

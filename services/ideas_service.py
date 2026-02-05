@@ -19,6 +19,11 @@ class IdeaService:
         with get_dict_cursor() as cur:
             cur.execute("SELECT * FROM raw_idea WHERE id = %s", (idea_id,))
             return cur.fetchone()
+    
+    def get_ideas_with_filter(self, filter_column: str, filter_value: Any):
+        with get_dict_cursor() as cur:
+            cur.execute(f"SELECT * FROM raw_idea WHERE {filter_column} = %s", (filter_value,))
+            return cur.fetchall()
 
     def create_idea(self, insert_data: Dict[str, Any]):
         
