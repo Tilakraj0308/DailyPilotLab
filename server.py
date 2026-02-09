@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Response, Request
-from utils.idea_manager import get_ideas, create_idea, create_ideas, update_idea, delete_idea, delete_ideas, delete_all_ideas, update_ideas
+from utils.idea_manager import get_ideas, create_idea, create_ideas, update_idea, delete_idea, delete_ideas, delete_all_ideas, update_ideas, assign_idea_to_topic
 from models.ideas import IdeaCreateInput, IdeaOut, IdeaUpdateInput, IdeaDeleteInput
 from typing import List 
 from dotenv import load_dotenv
@@ -44,8 +44,10 @@ def deleteAllIdeas():
     return delete_all_ideas()
 
 @app.get("/topics/assign")
-def assignTopics():
-    return assign_topics()
+def assignTopics(response: Response):
+    creation_response = assign_idea_to_topic()
+    response.status_code = creation_response['status']
+    return {'message': creation_response['message']}
 
 
 

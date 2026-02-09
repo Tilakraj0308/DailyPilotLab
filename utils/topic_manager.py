@@ -1,4 +1,4 @@
-from models.ideas import TopicCreateInput
+from models.topics import TopicCreateInput
 
 def create_topic(topic: TopicCreateInput):
     pass

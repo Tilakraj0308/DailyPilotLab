@@ -62,3 +62,62 @@ def update_personal_state(user_input_text: str):
 
     with open(personal_state_path, "w") as f:
         json.dump(final_dict, f, indent=2)
+
+# assign input parameters type
+def organize_ideas_into_topics(ideas: any, existing_topics: any) -> TopicsList:
+    """
+    Organizes ideas into topics using LLM.
+    
+    Args:
+        ideas: List of Idea objects to organize
+        existing_topics: List of existing Topic objects to potentially add ideas to
+        
+    Returns:
+        TopicOrganization with organized topics and unassigned ideas
+    """
+    ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    
+    # Load the prompt
+    prompt_path = os.path.join(ROOT_DIR, "config", "prompts", "topic_organization.yaml")
+    with open(prompt_path, "r") as f:
+        template = yaml.safe_load(f)
+    
+    # Prepare ideas data for LLM
+    ideas_data = []
+    for idea in ideas:
+        ideas_data.append({
+            "id": idea.id,
+            "title": idea.title,
+            "content": idea.content,
+            "embeddings": idea.embeddings
+        })
+    
+    # Prepare existing topics data for LLM
+    # existing_topics_data = []
+    # for topic in existing_topics:
+    #     existing_topics_data.append({
+    #         "id": topic.id,
+    #         "title": topic.title,
+    #         "summary": topic.summary,
+    #         "idea_ids": topic.idea_ids
+    #     })
+    
+    # Format prompts
+    system_prompt = template["system"].format(
+        num_ideas=len(ideas_data),
+        num_existing_topics=len(existing_topics)
+    )
+    
+    user_prompt = template["user"].format(
+        ideas=json.dumps(ideas_data, indent=2),
+        existing_topics=json.dumps(existing_topics, indent=2)
+    )
+    
+    # Get LLM completion
+    completion = openai_client.get_chat_completion(
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        response_format=TopicsList
+    )
+    
+    return completion

@@ -1,16 +1,15 @@
 from services.ideas_service import IdeaService
+from services.topics_service import TopicsService
 from models.ideas import IdeaCreateInput, IdeaUpdateInput, IdeaUpdateInput, IdeaDeleteInput
 # from utils.openaiEmbeddings import get_embeddings
 from utils.openAi import openai_client
 from typing import List
-import json
 from utils.helpers import classify_idea, update_personal_state
+import os
 
 def get_ideas():
     service = IdeaService()
-    print("**********************************************************")
     all_ideas = service.get_all_ideas()
-    print(all_ideas)
     return all_ideas
 
 def get_idea(idea_id: int): 
@@ -33,9 +32,17 @@ def create_idea(idea: IdeaCreateInput):
         embeddings = openai_client.get_embeddings(idea.content)
         insert_data = idea.model_dump(exclude_unset=True)
         insert_data['embeddings'] = embeddings[0].embedding
+        
+        # topic_ids = insert_data.pop('topic_ids', [])
+        
         service = IdeaService()
-        service.create_idea(insert_data)
-        return {'status': 200, 'message': 'Added idea successfully'}
+        new_idea_id = service.create_idea(insert_data)
+        
+        # if new_idea_id and topic_ids:
+        #     for tid in topic_ids:
+        #         service.add_idea_topic_relation(new_idea_id, tid)
+                
+        return {'status': 200, 'message': f'Added idea ID - {new_idea_id} successfully'}
     return {'status': 200, 'message': 'No text to add'}
 
 def create_ideas(ideas: List[IdeaCreateInput]):
@@ -61,29 +68,55 @@ def create_ideas(ideas: List[IdeaCreateInput]):
     return service.bulk_create_ideas(data_list)
 
 def update_idea(idea: IdeaUpdateInput):
+    service = IdeaService()
     if idea.content and idea.content != "":
+        service.clear_idea_topics(idea.id)
         embeddings = openai_client.get_embeddings(idea.content)
         idea.embeddings = embeddings[0].embedding
     update_data = idea.model_dump(exclude_unset=True)
-    service = IdeaService()
-    return service.update_idea(update_data)
+    topic_ids = update_data.pop('topic_ids', None)
+    service.update_idea(update_data)
+    if topic_ids is not None:
+        service.clear_idea_topics(idea.id)
+        for tid in topic_ids:
+            service.add_idea_topic_relation(idea.id, tid)
+
+    return {'status': 200, 'message': 'Updated idea successfully'}
 
 def update_ideas(ideas: List[IdeaUpdateInput]):
     if not ideas:
         return
     texts_to_embed = []
     idea_indices_to_embed = []
+    
+    # Map to store topic updates: idea_id -> list of topic_ids
+    idea_topic_updates = {}
+
     for i, idea in enumerate(ideas):
         if idea.content and idea.content != "":
+            service.clear_idea_topics(idea_id)
             texts_to_embed.append(idea.content)
             idea_indices_to_embed.append(i)
+        
+        if idea.topic_ids is not None:
+            idea_topic_updates[idea.id] = idea.topic_ids
+
     if texts_to_embed:
         embeddings_data = openai_client.get_embeddings(texts_to_embed)
         for idx, embedding_obj in zip(idea_indices_to_embed, embeddings_data):
             ideas[idx].embeddings = embedding_obj.embedding
+            
     data_list = [idea.model_dump(exclude_unset=True) for idea in ideas]
     service = IdeaService()
-    return service.bulk_update_ideas(data_list)
+    service.bulk_update_ideas(data_list)
+    
+    # Process topic updates
+    for idea_id, topic_ids in idea_topic_updates.items():
+        service.clear_idea_topics(idea_id)
+        for tid in topic_ids:
+            service.add_idea_topic_relation(idea_id, tid)
+
+    return {'status': 200, 'message': 'Updated ideas successfully'}
 
 def delete_idea(idea: IdeaDeleteInput):
     service = IdeaService()
@@ -98,3 +131,17 @@ def delete_ideas(idea_ids: List[int]):
 def delete_all_ideas():
     service = IdeaService()
     return service.delete_all_ideas()
+
+def assign_idea_to_topic():
+    threshold = os.getenv("TOPIC_ASSIGNMENT_THRESHOLD", 0.9)
+    service = IdeaService()
+    assigned_ideas = service.assign_idea_to_topic(threshold)
+    print("************ assigned ideas to topics ***************")
+    print(assigned_ideas)
+    print("*****************************************************")
+    unassigned_ideas = service.get_unassigned_ideas()
+    print("************ unassigned ideas ***************")
+    print(unassigned_ideas)
+    print("*****************************************************")
+    return {'status': 200, 'message': 'Assigned ideas successfully'}
+
