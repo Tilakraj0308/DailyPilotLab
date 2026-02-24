@@ -1,6 +1,6 @@
 import os
 import yaml
-from models.output_schemas import ClassificationResult, PersonalState
+from models.output_schemas import ClassificationResult, PersonalState, TopicsList
 from utils.openAi import openai_client
 import json
 from collections import defaultdict
@@ -86,10 +86,8 @@ def organize_ideas_into_topics(ideas: any, existing_topics: any) -> TopicsList:
     ideas_data = []
     for idea in ideas:
         ideas_data.append({
-            "id": idea.id,
-            "title": idea.title,
-            "content": idea.content,
-            "embeddings": idea.embeddings
+            "id": idea['id'],
+            "content": idea['content'],
         })
     
     # Prepare existing topics data for LLM
@@ -103,14 +101,11 @@ def organize_ideas_into_topics(ideas: any, existing_topics: any) -> TopicsList:
     #     })
     
     # Format prompts
-    system_prompt = template["system"].format(
-        num_ideas=len(ideas_data),
-        num_existing_topics=len(existing_topics)
-    )
+    system_prompt = template["system_prompt"]
     
-    user_prompt = template["user"].format(
-        ideas=json.dumps(ideas_data, indent=2),
-        existing_topics=json.dumps(existing_topics, indent=2)
+    user_prompt = template["user_prompt_template"].format(
+        existing_topics=json.dumps(existing_topics, indent=2),
+        ideas=json.dumps(ideas_data, indent=2)
     )
     
     # Get LLM completion

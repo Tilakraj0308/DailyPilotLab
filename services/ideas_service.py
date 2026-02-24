@@ -28,7 +28,7 @@ class IdeaService:
     def get_unassigned_ideas(self):
         with get_dict_cursor() as cur:
             cur.execute("""
-                SELECT ri.* 
+                SELECT ri.id, ri.content
                 FROM raw_idea ri 
                 LEFT JOIN idea_topics it ON ri.id = it.idea_id 
                 WHERE it.topic_id IS NULL

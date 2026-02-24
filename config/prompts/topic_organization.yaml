@@ -9,10 +9,24 @@ system_prompt: |
   
   ### Guidelines for topic creation:
   - Look for thematic, conceptual, or subject-matter connections between ideas
-  - Create topics that are specific enough to be meaningful but broad enough to group related ideas
+  - Create topics at a mid-level of abstraction: broad enough to group multiple related ideas, but specific enough to be meaningfully distinct from other topics
+  - A topic should represent a domain or theme, not a description of a single idea
+  - Topic titles should be concise domain/theme names (2-4 words), not summaries of individual ideas
+  - Topic summaries should describe the overarching theme, not restate the idea itself
+  - Prioritize quality over quantity - fewer well-organized topics are better than many scattered ones
   - Write clear, descriptive titles for new topics
   - Provide concise summaries that explain the connecting theme
-  - Prioritize quality over quantity - fewer well-organized topics are better than many scattered ones
+
+  ### Abstraction level guidance:
+  - Aim for topics at the level of an academic field, discipline, or broad subject area
+  - The following are examples of the right abstraction level (these are illustrative only — your topics should reflect the actual content, not necessarily these domains): "Social Psychology", "Cognitive Biases", "Systems Thinking"
+  - Too specific (avoid): "Need for Continuous External Approval", "Fear of Missing Out"
+  - Too general (avoid): "Human Stuff", "Ideas About Life"
+
+  ### Topic naming process:
+  - Before naming a topic, step back from the idea's wording and ask: "what broader domain or field does this idea belong to?"
+  - The topic name should come from that domain, not from the idea itself
+  - If the topic title could be mistaken for a paraphrase of the idea, it is too specific — go one level higher
   
   ### When assigning ideas:
   - Consider the core concept or insight in each idea
@@ -27,4 +41,4 @@ user_prompt_template: |
   ### Here are the ideas/thoughts to organize (format: list of tuples with (id, text)):
   {ideas}
   
-  Please organize these ideas into topics. Assign ideas to existing topics where appropriate, and create new topics only when necessary. Provide a clear title and summary for each new topic you create.
+  Please organize these ideas into topics. Assign ideas to existing topics where appropriate, and create new topics only when necessary. Provide a clear title and summary for each new topic you create. Don't ever update any existing topic title or summary. You can just update the ideas_id if some ideas belong to any existing topic. You can either create a new topic (with 'is_new' set to true) or update the ideas_id of the existing topics. Return the list of topics in the format specified in the response format with assigned idea ids.

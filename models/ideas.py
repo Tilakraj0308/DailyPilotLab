@@ -20,7 +20,7 @@ class IdeaUpdateInput(BaseModel):
     id: int
     content: Optional[str] = None
     topic_ids: Optional[List[int]] = None
-    cluster_id: Optional[int] = None
+    # cluster_id: Optional[int] = None
 
 
 class IdeaDeleteInput(BaseModel):
@@ -33,6 +33,6 @@ class IdeaOut(BaseModel):
     content: str = ""
     embeddings: Optional[Union[List[float], str]] = None
     topic_ids: Optional[List[int]] = None
-    cluster_id: Optional[int] = None
+    # cluster_id: Optional[int] = None
     model_config = ConfigDict(from_attributes=True)
 

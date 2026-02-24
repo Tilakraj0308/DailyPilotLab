@@ -37,9 +37,9 @@ class Topic(BaseModel):
         description="Whether this is a newly created topic (true) or an existing topic with new assignments (false)."
     )
 
-class TopicsList(RootModel[List[Topic]]):
+class TopicsList(BaseModel):
     """A list of topics."""
-    root: List[Topic]
+    topics: List[Topic]
     
 # class TopicOrganization(BaseModel):
 #     """Complete organization of ideas into topics."""    

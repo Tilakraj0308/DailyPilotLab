@@ -4,7 +4,7 @@ from models.ideas import IdeaCreateInput, IdeaUpdateInput, IdeaUpdateInput, Idea
 # from utils.openaiEmbeddings import get_embeddings
 from utils.openAi import openai_client
 from typing import List
-from utils.helpers import classify_idea, update_personal_state
+from utils.helpers import classify_idea, update_personal_state, organize_ideas_into_topics
 import os
 
 def get_ideas():
@@ -134,14 +134,23 @@ def delete_all_ideas():
 
 def assign_idea_to_topic():
     threshold = os.getenv("TOPIC_ASSIGNMENT_THRESHOLD", 0.9)
-    service = IdeaService()
-    assigned_ideas = service.assign_idea_to_topic(threshold)
+    idea_service = IdeaService()
+    topic_service = TopicsService()
+    assigned_ideas = idea_service.assign_idea_to_topic(threshold)
     print("************ assigned ideas to topics ***************")
     print(assigned_ideas)
     print("*****************************************************")
-    unassigned_ideas = service.get_unassigned_ideas()
+    unassigned_ideas = idea_service.get_unassigned_ideas()
     print("************ unassigned ideas ***************")
     print(unassigned_ideas)
+    print("*****************************************************")
+    existing_topics = topic_service.get_all_topics()
+    print("************ existing topics ***************")
+    print(existing_topics)
+    print("*****************************************************")
+    ideas = organize_ideas_into_topics(unassigned_ideas, existing_topics)
+    print("************ organized ideas ***************")
+    print(ideas)
     print("*****************************************************")
     return {'status': 200, 'message': 'Assigned ideas successfully'}
 
