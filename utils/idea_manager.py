@@ -152,5 +152,15 @@ def assign_idea_to_topic():
     print("************ organized ideas ***************")
     print(ideas)
     print("*****************************************************")
+    new_topics, existing_topics = [], []
+    for topic in ideas.topics:
+        if topic.is_new:
+            new_topics.append(topic)
+        else:
+            existing_topics.append(topic)
+    # Updating the existing ideas
+    idea_service.bulk_update_ideas()
+    # Creating the new ideas
+    idea_service.create_ideas(new_topics)
     return {'status': 200, 'message': 'Assigned ideas successfully'}
 
