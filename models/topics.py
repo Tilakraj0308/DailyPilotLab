@@ -5,28 +5,30 @@ from typing import Optional, List, Union
 
 from pydantic import BaseModel, Field, ConfigDict
 
-# class TopicCreateInput(BaseModel):
-#     title: str = Field(description="Topic title")
-#     summary: str = Field(description="Topic summary")
-#     activity_7d: int = Field(default=0, description="7-day activity count")
-#     activity_30d: int = Field(default=0, description="30-day activity count")
-#     lifetime_size: int = Field(default=0, description="Total lifetime size")
-#     is_archived: bool = Field(default=False, description="Archive status")
-#     recency_strength: float = Field(default=0.0, description="Recency strength score")
-#     dominance: float = Field(default=0.0, description="Dominance score")
+class TopicCreateInput(BaseModel):
+    title: str = Field(description="Topic title")
+    summary: str = Field(description="Topic summary")
+    idea_ids: Optional[List[int]] = Field(default=[], description="List of idea IDs")
+    # activity_7d: int = Field(default=0, description="7-day activity count")
+    # activity_30d: int = Field(default=0, description="30-day activity count")
+    # lifetime_size: int = Field(default=0, description="Total lifetime size")
+    # is_archived: bool = Field(default=False, description="Archive status")
+    # recency_strength: float = Field(default=0.0, description="Recency strength score")
+    # dominance: float = Field(default=0.0, description="Dominance score")
 
 
-# class TopicUpdateInput(BaseModel):
-#     id: int
-#     title: Optional[str] = None
-#     summary: Optional[str] = None
-#     activity_7d: Optional[int] = None
-#     activity_30d: Optional[int] = None
-#     lifetime_size: Optional[int] = None
-#     last_activity_at: Optional[time] = None
-#     is_archived: Optional[bool] = None
-#     recency_strength: Optional[float] = None
-#     dominance: Optional[float] = None
+class TopicUpdateInput(BaseModel):
+    id: int
+    title: Optional[str] = None
+    summary: Optional[str] = None
+    # activity_7d: Optional[int] = None
+    # activity_30d: Optional[int] = None
+    # lifetime_size: Optional[int] = None
+    # last_activity_at: Optional[time] = None
+    # is_archived: Optional[bool] = None
+    # recency_strength: Optional[float] = None
+    # dominance: Optional[float] = None
+    idea_ids: Optional[List[int]] = Field(default=[], description="List of idea IDs")
 
 
 # class TopicDeleteInput(BaseModel):

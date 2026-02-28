@@ -1,5 +1,5 @@
-from typing import Literal, Dict, Any, List
-from pydantic import BaseModel, Field, ConfigDict
+from typing import Literal, Dict, Any, List, Optional
+from pydantic import BaseModel, Field, ConfigDict, model_validator
 
 class ClassificationResult(BaseModel):
     category: Literal["idea", "personal_information", "secrets", "gibberish"]
@@ -22,24 +22,50 @@ class PersonalState(BaseModel):
     )
 
 class Topic(BaseModel):
-    """Represents a single topic with its metadata and assigned idea IDs."""
+    """Represents a single topic with its metadata and assigned idea IDs.
+
+    Rules enforced at validation time:
+    - is_new=False  → id and idea_ids are required; title and summary are optional.
+    - is_new=True   → title, summary, and idea_ids are required; id must be omitted.
+    """
     model_config = ConfigDict(extra='forbid')
-    title: str = Field(
-        description="Clear, descriptive title for the topic (e.g., 'Linguistic Paradoxes and Language Play', 'The Psychology of Pretending')."
+
+    is_new: bool = Field(
+        description="True if this is a newly created topic; false if it is an existing topic being updated."
     )
-    summary: str = Field(
-        description="Concise explanation of the theme connecting the ideas in this topic."
+    id: Optional[int] = Field(
+        default=None,
+        description="Database ID of the topic. Required when is_new is false. Must be omitted when is_new is true."
+    )
+    title: Optional[str] = Field(
+        default=None,
+        description="Clear, descriptive title (e.g., 'Linguistic Paradoxes and Language Play'). Required when is_new is true."
+    )
+    summary: Optional[str] = Field(
+        default=None,
+        description="Concise explanation of the theme connecting the ideas. Required when is_new is true."
     )
     idea_ids: List[int] = Field(
-        description="List of idea IDs assigned to this topic. An idea can be assigned to multiple topics if it genuinely fits multiple themes."
+        description="List of idea IDs assigned to this topic. An idea can belong to multiple topics."
     )
-    is_new: bool = Field(
-        description="Whether this is a newly created topic (true) or an existing topic with new assignments (false)."
-    )
+
+    @model_validator(mode="after")
+    def check_conditional_fields(self) -> "Topic":
+        if self.is_new:
+            missing = [f for f in ("title", "summary") if not getattr(self, f)]
+            if missing:
+                raise ValueError(
+                    f"Fields {missing} are required when is_new is True."
+                )
+        else:
+            if self.id is None:
+                raise ValueError("'id' is required when is_new is False.")
+        return self
 
 class TopicsList(BaseModel):
     """A list of topics."""
     topics: List[Topic]
+
     
 # class TopicOrganization(BaseModel):
 #     """Complete organization of ideas into topics."""    

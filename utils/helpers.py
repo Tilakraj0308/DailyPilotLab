@@ -90,6 +90,15 @@ def organize_ideas_into_topics(ideas: any, existing_topics: any) -> TopicsList:
             "content": idea['content'],
         })
     
+    existing_topics_data = []
+    for topic in existing_topics:
+        existing_topics_data.append({
+            "id": topic["id"],
+            "title": topic["title"],
+            "summary": topic["summary"],
+            "idea_ids": topic["idea_ids"]
+        })
+    
     # Prepare existing topics data for LLM
     # existing_topics_data = []
     # for topic in existing_topics:
@@ -104,7 +113,7 @@ def organize_ideas_into_topics(ideas: any, existing_topics: any) -> TopicsList:
     system_prompt = template["system_prompt"]
     
     user_prompt = template["user_prompt_template"].format(
-        existing_topics=json.dumps(existing_topics, indent=2),
+        existing_topics=json.dumps(existing_topics_data, indent=2),
         ideas=json.dumps(ideas_data, indent=2)
     )
     

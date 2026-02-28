@@ -39,9 +39,17 @@ class IdeaService:
         with get_dict_cursor() as cur:
             cur.execute("INSERT INTO idea_topics (idea_id, topic_id) VALUES (%s, %s) ON CONFLICT DO NOTHING", (idea_id, topic_id))
 
-    def remove_idea_topic_relation(self, idea_id: int, topic_id: int):
+    def remove_idea_topic_relation(self, idea_id: int=None, topic_id: int=None):
+        query = "DELETE FROM idea_topics WHERE"
+        values = ()
+        if idea_id is not None:
+            query += " idea_id = %s"
+            values += (idea_id,)
+        if topic_id is not None:
+            query += " topic_id = %s"
+            values += (topic_id,)
         with get_dict_cursor() as cur:
-            cur.execute("DELETE FROM idea_topics WHERE idea_id = %s AND topic_id = %s", (idea_id, topic_id))
+            cur.execute(query, values)
 
     def get_topics_for_idea(self, idea_id: int):
         with get_dict_cursor() as cur:
@@ -49,9 +57,9 @@ class IdeaService:
             rows = cur.fetchall()
             return [row['topic_id'] for row in rows]
 
-    def clear_idea_topics(self, idea_id: int):
-        with get_dict_cursor() as cur:
-            cur.execute("DELETE FROM idea_topics WHERE idea_id = %s", (idea_id,))
+    # def clear_idea_topics(self, idea_id: int):
+    #     with get_dict_cursor() as cur:
+    #         cur.execute("DELETE FROM idea_topics WHERE idea_id = %s", (idea_id,))
 
     def create_idea(self, insert_data: Dict[str, Any]):
         # Remove fields not in raw_idea table
@@ -68,35 +76,35 @@ class IdeaService:
                 cur.execute(query, tuple(values))
             return cur.fetchone()['id']
 
-    def bulk_create_ideas(self, data_list: List[Dict[str, Any]]):
-        with get_dict_cursor() as cur:
-            if not data_list:
-                return
+    # def bulk_create_ideas(self, data_list: List[Dict[str, Any]]):
+    #     with get_dict_cursor() as cur:
+    #         if not data_list:
+    #             return
             
-            # Clean data
-            cleaned_list = []
-            for d in data_list:
-                d_copy = d.copy()
-                d_copy.pop('topic_ids', None)
-                cleaned_list.append(d_copy)
+    #         # Clean data
+    #         cleaned_list = []
+    #         for d in data_list:
+    #             d_copy = d.copy()
+    #             d_copy.pop('topic_ids', None)
+    #             cleaned_list.append(d_copy)
 
-            if not cleaned_list:
-                 return
+    #         if not cleaned_list:
+    #              return
 
-            all_columns = set()
-            for d in cleaned_list:
-                all_columns.update(d.keys())
-            columns = sorted(list(all_columns))
+    #         all_columns = set()
+    #         for d in cleaned_list:
+    #             all_columns.update(d.keys())
+    #         columns = sorted(list(all_columns))
 
-            values_list = []
-            for d in cleaned_list:
-                row = [d.get(col) for col in columns]
-                values_list.append(tuple(row))
+    #         values_list = []
+    #         for d in cleaned_list:
+    #             row = [d.get(col) for col in columns]
+    #             values_list.append(tuple(row))
 
-            placeholders = ["%s"] * len(columns)
-            query = f"INSERT INTO raw_idea ({', '.join(columns)}) VALUES ({', '.join(placeholders)})"
+    #         placeholders = ["%s"] * len(columns)
+    #         query = f"INSERT INTO raw_idea ({', '.join(columns)}) VALUES ({', '.join(placeholders)})"
             
-            cur.executemany(query, values_list)
+    #         cur.executemany(query, values_list)
 
 
     def update_idea(self, update_data: Dict[str, Any]):
@@ -106,7 +114,9 @@ class IdeaService:
         # Remove fields not in raw_idea table
         update_data.pop('topic_ids', None)
         
-        idea_id = update_data.pop('id')
+        idea_id = update_data.pop('id', None)
+        if idea_id is None:
+            return
         
         if not update_data:
              return
@@ -120,35 +130,40 @@ class IdeaService:
         with get_dict_cursor() as cur:
             cur.execute(query, tuple(values))
 
-    def bulk_update_ideas(self, data_list: List[Dict[str, Any]]):
-        if not data_list:
-            return
+    # def bulk_update_ideas(self, data_list: List[Dict[str, Any]]):
+    #     if not data_list:
+    #         return
         
-        with get_dict_cursor() as cur:
-             for data in data_list:
-                # Clean data
-                data.pop('topic_ids', None)
+    #     with get_dict_cursor() as cur:
+    #          for data in data_list:
+    #             # Clean data
+    #             data.pop('topic_ids', None)
 
-                idea_id = data.pop('id')
-                if not data:
-                    continue
+    #             idea_id = data.pop('id', None)
+    #             if idea_id is None:
+    #                 continue
+    #             if not data:
+    #                 continue
                     
-                set_clauses = [f"{key} = %s" for key in data.keys()]
-                values = list(data.values())
-                values.append(idea_id)
+    #             set_clauses = [f"{key} = %s" for key in data.keys()]
+    #             values = list(data.values())
+    #             values.append(idea_id)
                 
-                query = f"UPDATE raw_idea SET {', '.join(set_clauses)} WHERE id = %s"
-                cur.execute(query, tuple(values))
+    #             query = f"UPDATE raw_idea SET {', '.join(set_clauses)} WHERE id = %s"
+    #             cur.execute(query, tuple(values))
 
     def delete_idea(self, idea_id: int):
+        # Topics reference would be deleted using cascade option set.
         with get_dict_cursor() as cur:
             cur.execute("DELETE FROM raw_idea WHERE id = %s", (idea_id,))
 
     def bulk_delete_ideas(self, idea_ids: List[int]):
+        # Topics reference would be deleted using cascade option set.
         with get_dict_cursor() as cur:
             cur.execute("DELETE FROM raw_idea WHERE id = ANY(%s)", (idea_ids,))
 
     def delete_all_ideas(self):
+        # Topics reference would be deleted using cascade option set.
         with get_dict_cursor() as cur:
             cur.execute("DELETE FROM raw_idea")
 
