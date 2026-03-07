@@ -2,8 +2,12 @@ from typing import Literal, Dict, Any, List, Optional
 from pydantic import BaseModel, Field, ConfigDict, model_validator
 
 class ClassificationResult(BaseModel):
+    id: str = Field(description="ID of the idea as provided in the input. Return as it is for each input.")
     category: Literal["idea", "personal_information", "secrets", "gibberish"]
     confidence: float = Field(description="A score between 0 and 1")
+
+class ClassificationResultList(BaseModel):
+    classification_results: List[ClassificationResult]
 
 
 class PersonalInfoItem(BaseModel):
@@ -65,19 +69,3 @@ class Topic(BaseModel):
 class TopicsList(BaseModel):
     """A list of topics."""
     topics: List[Topic]
-
-    
-# class TopicOrganization(BaseModel):
-#     """Complete organization of ideas into topics."""    
-#     model_config = ConfigDict(extra='forbid')
-#     topics: List[Topic] = Field(
-#         description="A collection of all topics (both existing topics with new idea assignments and newly created topics)."
-#     )    
-#     unassigned_idea_ids: List[int] = Field(
-#         default_factory=list,
-#         description="List of idea IDs that couldn't be confidently assigned to any topic. Should be empty or minimal in most cases."
-#     )
-#     reasoning: str = Field(
-#         default="",
-#         description="Brief explanation of the organization strategy and any notable decisions made during topic assignment."
-#     )

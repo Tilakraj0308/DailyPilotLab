@@ -1,11 +1,16 @@
+from typing import Tuple
 import os
 import yaml
-from models.output_schemas import ClassificationResult, PersonalState, TopicsList
+from models.output_schemas import ClassificationResultList, PersonalState, TopicsList
 from utils.openAi import openai_client
 import json
 from collections import defaultdict
+from models.topics import TopicCreateInput, TopicUpdateInput
+from services.ideas_service import IdeaService
+from utils.topic_manager import get_all_topics, update_topics, create_topics
+from collections import defaultdict
 
-def classify_idea(user_input_text: str):
+def classify_ideas(user_input_text: list[Tuple[str, str]]):
     ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
     personal_state_path = os.path.join(ROOT_DIR, "config", "memory", "personal_state.json")
@@ -26,11 +31,11 @@ def classify_idea(user_input_text: str):
     system_msg = template["system"].format(personal_state=personal_state_data)
     user_msg = template["user"].format(user_input=user_input_text)
 
-    completion = openai_client.get_chat_completion(system_prompt=system_msg, user_prompt=user_msg, response_format=ClassificationResult)
+    completion = openai_client.get_chat_completion(system_prompt=system_msg, user_prompt=user_msg, response_format=ClassificationResultList)
 
     return completion
 
-def update_personal_state(user_input_text: str):
+def update_personal_state(user_input_text: list[str]):
     ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
     personal_state_path = os.path.join(ROOT_DIR, "config", "memory", "personal_state.json")
@@ -96,7 +101,6 @@ def organize_ideas_into_topics(ideas: any, existing_topics: any) -> TopicsList:
             "id": topic["id"],
             "title": topic["title"],
             "summary": topic["summary"],
-            "idea_ids": topic["idea_ids"]
         })
     
     # Prepare existing topics data for LLM
@@ -123,5 +127,57 @@ def organize_ideas_into_topics(ideas: any, existing_topics: any) -> TopicsList:
         user_prompt=user_prompt,
         response_format=TopicsList
     )
-    
     return completion
+
+def assign_idea_to_topic():
+    '''Assign unassigned ideas to existing topics using a threshold and create a new topic if needed'''
+    threshold = float(os.getenv("TOPIC_ASSIGNMENT_THRESHOLD_SIMILARITY", 0.9))
+    threshold = 1-threshold
+    idea_service = IdeaService()
+    assigned_ideas = idea_service.assign_idea_to_topic(threshold)
+    unassigned_ideas = idea_service.get_unassigned_ideas()
+    existing_topics = get_all_topics()
+    if len(unassigned_ideas) == 0:
+        return {'status': 200, 'message': 'Assigned ideas successfully'}
+    ideas = organize_ideas_into_topics(unassigned_ideas, existing_topics)
+    new_topics, existing_topics = [], []
+    for topic in ideas.topics:
+        if topic.is_new:
+            new_topics.append(TopicCreateInput.model_validate(topic.model_dump(exclude={"is_new", "id"})))
+        else:
+            existing_topics.append(TopicUpdateInput.model_validate(topic.model_dump(exclude={"is_new"})))
+    if len(existing_topics) > 0:
+        update_topics(existing_topics, append_idea_ids=True)
+    if len(new_topics) > 0:
+        create_topics(new_topics)
+    return {'status': 200, 'message': 'Assigned ideas successfully'}
+
+def semantic_search_memories(query: str, n_topics: int = 5, k_ideas: int = 3):
+    idea_service = IdeaService()
+    query_embedding = openai_client.get_embeddings(query)[0].embedding
+    topic_similarity_threshold = float(os.getenv("TOPIC_SIMILARITY_THRESHOLD", 0.7))
+    idea_similarity_threshold = float(os.getenv("IDEA_SIMILARITY_THRESHOLD", 0.8))
+    rows = idea_service.search_topics_and_ideas(query_embedding, n_topics, k_ideas, topic_similarity_threshold, idea_similarity_threshold)
+    topics = defaultdict(lambda: {"title": "", "summary": "", "ideas": []})
+    # for topic_id, title, summary, idea_id, content, dist in rows:
+    #     topics[topic_id]["title"] = title
+    #     topics[topic_id]["summary"] = summary
+    #     topics[topic_id]["ideas"].append({
+    #         "id": idea_id, 
+    #         "content": content, 
+    #         "distance": dist # You can optionally include the distance in your final JSON now!
+    #     })
+
+    for row in rows:
+        topic_id = row['topic_id'] # Use your actual column names here
+        
+        topics[topic_id]["title"] = row['title']
+        topics[topic_id]["summary"] = row['summary']
+        topics[topic_id]["similarity"] = row['topic_similarity']
+        topics[topic_id]["ideas"].append({
+            "id": row['idea_id'], 
+            "content": row['idea_content'], 
+            "similarity": row['idea_similarity'] 
+        })
+
+    return [{"topic_id": tid, **data} for tid, data in topics.items()]
