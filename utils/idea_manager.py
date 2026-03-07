@@ -1,13 +1,9 @@
+from tracemalloc import start
 from services.ideas_service import IdeaService
-from services.topics_service import TopicsService
 from models.ideas import IdeaCreateInput, IdeaUpdateInput, IdeaUpdateInput, IdeaDeleteInput
-from models.topics import TopicCreateInput, TopicUpdateInput
-# from utils.openaiEmbeddings import get_embeddings
 from utils.openAi import openai_client
 from typing import List
-from utils.helpers import classify_idea, update_personal_state, organize_ideas_into_topics
-import os
-from utils.topic_manager import get_all_topics, update_topics, create_topics
+from utils.helpers import classify_ideas, update_personal_state
 
 def get_ideas():
     service = IdeaService()
@@ -20,7 +16,8 @@ def get_idea(idea_id: int):
 
 def create_idea(idea: IdeaCreateInput):
     if idea.content != "":
-        classification = classify_idea(idea.content)
+        classification = classify_ideas([("1", idea.content)])
+        classification = classification.classification_results[0]
         category = classification.category
         if category == 'idea':
             pass
@@ -29,7 +26,7 @@ def create_idea(idea: IdeaCreateInput):
         elif category == 'secrets':
             return {'status': 200, 'message': 'Can\'t save sensitive data'}
         elif category == 'personal_information':
-            update_personal_state(idea.content)
+            update_personal_state([idea.content])
             return {'status': 200, 'message': 'Updated personal state successfully'}
         embeddings = openai_client.get_embeddings(idea.content)
         insert_data = idea.model_dump(exclude_unset=True)
@@ -47,6 +44,59 @@ def create_idea(idea: IdeaCreateInput):
         return {'status': 200, 'message': f'Added idea ID - {new_idea_id} successfully'}
     return {'status': 200, 'message': 'No text to add'}
 
+
+def create_ideas(ideas_input: List[IdeaCreateInput]):
+    if not ideas_input:
+        return
+    ideas_len_limit = 10
+
+    if len(ideas_input) > ideas_len_limit:
+        return {'status': 200, 'message': f'Too many ideas to add !! only upto {ideas_len_limit} ideas can be added at a time'}
+
+    ideas_filtered = list(filter(lambda x: x.content!="", ideas_input))
+    
+    if len(ideas_filtered) == 0:
+        return {'status': 200, 'message': 'No Valid text to add'}
+    
+    if len(ideas_filtered) == 1:
+        extra_mess = 'Only one idea with content found!! \n'
+        create_res = create_idea(ideas_filtered[0])
+        return {'status': 200, 'message': extra_mess + create_res['message']}
+
+    
+    ideas_with_id = [(str(i), idea) for i, idea in enumerate(ideas_filtered, start=1)]
+    classification_data = classify_ideas([(idea[0], idea[1].content) for idea in ideas_with_id])
+    classification_data = classification_data.classification_results
+    ideas, personal_info = [], []
+    texts_to_embed = []
+    # idea_indices_to_embed = []
+    for classification in classification_data:
+        # corresponding_idea = filter(lambda x: x[0] == classification.id, ideas_with_id)[1]
+        corresponding_idea = next((item[1] for item in ideas_with_id if item[0] == classification.id), None)
+        if classification.category == 'idea':
+            if corresponding_idea:
+                ideas.append(corresponding_idea.model_dump(exclude_unset=True))
+                texts_to_embed.append(corresponding_idea.content)
+                # idea_indices_to_embed.append(idea_count)
+                # idea_count += 1
+        elif classification.category == 'personal_information':
+            if corresponding_idea:
+                personal_info.append(corresponding_idea.content)
+    
+    
+    if texts_to_embed:
+        embeddings_data = openai_client.get_embeddings(texts_to_embed)
+        for idx, embedding_obj in enumerate(embeddings_data):
+            ideas[idx]["embeddings"] = embedding_obj.embedding
+
+    if len(personal_info) > 0:
+        update_personal_state(personal_info)
+    if len(ideas) > 0:
+        service = IdeaService()
+        service.bulk_create_ideas(ideas)
+    
+    return {'status': 200, 'message': f'Added {len(ideas)} ideas and updated {len(personal_info)} personal information'}
+    
 # def create_ideas(ideas: List[IdeaCreateInput]):
 #     if not ideas:
 #         return
@@ -134,46 +184,3 @@ def delete_ideas(idea_ids: List[int]):
 def delete_all_ideas():
     service = IdeaService()
     return service.delete_all_ideas()
-
-def assign_idea_to_topic():
-    threshold = os.getenv("TOPIC_ASSIGNMENT_THRESHOLD", 0.9)
-    idea_service = IdeaService()
-    # topic_service = TopicsService()
-    assigned_ideas = idea_service.assign_idea_to_topic(threshold)
-    print("************ assigned ideas to topics ***************")
-    print(assigned_ideas)
-    print("*****************************************************")
-    unassigned_ideas = idea_service.get_unassigned_ideas()
-    print("************ unassigned ideas ***************")
-    print(unassigned_ideas)
-    print("*****************************************************")
-    existing_topics = get_all_topics()
-    print("************ existing topics ***************")
-    print(existing_topics)
-    print("*****************************************************")
-    ideas = organize_ideas_into_topics(unassigned_ideas, existing_topics)
-    print("************ organized ideas ***************")
-    print(ideas)
-    print("*****************************************************")
-    new_topics, existing_topics = [], []
-    for topic in ideas.topics:
-        if topic.is_new:
-            # new_topics.append(topic.model_dump(exclude={"is_new", "id"}))
-            new_topics.append(TopicCreateInput.model_validate(topic.model_dump(exclude={"is_new", "id"})))
-        else:
-            # existing_topics.append({"id": topic.id, "idea_ids": topic.idea_ids})
-            # existing_topics.append(topic.model_dump(exclude={"is_new"}))
-            existing_topics.append(TopicUpdateInput.model_validate(topic.model_dump(exclude={"is_new"})))
-    print("These are the new_topics")
-    print(new_topics)
-    print("These are the old topics")
-    print(existing_topics)
-    # Updating the existing topics (append only, no override)
-    update_topics(existing_topics, append_idea_ids=True)
-    # Creating the new topics
-    create_topics(new_topics)
-    # idea_service.create_ideas(new_topics)
-
-    print("all successful")
-    return {'status': 200, 'message': 'Assigned ideas successfully'}
-

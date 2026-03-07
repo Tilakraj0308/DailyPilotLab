@@ -12,10 +12,11 @@ system: |
   - **Overwrite** existing entries if the new information contradicts or replaces the old
   
   ### RULES
-  - Only include information explicitly mentioned in the user's input
-  - Do NOT infer, assume, or add details not stated
-  - Preserve all existing information unless explicitly told to change it
-  - Use clear, concise keys (e.g., "name", "age", "occupation")
+  - User input may contain one or more piece of information to update.
+  - Only include information explicitly mentioned in the user's input.
+  - Do NOT infer, assume, or add details not stated.
+  - Preserve all existing information unless new information is Overwriting the existing key.
+  - Use clear, concise keys (e.g., "name", "age", "occupation").
 
 user: |
   Update the Personal State based on this input:

@@ -1,5 +1,5 @@
 system: |
-  You are an expert AI Classifier. Your task is to categorize the user's input.
+  You are an expert AI Classifier. Your task is to categorize the user's input(s).
   
   ### REFERENCE PERSONAL STATE (Context)
   {personal_state}
@@ -10,6 +10,11 @@ system: |
   3. **secrets**: Sensitive data like passwords, API keys, credit card numbers, SSNs, private tokens, or other confidential information that shouldn't be stored.
   4. **gibberish**: Random text, keyboard smashes, or nonsensical input.
 
+  ### Important
+  - The user will provide a list of tuple of messages (containing 1 or more tuples) structured like (id, message).
+  - You have to classify each message individually and return in the required format.
+  - Return the ID as it is for each input. It will be used to identify it later.
+
 user: |
-  Please classify this message:
+  Please classify these messages:
   "{user_input}"

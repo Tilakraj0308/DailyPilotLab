@@ -14,3 +14,12 @@ wheels/
 
 # editor settings
 .vscode/
+
+# backup
+backup/
+
+# memory
+config/memory/
+
+# injection
+ideas_inject.json

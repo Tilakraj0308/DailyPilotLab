@@ -1,6 +1,7 @@
 
 
 from typing import List, Dict, Any
+from psycopg2.extras import execute_values
 from db.dbConnection import get_dict_cursor
 
 class IdeaService:
@@ -76,35 +77,36 @@ class IdeaService:
                 cur.execute(query, tuple(values))
             return cur.fetchone()['id']
 
-    # def bulk_create_ideas(self, data_list: List[Dict[str, Any]]):
-    #     with get_dict_cursor() as cur:
-    #         if not data_list:
-    #             return
+    def bulk_create_ideas(self, data_list: List[Dict[str, Any]]):
+        with get_dict_cursor() as cur:
+            if not data_list:
+                return
             
-    #         # Clean data
-    #         cleaned_list = []
-    #         for d in data_list:
-    #             d_copy = d.copy()
-    #             d_copy.pop('topic_ids', None)
-    #             cleaned_list.append(d_copy)
+            # Clean data
+            # cleaned_list = []
+            # for d in data_list:
+            #     d_copy = d.copy()
+            #     d_copy.pop('topic_ids', None)
+            #     cleaned_list.append(d_copy)
 
-    #         if not cleaned_list:
-    #              return
+            # if not cleaned_list:
+            #      return
 
-    #         all_columns = set()
-    #         for d in cleaned_list:
-    #             all_columns.update(d.keys())
-    #         columns = sorted(list(all_columns))
+            # all_columns = set()
+            # for d in data_list:
+            #     all_columns.update(d.keys())
+            # columns = sorted(list(all_columns))
 
-    #         values_list = []
-    #         for d in cleaned_list:
-    #             row = [d.get(col) for col in columns]
-    #             values_list.append(tuple(row))
+            columns = list(data_list[0].keys())
+            # values_list = []
+            # for d in data_list:
+            #     row = [d.get(col) for col in columns]
+            #     values_list.append(tuple(row))
 
-    #         placeholders = ["%s"] * len(columns)
-    #         query = f"INSERT INTO raw_idea ({', '.join(columns)}) VALUES ({', '.join(placeholders)})"
-            
-    #         cur.executemany(query, values_list)
+            values_list = [tuple(d[col] for col in columns) for d in data_list]
+            query = f"INSERT INTO raw_idea ({', '.join(columns)}) VALUES %s"
+            # cur.executemany(query, values_list)
+            execute_values(cur, query, values_list)
 
 
     def update_idea(self, update_data: Dict[str, Any]):
@@ -172,3 +174,53 @@ class IdeaService:
             cur.execute("SELECT * FROM assign_and_return_matches(%s);", (threshold,))
             results = cur.fetchall()
             return results
+
+    def search_topics_and_ideas(
+    self, 
+    query_embedding: list, 
+    n_topics: int = 5, 
+    k_ideas: int = 3,
+    topic_similarity_threshold: float = 0.70,  # e.g., 70% match for topics
+    idea_similarity_threshold: float = 0.75    # e.g., 75% match for specific ideas
+) -> list:
+    
+        # 1. Convert human-readable similarity thresholds to database-friendly distance thresholds
+        topic_dist_thresh = 1.0 - topic_similarity_threshold
+        idea_dist_thresh = 1.0 - idea_similarity_threshold
+
+        with get_dict_cursor() as cur:
+            cur.execute("""
+                WITH top_topics AS (
+                    SELECT id, title, summary,
+                        (1 - (summary_embedding <=> %(query)s::vector)) AS topic_similarity
+                    FROM topic
+                    WHERE is_archived = false
+                    AND (summary_embedding <=> %(query)s::vector) <= %(topic_thresh)s
+                    ORDER BY summary_embedding <=> %(query)s::vector
+                    LIMIT %(n_topics)s
+                )
+                SELECT t.id AS topic_id, t.title, t.summary, t.topic_similarity,
+                    r.idea_id, r.content AS idea_content, r.idea_similarity
+                FROM top_topics t
+                JOIN LATERAL (
+                    SELECT r.id AS idea_id, r.content, 
+                        (1 - (r.embeddings <=> %(query)s::vector)) AS idea_similarity
+                    FROM idea_topics it
+                    JOIN raw_idea r ON r.id = it.idea_id
+                    WHERE it.topic_id = t.id 
+                    AND r.embeddings IS NOT NULL
+                    AND (r.embeddings <=> %(query)s::vector) <= %(idea_thresh)s
+                    ORDER BY r.embeddings <=> %(query)s::vector
+                    LIMIT %(k_ideas)s
+                ) r ON true
+            """, {
+                "query": query_embedding,
+                "n_topics": n_topics,
+                "k_ideas": k_ideas,
+                "topic_thresh": topic_dist_thresh,
+                "idea_thresh": idea_dist_thresh
+            }) 
+
+            rows = cur.fetchall()
+            
+            return rows

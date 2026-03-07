@@ -1,16 +1,16 @@
 from fastapi import FastAPI, Response
-from utils.idea_manager import get_ideas, create_idea, update_idea, delete_idea, delete_ideas, delete_all_ideas, assign_idea_to_topic
+from utils.idea_manager import get_ideas, create_idea, create_ideas, update_idea, delete_idea, delete_ideas, delete_all_ideas
 from models.ideas import IdeaCreateInput, IdeaOut, IdeaUpdateInput, IdeaDeleteInput
+from utils.helpers import assign_idea_to_topic, semantic_search_memories
 from typing import List 
 from dotenv import load_dotenv
-from utils.openAi import OpenAI
 
 load_dotenv()
 app = FastAPI()
     
 @app.get("/ideas", response_model=List[IdeaOut])
 # @app.get("/ideas")
-def root():
+def getIdeas():
     return get_ideas()
 
 @app.post("/ideas")
@@ -19,9 +19,11 @@ def createIdea(idea: IdeaCreateInput, response: Response):
     response.status_code = creation_response['status']
     return {'message': creation_response['message']}
 
-# @app.post("/ideas/bulk")
-# def createIdeas(ideas: List[IdeaCreateInput]):
-#     return create_ideas(ideas)
+@app.post("/ideas/bulk")
+def createIdeas(ideas: List[IdeaCreateInput], response: Response):
+    creation_response = create_ideas(ideas)
+    response.status_code = creation_response['status']
+    return {'message': creation_response['message']}
 
 @app.post("/ideas/update")
 def updateIdea(idea: IdeaUpdateInput):
@@ -48,6 +50,10 @@ def assignTopics(response: Response):
     creation_response = assign_idea_to_topic()
     response.status_code = creation_response['status']
     return {'message': creation_response['message']}
+
+@app.get("/tool/semantic-search")
+def semanticSearch(query: str):
+    return semantic_search_memories(query)
 
 
 
