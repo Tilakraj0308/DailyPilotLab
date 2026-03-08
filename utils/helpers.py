@@ -29,7 +29,7 @@ def classify_ideas(user_input_text: list[Tuple[str, str]]):
         template = yaml.safe_load(f)
 
     system_msg = template["system"].format(personal_state=personal_state_data)
-    user_msg = template["user"].format(user_input=user_input_text)
+    user_msg = template["user"].format(user_input=json.dumps(user_input_text))
 
     completion = openai_client.get_chat_completion(system_prompt=system_msg, user_prompt=user_msg, response_format=ClassificationResultList)
 
@@ -54,7 +54,7 @@ def update_personal_state(user_input_text: list[str]):
         template = yaml.safe_load(f)
 
     system_msg = template["system"].format(personal_state=personal_state_data)
-    user_msg = template["user"].format(user_input=user_input_text)
+    user_msg = template["user"].format(user_input=json.dumps(user_input_text))
 
     completion = openai_client.get_chat_completion(system_prompt=system_msg, user_prompt=user_msg, response_format=PersonalState)
 
