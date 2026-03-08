@@ -1,7 +1,7 @@
 from typing import Tuple
 import os
 import yaml
-from models.output_schemas import ClassificationResultList, PersonalState, TopicsList
+from models.output_schemas import ClassificationResultList, PersonalState, TopicsList, RefinedIdeaList
 from utils.openAi import openai_client
 import json
 from collections import defaultdict
@@ -181,3 +181,24 @@ def semantic_search_memories(query: str, n_topics: int = 5, k_ideas: int = 3):
         })
 
     return [{"topic_id": tid, **data} for tid, data in topics.items()]
+
+
+def refine_raw_ideas(raw_ideas: list[str]):
+    ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    prompt_path = os.path.join(ROOT_DIR, "config", "prompts", "idea_refiner.yaml")
+    with open(prompt_path, "r") as f:
+        template = yaml.safe_load(f)
+    
+    system_prompt = template["system"]
+    
+    user_prompt = template["user"].format(
+        raw_ideas=json.dumps(raw_ideas, indent=2),
+    )
+    
+    # Get LLM completion
+    completion = openai_client.get_chat_completion(
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        response_format=RefinedIdeaList
+    )
+    return completion
