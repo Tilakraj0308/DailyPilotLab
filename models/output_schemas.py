@@ -69,3 +69,13 @@ class Topic(BaseModel):
 class TopicsList(BaseModel):
     """A list of topics."""
     topics: List[Topic]
+
+class RefinedIdea(BaseModel):
+    refined_statement: str = Field(
+        description="A single, atomic sentence in the third-person perspective capturing the core idea with minimum data loss (e.g., 'The user likes to play football.')."
+    )
+
+class RefinedIdeaList(BaseModel):
+    refined_ideas: List[RefinedIdea] = Field(
+        description="The final deduplicated and condensed list of refined statements."
+    )
