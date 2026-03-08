@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Response
-from utils.idea_manager import get_ideas, create_idea, create_ideas, update_idea, delete_idea, delete_ideas, delete_all_ideas
+from utils.idea_manager import get_ideas, create_idea, create_ideas, update_idea, delete_idea, delete_ideas, delete_all_ideas, raw_to_refined_ideas
 from models.ideas import IdeaCreateInput, IdeaOut, IdeaUpdateInput, IdeaDeleteInput
 from utils.helpers import assign_idea_to_topic, semantic_search_memories
 from typing import List 
@@ -51,9 +51,15 @@ def assignTopics(response: Response):
     response.status_code = creation_response['status']
     return {'message': creation_response['message']}
 
-@app.get("/tool/semantic-search")
+@app.get("/semantic-search")
 def semanticSearch(query: str):
     return semantic_search_memories(query)
+
+@app.get("/refine-ideas")
+def refineIdeas(response: Response):
+    refine_response = raw_to_refined_ideas()
+    response.status_code = refine_response['status']
+    return {'message': refine_response['message']}
 
 
 

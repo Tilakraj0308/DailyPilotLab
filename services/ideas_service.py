@@ -12,8 +12,6 @@ class IdeaService:
         with get_dict_cursor() as cur:
             cur.execute("SELECT * FROM raw_idea")
             ideas = cur.fetchall()
-            print("THIS IS IDEAS")
-            print(ideas)
             return ideas
 
     def get_idea(self, idea_id: int):
@@ -25,6 +23,18 @@ class IdeaService:
         with get_dict_cursor() as cur:
             cur.execute(f"SELECT * FROM raw_idea WHERE {filter_column} = %s", (filter_value,))
             return cur.fetchall()
+    
+    def get_ideas_count(self, filter_column: str = None, filter_value: Any = None) -> int:
+        with get_dict_cursor() as cur:
+            q = f"SELECT COUNT(*) AS total_count FROM raw_idea"
+            if filter_column:
+                q = f"{q} WHERE {filter_column} = %s"
+                cur.execute(q, (filter_value,))
+                data = cur.fetchall()
+                return data[0]["total_count"]
+            cur.execute(q)
+            data = cur.fetchall()
+            return data[0]["total_count"]
 
     def get_unassigned_ideas(self):
         with get_dict_cursor() as cur:
@@ -158,6 +168,10 @@ class IdeaService:
         # Topics reference would be deleted using cascade option set.
         with get_dict_cursor() as cur:
             cur.execute("DELETE FROM raw_idea WHERE id = %s", (idea_id,))
+
+    def delete_raw_ideas(self):
+        with get_dict_cursor() as cur:
+            cur.execute("DELETE FROM raw_idea WHERE raw = TRUE")
 
     def bulk_delete_ideas(self, idea_ids: List[int]):
         # Topics reference would be deleted using cascade option set.
