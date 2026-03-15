@@ -3,6 +3,7 @@ from services.topics_service import TopicsService
 from services.ideas_service import IdeaService
 from typing import List
 from utils.openAi import openai_client
+import os
 
 
 def get_all_topics():
@@ -93,4 +94,15 @@ def update_topics(topics: List[TopicUpdateInput], append_idea_ids: bool = False)
             idea_service.add_idea_topic_relation(idea_id=idea_id, topic_id=update_data["id"])
     topic_service.bulk_update_topics(topics_to_add)
     return {'status': 200, 'message': 'Updated topics successfully'}
+
+def update_topic_recency():
+    topic_service = TopicsService()
+    topic_service.refresh_topic_recency()
+    return {'status': 200, 'message': 'Updated topic recency successfully'}
+
+def get_high_signal_topics():
+    dominance_threshold = os.getenv("DOMINANCE_THRESHOLD")
+    recency_threshold = os.getenv("RECENCY_THRESHOLD")
+    topic_service = TopicsService()
+    return topic_service._get_high_signal_topics(recency_threshold, dominance_threshold)       
 

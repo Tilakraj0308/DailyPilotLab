@@ -4,6 +4,7 @@ from models.ideas import IdeaCreateInput, IdeaOut, IdeaUpdateInput, IdeaDeleteIn
 from utils.helpers import assign_idea_to_topic, semantic_search_memories
 from typing import List 
 from dotenv import load_dotenv
+from utils.topic_manager import update_topic_recency
 
 load_dotenv()
 app = FastAPI()
@@ -60,6 +61,12 @@ def refineIdeas(response: Response):
     refine_response = raw_to_refined_ideas()
     response.status_code = refine_response['status']
     return {'message': refine_response['message']}
+
+@app.get("/update-topic-recency")
+def updateTopicRecency(response: Response):
+    update_response = update_topic_recency()
+    response.status_code = update_response['status']
+    return {'message': update_response['message']}
 
 
 
