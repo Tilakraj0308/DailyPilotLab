@@ -168,3 +168,55 @@ class TopicsService:
     def delete_all_topics(self):
         with get_dict_cursor() as cur:
             cur.execute("DELETE FROM topic")
+
+    def refresh_topic_recency(self):
+        """
+        Calls the Supabase internal function to update activity_7d, 
+        activity_30d, and lifetime_size.
+        """
+        with get_dict_cursor() as cur:
+            cur.execute("SELECT update_topic_recency_metrics();")
+
+    # In services/topics_service.py
+
+    def _get_high_signal_topics(self, recency_threshold: int = 5, dominance_threshold: int = 15):
+        """
+        Fetches topics that meet either the recency or dominance threshold.
+        Returns only the human-readable data needed for LLM trait generation.
+        """
+        query = """
+            SELECT 
+                t.id, 
+                t.title, 
+                t.summary
+            FROM topic t
+            WHERE t.recency_strength >= %s 
+            OR t.dominance >= %s
+            ORDER BY t.recency_strength DESC, t.dominance DESC;
+        """
+        
+        with get_dict_cursor() as cur:
+            # Pass the thresholds into the query safely
+            cur.execute(query, (recency_threshold, dominance_threshold))
+            high_signal_topics = cur.fetchall()
+            
+            return high_signal_topics
+
+    # In services/ideas_service.py
+
+    def get_recent_ideas_for_topic(self, topic_id: int, limit: int = 3):
+        """
+        Fetches the most recent raw ideas linked to a specific topic
+        to use as memory snippets for trait generation.
+        """
+        query = """
+            SELECT ri.id, ri.content, ri.created_at
+            FROM raw_idea ri
+            JOIN idea_topics it ON ri.id = it.idea_id
+            WHERE it.topic_id = %s
+            ORDER BY ri.created_at DESC
+            LIMIT %s
+        """
+        with get_dict_cursor() as cur:
+            cur.execute(query, (topic_id, limit))
+            return cur.fetchall()
