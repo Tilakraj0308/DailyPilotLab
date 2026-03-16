@@ -2,13 +2,15 @@ from typing import Tuple
 import os
 import yaml
 from models.output_schemas import ClassificationResultList, PersonalState, TopicsList, RefinedIdeaList
+from models.traits import TraitExtractionResponse
 from utils.openAi import openai_client
 import json
 from collections import defaultdict
 from models.topics import TopicCreateInput, TopicUpdateInput
 from services.ideas_service import IdeaService
+from services.topics_service import TopicsService
+from services.trait_service import TraitsService
 from utils.topic_manager import get_all_topics, update_topics, create_topics
-from collections import defaultdict
 
 def classify_ideas(user_input_text: list[Tuple[str, str]]):
     ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -202,3 +204,91 @@ def refine_raw_ideas(raw_ideas: list[str]):
         response_format=RefinedIdeaList
     )
     return completion
+
+
+def extract_traits(payload_for_llm: str) -> TraitExtractionResponse:
+    """
+    Calls the LLM with the trait-extraction prompt and returns the structured
+    list of TraitCandidate objects.
+
+    Args:
+        payload_for_llm: A pre-formatted string containing high-signal topics
+                         and their recent memory snippets.
+
+    Returns:
+        TraitExtractionResponse containing a list of TraitCandidate objects.
+    """
+    ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    prompt_path = os.path.join(ROOT_DIR, "config", "prompts", "trait-extraction.yaml")
+    with open(prompt_path, "r") as f:
+        template = yaml.safe_load(f)
+
+    system_prompt = template["system_prompt"]
+    user_prompt = template["user_prompt_template"].format(payload_for_llm=payload_for_llm)
+
+    completion = openai_client.get_chat_completion(
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        response_format=TraitExtractionResponse,
+    )
+    return completion
+
+
+def update_traits(
+    recency_threshold: int = 5,
+    dominance_threshold: int = 15,
+    ideas_per_topic: int = 3,
+):
+    """
+    Full pipeline to refresh user traits:
+    1. Fetch high-signal topics from the DB.
+    2. For each topic, pull its most recent raw ideas as memory snippets.
+    3. Build a structured payload and call the LLM via extract_traits.
+    4. Upsert the resulting TraitCandidates using TraitsService.
+
+    Args:
+        recency_threshold:  Minimum recency_strength for a topic to be included.
+        dominance_threshold: Minimum dominance score for a topic to be included.
+        ideas_per_topic:    Number of recent raw ideas to fetch per topic.
+
+    Returns:
+        dict with status and count of traits processed.
+    """
+    topics_service = TopicsService()
+    traits_service = TraitsService(openai_client=openai_client.client)
+
+    # 1. Fetch high-signal topics
+    high_signal_topics = topics_service._get_high_signal_topics(
+        recency_threshold=recency_threshold,
+        dominance_threshold=dominance_threshold,
+    )
+
+    if not high_signal_topics:
+        return {"status": 200, "message": "No high-signal topics found; traits not updated.", "traits_processed": 0}
+
+    # 2. Build the payload for the LLM
+    topic_payloads = []
+    for topic in high_signal_topics:
+        recent_ideas = topics_service.get_recent_ideas_for_topic(
+            topic_id=topic["id"],
+            limit=ideas_per_topic,
+        )
+        topic_payloads.append({
+            "topic_title": topic["title"],
+            "topic_summary": topic["summary"],
+            "memory_snippets": [idea["content"] for idea in recent_ideas],
+        })
+
+    payload_for_llm = json.dumps(topic_payloads, indent=2)
+
+    # 3. Call LLM
+    extraction_response = extract_traits(payload_for_llm)
+
+    # 4. Upsert traits
+    traits_service.process_and_upsert_traits(extraction_response.traits)
+
+    return {
+        "status": 200,
+        "message": "Traits updated successfully.",
+        "traits_processed": len(extraction_response.traits),
+    }
