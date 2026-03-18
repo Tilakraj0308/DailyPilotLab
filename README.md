@@ -32,15 +32,26 @@ A FastAPI service that captures raw ideas, groups them into topics using semanti
 2. **Enable the `pgvector` extension** (the seed script does this automatically, but you can also do it manually):
    - Go to **Database → Extensions** in your project dashboard.
    - Search for **vector** and toggle it on.
-3. **Get your connection credentials** — go to **Project Settings → Database → Connection string** and choose the *URI* or *Parameters* tab:
+3. **Get your connection credentials** from the **Session Pooler**:
+   - In your Supabase dashboard go to **Project Settings → Database**.
+   - Scroll to **Connection string** and click the **Session mode** tab (not *Transaction mode*).
+     > **Why Session mode?** The seed script uses `psycopg2` with server-side cursors and pgvector operators that require a persistent session. Transaction-mode poolers (port 6543) reset the session between statements and will cause errors.
+   - Switch the view to **Parameters** (instead of URI) to see individual fields.
 
-   | `.env` key | Where to find it |
-   |------------|-----------------|
-   | `user` | *User* field (e.g. `postgres.abcxyz`) |
-   | `password` | The password you set when creating the project |
-   | `host` | *Host* field (e.g. `aws-0-ap-southeast-2.pooler.supabase.com`) |
-   | `port` | `5432` (transaction pooler) or `6543` (session pooler) |
-   | `dbname` | `postgres` |
+   First, create your `.env` from the example:
+   ```bash
+   cp .env.example .env
+   ```
+
+   Then copy each credential into `.env`:
+
+   | `.env` key | Pooler → Parameters field | Example value |
+   |------------|--------------------------|---------------|
+   | `user` | **User** | `postgres.abcxyz1234` |
+   | `password` | *(the password you set at project creation)* | `supersecret` |
+   | `host` | **Host** | `aws-0-ap-southeast-1.pooler.supabase.com` |
+   | `port` | **Port** — use **5432** (Session mode) | `5432` |
+   | `dbname` | **Database name** | `postgres` |
 
 4. **Get your OpenAI API key** from [platform.openai.com/api-keys](https://platform.openai.com/api-keys).
 
@@ -48,13 +59,7 @@ A FastAPI service that captures raw ideas, groups them into topics using semanti
 
 ## Environment Configuration
 
-Copy the example env file and fill in your values:
-
-```bash
-cp .env.example .env
-```
-
-Then open `.env` and replace the placeholder values:
+Open `.env` and verify the placeholder values match what you copied from Supabase:
 
 ```ini
 # .env
@@ -97,7 +102,9 @@ This creates a `.venv` virtual environment and installs all packages pinned in `
 
 The seed script:
 - Enables the `pgvector` extension.
-- Creates all three tables (`raw_idea`, `topic`, `idea_topics`) — **idempotent**, safe to re-run.
+- Creates the `trait_category` enum type.
+- Creates all tables (`raw_idea`, `topic`, `idea_topics`, `trait`) and the HNSW index — **idempotent**, safe to re-run.
+- Creates the `assign_and_return_matches` and `update_topic_recency_metrics` stored functions.
 - Inserts 10 sample ideas so the app has real data to work with immediately.
 
 ```bash
@@ -107,8 +114,8 @@ The seed script:
 Expected output:
 
 ```
-Creating tables …
-  ✓ Tables ready.
+Applying DDL …
+  ✓ Schema ready.
 Inserting seed ideas …
   ✓ Inserted 10 ideas (ids: [...]).
 
