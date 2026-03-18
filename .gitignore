@@ -20,6 +20,3 @@ backup/
 
 # memory
 config/memory/
-
-# injection
-ideas_inject.json
