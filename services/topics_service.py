@@ -179,7 +179,7 @@ class TopicsService:
 
     # In services/topics_service.py
 
-    def _get_high_signal_topics(self, recency_threshold: int = 5, dominance_threshold: int = 15):
+    def get_high_signal_topics(self, recency_threshold: int = 5, dominance_threshold: int = 15):
         """
         Fetches topics that meet either the recency or dominance threshold.
         Returns only the human-readable data needed for LLM trait generation.
