@@ -234,11 +234,7 @@ def extract_traits(payload_for_llm: str) -> TraitExtractionResponse:
     return completion
 
 
-def update_traits(
-    recency_threshold: int = 5,
-    dominance_threshold: int = 15,
-    ideas_per_topic: int = 3,
-):
+def update_traits():
     """
     Full pipeline to refresh user traits:
     1. Fetch high-signal topics from the DB.
@@ -257,8 +253,12 @@ def update_traits(
     topics_service = TopicsService()
     traits_service = TraitsService(openai_client=openai_client.client)
 
+    recency_threshold = os.getenv("RECENCY_THRESHOLD", 5)
+    dominance_threshold = os.getenv("DOMINANCE_THRESHOLD", 15)
+    recent_ideas_per_topic = os.getenv("RECENT_IDEAS_PER_TOPIC", 3)
+
     # 1. Fetch high-signal topics
-    high_signal_topics = topics_service._get_high_signal_topics(
+    high_signal_topics = topics_service.get_high_signal_topics(
         recency_threshold=recency_threshold,
         dominance_threshold=dominance_threshold,
     )
@@ -271,7 +271,7 @@ def update_traits(
     for topic in high_signal_topics:
         recent_ideas = topics_service.get_recent_ideas_for_topic(
             topic_id=topic["id"],
-            limit=ideas_per_topic,
+            limit=recent_ideas_per_topic,
         )
         topic_payloads.append({
             "topic_title": topic["title"],
@@ -281,8 +281,15 @@ def update_traits(
 
     payload_for_llm = json.dumps(topic_payloads, indent=2)
 
+    print("This is the payload for llm: ")
+    print(payload_for_llm)
+    print("*****************8***********************")
+
     # 3. Call LLM
     extraction_response = extract_traits(payload_for_llm)
+
+    print("This is the extraction response:")
+    print(extraction_response)
 
     # 4. Upsert traits
     traits_service.process_and_upsert_traits(extraction_response.traits)
