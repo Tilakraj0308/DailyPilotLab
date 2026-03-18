@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Response
 from utils.idea_manager import get_ideas, create_idea, create_ideas, update_idea, delete_idea, delete_ideas, delete_all_ideas, raw_to_refined_ideas
 from models.ideas import IdeaCreateInput, IdeaOut, IdeaUpdateInput, IdeaDeleteInput
-from utils.helpers import assign_idea_to_topic, semantic_search_memories
+from utils.helpers import assign_idea_to_topic, semantic_search_memories, update_traits
 from typing import List 
 from dotenv import load_dotenv
 from utils.topic_manager import update_topic_recency
@@ -68,7 +68,9 @@ def updateTopicRecency(response: Response):
     response.status_code = update_response['status']
     return {'message': update_response['message']}
 
-
-
-
+@app.get("/update-traits")  
+def updateTraits(response: Response):
+    update_response = update_traits()
+    response.status_code = update_response['status']
+    return {'message': update_response['message']}
 
