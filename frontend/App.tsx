@@ -1,165 +1,36 @@
-import React, { useState, useCallback } from 'react';
-import { StatusBar, StyleSheet, View } from 'react-native';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { NavigationContainer } from '@react-navigation/native';
-import {
-  createDrawerNavigator,
-  DrawerContentComponentProps,
-} from '@react-navigation/drawer';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import "./global.css";
+import React from "react";
+import { NavigationContainer } from "@react-navigation/native";
+import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import { useFonts } from "expo-font";
+import { Inter_400Regular, Inter_500Medium, Inter_600SemiBold } from "@expo-google-fonts/inter";
+import { Manrope_400Regular, Manrope_600SemiBold, Manrope_700Bold, Manrope_800ExtraBold } from "@expo-google-fonts/manrope";
+import LoginScreen from "./src/screens/LoginScreen";
+import HomeScreen from "./src/screens/HomeScreen";
 
-import {
-  HomeScreen,
-  DrawerContent,
-  PersonalizeScreen,
-  SettingsSheet,
-  ChatScreen,
-  SelectModelSheet,
-  WebSearchSheet,
-} from './src/screens';
+const Stack = createNativeStackNavigator();
 
-const Drawer = createDrawerNavigator();
+export default function App() {
+  const [fontsLoaded] = useFonts({
+    Inter_400Regular,
+    Inter_500Medium,
+    Inter_600SemiBold,
+    Manrope_400Regular,
+    Manrope_600SemiBold,
+    Manrope_700Bold,
+    Manrope_800ExtraBold,
+  });
 
-function CustomDrawerContent(
-  props: DrawerContentComponentProps & {
-    onOpenPersonalize: () => void;
-    onOpenSettings: () => void;
-  },
-) {
-  return (
-    <DrawerContent
-      onClose={() => props.navigation.closeDrawer()}
-      onOpenPersonalize={() => {
-        props.navigation.closeDrawer();
-        setTimeout(() => props.onOpenPersonalize(), 300);
-      }}
-      onOpenSettings={() => {
-        props.navigation.closeDrawer();
-        setTimeout(() => props.onOpenSettings(), 300);
-      }}
-    />
-  );
-}
-
-function HomeScreenWrapper({
-  navigation,
-  onOpenChat,
-}: {
-  navigation: any;
-  onOpenChat: () => void;
-}) {
-  return (
-    <HomeScreen
-      onOpenDrawer={() => navigation.openDrawer()}
-      onOpenChat={onOpenChat}
-    />
-  );
-}
-
-function App() {
-  // Global sheet/modal state
-  const [personalizeVisible, setPersonalizeVisible] = useState(false);
-  const [settingsVisible, setSettingsVisible] = useState(false);
-  const [chatVisible, setChatVisible] = useState(false);
-  const [modelPickerVisible, setModelPickerVisible] = useState(false);
-  const [webSearchVisible, setWebSearchVisible] = useState(false);
-  const [selectedModel, setSelectedModel] = useState('TwinMind Auto');
-
-  const handleOpenPersonalize = useCallback(
-    () => setPersonalizeVisible(true),
-    [],
-  );
-  const handleOpenSettings = useCallback(() => setSettingsVisible(true), []);
-  const handleOpenChat = useCallback(() => setChatVisible(true), []);
-
-  const handleOpenModelSelect = useCallback(() => {
-    setModelPickerVisible(true);
-  }, []);
-
-  const handleSelectModel = useCallback((model: string) => {
-    setSelectedModel(model);
-    setModelPickerVisible(false);
-  }, []);
+  if (!fontsLoaded) {
+    return null;
+  }
 
   return (
-    <GestureHandlerRootView style={styles.root}>
-      <SafeAreaProvider>
-        <StatusBar
-          barStyle="dark-content"
-          backgroundColor="transparent"
-          translucent
-        />
-        <NavigationContainer>
-          <View style={styles.root}>
-            <Drawer.Navigator
-              screenOptions={{
-                headerShown: false,
-                drawerType: 'front',
-                drawerStyle: {
-                  width: '85%',
-                },
-                swipeEnabled: true,
-              }}
-              drawerContent={props => (
-                <CustomDrawerContent
-                  {...props}
-                  onOpenPersonalize={handleOpenPersonalize}
-                  onOpenSettings={handleOpenSettings}
-                />
-              )}>
-              <Drawer.Screen name="Home">
-                {props => (
-                  <HomeScreenWrapper
-                    navigation={props.navigation}
-                    onOpenChat={handleOpenChat}
-                  />
-                )}
-              </Drawer.Screen>
-            </Drawer.Navigator>
-
-            {/* Modals & Sheets */}
-            <PersonalizeScreen
-              visible={personalizeVisible}
-              onClose={() => setPersonalizeVisible(false)}
-            />
-
-            <ChatScreen
-              visible={chatVisible}
-              onClose={() => setChatVisible(false)}
-              onOpenModelSelect={handleOpenModelSelect}
-            />
-
-            {/* Overlay Sheets */}
-            <SettingsSheet
-              visible={settingsVisible}
-              onClose={() => setSettingsVisible(false)}
-              onOpenPersonalize={() => {
-                setSettingsVisible(false);
-                setTimeout(handleOpenPersonalize, 300);
-              }}
-            />
-
-            <WebSearchSheet
-              visible={webSearchVisible}
-              onClose={() => setWebSearchVisible(false)}
-            />
-
-            <SelectModelSheet
-              visible={modelPickerVisible}
-              onClose={() => setModelPickerVisible(false)}
-              onSelectModel={handleSelectModel}
-            />
-          </View>
-        </NavigationContainer>
-      </SafeAreaProvider>
-    </GestureHandlerRootView>
+    <NavigationContainer>
+      <Stack.Navigator screenOptions={{ headerShown: false }} initialRouteName="Login">
+        <Stack.Screen name="Login" component={LoginScreen} />
+        <Stack.Screen name="Home" component={HomeScreen} />
+      </Stack.Navigator>
+    </NavigationContainer>
   );
 }
-
-const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-  },
-});
-
-export default App;
