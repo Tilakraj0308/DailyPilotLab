@@ -1,10 +1,52 @@
-import React from "react";
-import { View, Text, TouchableOpacity, Image, SafeAreaView } from "react-native";
+import React, { useEffect, useState } from "react";
+import { View, Text, TouchableOpacity, Image, SafeAreaView, ActivityIndicator } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { MaterialIcons } from "@expo/vector-icons";
+import * as WebBrowser from "expo-web-browser";
+import * as Google from "expo-auth-session/providers/google";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
+WebBrowser.maybeCompleteAuthSession();
 
 export default function LoginScreen() {
     const navigation = useNavigation<any>();
+    const [isVerifying, setIsVerifying] = useState(false);
+
+    const [request, response, promptAsync] = Google.useAuthRequest({
+        webClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID,
+        androidClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID,
+    });
+
+    useEffect(() => {
+        if (response?.type === "success" && response.authentication?.idToken) {
+            handleBackendSignIn(response.authentication.idToken);
+        }
+    }, [response]);
+
+    const handleBackendSignIn = async (idToken: string) => {
+        setIsVerifying(true);
+        try {
+            const res = await fetch(`${process.env.EXPO_PUBLIC_API_URL}/auth/google`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id_token: idToken }),
+            });
+
+            if (!res.ok) throw new Error("Backend authentication failed");
+
+            const data = await res.json();
+            if (data.access_token) {
+                await AsyncStorage.setItem("jwt_token", data.access_token);
+                await AsyncStorage.setItem("user_info", JSON.stringify(data.user));
+                navigation.replace("Home");
+            }
+        } catch (e) {
+            console.error(e);
+            alert("Failed to authenticate with backend.");
+        } finally {
+            setIsVerifying(false);
+        }
+    };
 
     return (
         <SafeAreaView className="flex-1 bg-background justify-between items-center px-8 py-12">
@@ -54,21 +96,26 @@ export default function LoginScreen() {
                     {/* Google Auth */}
                     <TouchableOpacity
                         className="w-full bg-surface-container-lowest py-4 px-6 rounded-lg border border-outline-variant/20 flex-row items-center justify-center gap-3"
-                        onPress={() => navigation.navigate("Home")}
+                        onPress={() => promptAsync()}
+                        disabled={!request || isVerifying}
                     >
-                        <Image
-                            source={{ uri: "https://lh3.googleusercontent.com/aida-public/AB6AXuBzrcEO4WmlwRT96EDgA7nExM-mxDDhqJrZGeme_RlGVj7gHZNYqQVgAvmtw1Uayhs_QnMOlDQXi9pPozsXuSdQ8q4H3J9in019jIXNcHh-JYzdyeMnohkekaTYanbvrdgHrkIepfASbB7tVTxqroGUb-GiURJJSe-Zoso7GJ6CxbriLegRMaXtRlFl7EpXfdZ0d1H1YoNGJBFpcxKh0n5p4QsqWwbHiwWws_ASgdInDJJcxMtb-dPzhxK6xzoDWd1l2wVic5Eon9sT" }}
-                            className="w-5 h-5"
-                        />
+                        {isVerifying ? (
+                            <ActivityIndicator color="#4e45e4" size="small" />
+                        ) : (
+                            <Image
+                                source={{ uri: "https://lh3.googleusercontent.com/aida-public/AB6AXuBzrcEO4WmlwRT96EDgA7nExM-mxDDhqJrZGeme_RlGVj7gHZNYqQVgAvmtw1Uayhs_QnMOlDQXi9pPozsXuSdQ8q4H3J9in019jIXNcHh-JYzdyeMnohkekaTYanbvrdgHrkIepfASbB7tVTxqroGUb-GiURJJSe-Zoso7GJ6CxbriLegRMaXtRlFl7EpXfdZ0d1H1YoNGJBFpcxKh0n5p4QsqWwbHiwWws_ASgdInDJJcxMtb-dPzhxK6xzoDWd1l2wVic5Eon9sT" }}
+                                className="w-5 h-5"
+                            />
+                        )}
                         <Text
                             className="text-on-surface text-base"
                             style={{ fontFamily: "Inter_600SemiBold" }}
                         >
-                            Continue with Google
+                            {isVerifying ? "Verifying..." : "Continue with Google"}
                         </Text>
                     </TouchableOpacity>
 
-                    {/* GitHub Auth */}
+                    {/* GitHub Auth - Currently Mocks transition to Home */}
                     <TouchableOpacity
                         className="w-full bg-[#24292e] py-4 px-6 rounded-lg flex-row items-center justify-center gap-3"
                         onPress={() => navigation.navigate("Home")}
