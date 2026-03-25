@@ -1,48 +1,58 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import { View, Text, TouchableOpacity, Image, SafeAreaView, ActivityIndicator } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { MaterialIcons } from "@expo/vector-icons";
 import * as WebBrowser from "expo-web-browser";
-import * as Google from "expo-auth-session/providers/google";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { makeRedirectUri } from "expo-auth-session";
+import * as QueryParams from "expo-auth-session/build/QueryParams";
+import { supabase } from "../lib/supabase";
 
 WebBrowser.maybeCompleteAuthSession();
+
+const redirectTo = makeRedirectUri();
 
 export default function LoginScreen() {
     const navigation = useNavigation<any>();
     const [isVerifying, setIsVerifying] = useState(false);
 
-    const [request, response, promptAsync] = Google.useAuthRequest({
-        webClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID,
-        androidClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID,
-    });
-
-    useEffect(() => {
-        if (response?.type === "success" && response.authentication?.idToken) {
-            handleBackendSignIn(response.authentication.idToken);
-        }
-    }, [response]);
-
-    const handleBackendSignIn = async (idToken: string) => {
+    const handleGoogleSignIn = async () => {
         setIsVerifying(true);
         try {
-            const res = await fetch(`${process.env.EXPO_PUBLIC_API_URL}/auth/google`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ id_token: idToken }),
+            const { data, error } = await supabase.auth.signInWithOAuth({
+                provider: "google",
+                options: {
+                    redirectTo,
+                    skipBrowserRedirect: true,
+                },
             });
 
-            if (!res.ok) throw new Error("Backend authentication failed");
+            if (error) throw error;
 
-            const data = await res.json();
-            if (data.access_token) {
-                await AsyncStorage.setItem("jwt_token", data.access_token);
-                await AsyncStorage.setItem("user_info", JSON.stringify(data.user));
-                navigation.replace("Home");
+            // Open the Supabase OAuth URL in an in-app browser
+            const result = await WebBrowser.openAuthSessionAsync(
+                data.url,
+                redirectTo,
+            );
+
+            if (result.type === "success") {
+                const { url } = result;
+                // Extract tokens from the URL fragment
+                const { params, errorCode } = QueryParams.getQueryParams(url);
+
+                if (errorCode) throw new Error(errorCode);
+
+                const { access_token, refresh_token } = params;
+                if (access_token && refresh_token) {
+                    await supabase.auth.setSession({
+                        access_token,
+                        refresh_token,
+                    });
+                    // AuthContext will detect session change and update navigation
+                }
             }
         } catch (e) {
             console.error(e);
-            alert("Failed to authenticate with backend.");
+            alert("Failed to authenticate. Please try again.");
         } finally {
             setIsVerifying(false);
         }
@@ -96,8 +106,8 @@ export default function LoginScreen() {
                     {/* Google Auth */}
                     <TouchableOpacity
                         className="w-full bg-surface-container-lowest py-4 px-6 rounded-lg border border-outline-variant/20 flex-row items-center justify-center gap-3"
-                        onPress={() => promptAsync()}
-                        disabled={!request || isVerifying}
+                        onPress={handleGoogleSignIn}
+                        disabled={isVerifying}
                     >
                         {isVerifying ? (
                             <ActivityIndicator color="#4e45e4" size="small" />
