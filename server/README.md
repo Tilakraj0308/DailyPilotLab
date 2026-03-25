@@ -55,6 +55,10 @@ A FastAPI service that captures raw ideas, groups them into topics using semanti
 
 4. **Get your OpenAI API key** from [platform.openai.com/api-keys](https://platform.openai.com/api-keys).
 
+5. **Get your Supabase JWT Secret** for backend auth:
+   - Go to **Project Settings → API → JWT Secret**
+   - Copy the secret — this is used by the backend to verify Supabase-issued JWTs.
+
 ---
 
 ## Environment Configuration
@@ -73,6 +77,9 @@ dbname=postgres
 
 # ── OpenAI ───────────────────────────────────────────────────────────────────
 OPENAPI=sk-...
+
+# ── Auth ─────────────────────────────────────────────────────────────────────
+SUPABASE_JWT_SECRET=your-supabase-jwt-secret   # from Supabase → Settings → API
 
 # ── Tuning knobs (leave defaults unless you know what you're changing) ────────
 TOPIC_ASSIGNMENT_THRESHOLD_SIMILARITY=0.48
@@ -137,15 +144,18 @@ Interactive docs: `http://127.0.0.1:8000/docs`
 
 ## API Endpoints
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/ideas` | List all ideas |
-| `POST` | `/ideas` | Create a single idea |
-| `POST` | `/ideas/bulk` | Create multiple ideas at once |
-| `POST` | `/ideas/update` | Update an idea |
-| `POST` | `/ideas/delete` | Delete a single idea |
-| `POST` | `/ideas/delete/bulk` | Delete multiple ideas by ID |
-| `POST` | `/ideas/delete/all` | Delete all ideas |
-| `GET` | `/topics/assign` | Run topic assignment for unprocessed ideas |
-| `GET` | `/semantic-search?query=…` | Semantic search across ideas |
-| `GET` | `/refine-ideas` | Refine raw ideas using AI |
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `GET` | `/auth/profile` | 🔒 | Get current user profile (auto-creates on first call) |
+| `GET` | `/ideas` | | List all ideas |
+| `POST` | `/ideas` | | Create a single idea |
+| `POST` | `/ideas/bulk` | | Create multiple ideas at once |
+| `POST` | `/ideas/update` | | Update an idea |
+| `POST` | `/ideas/delete` | | Delete a single idea |
+| `POST` | `/ideas/delete/bulk` | | Delete multiple ideas by ID |
+| `POST` | `/ideas/delete/all` | | Delete all ideas |
+| `GET` | `/topics/assign` | | Run topic assignment for unprocessed ideas |
+| `GET` | `/semantic-search?query=…` | | Semantic search across ideas |
+| `GET` | `/refine-ideas` | | Refine raw ideas using AI |
+
+> 🔒 = requires `Authorization: Bearer <supabase_jwt>` header
