@@ -1,12 +1,10 @@
-from fastapi import FastAPI, Response, Depends
+from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 from utils.idea_manager import get_ideas, create_idea, create_ideas, update_idea, delete_idea, delete_ideas, delete_all_ideas, raw_to_refined_ideas
 from models.ideas import IdeaCreateInput, IdeaOut, IdeaUpdateInput, IdeaDeleteInput
-from models.users import UserOut
+from models.users import GoogleAuthRequest, AuthResponse, UserOut
 from utils.helpers import assign_idea_to_topic, semantic_search_memories, update_traits
-from utils.auth_middleware import get_current_user
-from services.auth_service import get_or_create_user
-from db.dbConnection import get_dict_cursor
+from services.auth_service import verify_google_token, get_or_create_user, create_access_token
 from typing import List 
 from dotenv import load_dotenv
 from utils.topic_manager import update_topic_recency
@@ -25,19 +23,31 @@ app.add_middleware(
 
 # ─── Authentication ─────────────────────────────────────────────────────────
 
-@app.get("/auth/profile", response_model=UserOut)
-def get_profile(user_id: int = Depends(get_current_user)):
+@app.post("/auth/google", response_model=AuthResponse)
+def google_auth(payload: GoogleAuthRequest):
     """
-    Return the current user's profile.
-    The user is auto-created on first call (handled inside get_current_user).
+    Authenticate via Google OAuth.
+    The client sends the Google ID token obtained from Google Sign-In.
     """
-    with get_dict_cursor() as cur:
-        cur.execute(
-            "SELECT id, email, display_name, avatar_url FROM public.users WHERE id = %s",
-            (user_id,),
-        )
-        user = cur.fetchone()
-    return UserOut(**dict(user))
+    # 1. Verify the Google ID token
+    google_info = verify_google_token(payload.id_token)
+
+    # 2. Get or create user in our DB
+    user = get_or_create_user(
+        google_id=google_info["sub"],
+        email=google_info.get("email", ""),
+        display_name=google_info.get("name"),
+        avatar_url=google_info.get("picture"),
+    )
+
+    # 3. Issue our own JWT
+    access_token = create_access_token(user["id"])
+
+    # 4. Return JWT + user info
+    return AuthResponse(
+        access_token=access_token,
+        user=UserOut(**user),
+    )
 
 
 # ─── Ideas ───────────────────────────────────────────────────────────────────
@@ -106,3 +116,4 @@ def updateTraits(response: Response):
     update_response = update_traits()
     response.status_code = update_response['status']
     return {'message': update_response['message']}
+
