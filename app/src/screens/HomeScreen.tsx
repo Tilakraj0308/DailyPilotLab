@@ -9,11 +9,36 @@ import {
     TextInput,
     KeyboardAvoidingView,
     Platform,
+    Alert,
 } from "react-native";
 import { MaterialIcons } from "@expo/vector-icons";
+import { useNavigation } from "@react-navigation/native";
+import { useAuth } from "../context/AuthContext";
 
 export default function HomeScreen() {
     const [chatInput, setChatInput] = useState("");
+    const { signOut, user } = useAuth();
+    const navigation = useNavigation<any>();
+
+    const handleSignOut = () => {
+        if (Platform.OS === "web") {
+            if (window.confirm("Are you sure you want to sign out?")) {
+                signOut().then(() => navigation.replace("Login"));
+            }
+            return;
+        }
+        Alert.alert("Sign Out", "Are you sure you want to sign out?", [
+            { text: "Cancel", style: "cancel" },
+            {
+                text: "Sign Out",
+                style: "destructive",
+                onPress: async () => {
+                    await signOut();
+                    navigation.replace("Login");
+                },
+            },
+        ]);
+    };
 
     const getGreeting = () => {
         const hour = new Date().getHours();
@@ -35,9 +60,9 @@ export default function HomeScreen() {
                 >
                     DailyPilot
                 </Text>
-                <TouchableOpacity>
+                <TouchableOpacity onPress={handleSignOut}>
                     <Image
-                        source={{ uri: "https://i.pravatar.cc/150?u=a042581f4e29026704d" }}
+                        source={{ uri: user?.user_metadata?.avatar_url || "https://i.pravatar.cc/150?u=a042581f4e29026704d" }}
                         className="w-9 h-9 rounded-full border border-outline-variant/20"
                     />
                 </TouchableOpacity>
