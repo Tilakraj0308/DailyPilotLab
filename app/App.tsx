@@ -11,6 +11,9 @@ import { Manrope_400Regular, Manrope_600SemiBold, Manrope_700Bold, Manrope_800Ex
 import { AuthProvider, useAuth } from "./src/context/AuthContext";
 import LoginScreen from "./src/screens/LoginScreen";
 import HomeScreen from "./src/screens/HomeScreen";
+import { supabase } from "./src/lib/supabase";
+import * as Linking from "expo-linking";
+import * as QueryParams from "expo-auth-session/build/QueryParams";
 
 const Stack = createNativeStackNavigator();
 
@@ -19,6 +22,22 @@ SplashScreen.preventAutoHideAsync();
 
 function AppNavigator() {
   const { session, isLoading } = useAuth();
+  const incomingUrl = Linking.useURL();
+
+  // Root-level listener specifically meant to catch deep links that WebBrowser drops.
+  useEffect(() => {
+    if (incomingUrl) {
+      const { params, errorCode } = QueryParams.getQueryParams(incomingUrl);
+      if (params?.access_token && params?.refresh_token) {
+        supabase.auth.setSession({
+          access_token: params.access_token,
+          refresh_token: params.refresh_token,
+        });
+      } else if (params?.code) {
+        supabase.auth.exchangeCodeForSession(params.code);
+      }
+    }
+  }, [incomingUrl]);
 
   const [fontsLoaded] = useFonts({
     Inter_400Regular,
@@ -46,9 +65,12 @@ function AppNavigator() {
 
   return (
     <NavigationContainer>
-      <Stack.Navigator screenOptions={{ headerShown: false }} initialRouteName={session ? "Home" : "Login"}>
-        <Stack.Screen name="Login" component={LoginScreen} />
-        <Stack.Screen name="Home" component={HomeScreen} />
+      <Stack.Navigator screenOptions={{ headerShown: false }}>
+        {session ? (
+          <Stack.Screen name="Home" component={HomeScreen} />
+        ) : (
+          <Stack.Screen name="Login" component={LoginScreen} />
+        )}
       </Stack.Navigator>
     </NavigationContainer>
   );

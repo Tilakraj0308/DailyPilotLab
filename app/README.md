@@ -51,9 +51,10 @@ npm install
 > By default Supabase allows **all** redirect URLs. Once you add your first entry, it enforces an allowlist. Skip this for local dev; add them before going to production.
 
 1. Go to **Supabase Dashboard → Authentication → URL Configuration**
-2. Under **Redirect URLs**, add:
-   - `dailypilot://` (for production builds)
+2. Under **Redirect URLs**, add exactly the following (the wildcards `*` are strictly required to survive dynamic IP changes):
+   - `dailypilot://*` (for production builds and intent fallbacks)
    - `exp://*` (for development with Expo Go)
+   - `https://auth.expo.io/*` (for Expo auth proxies)
 
 ### 3. Environment Variables
 

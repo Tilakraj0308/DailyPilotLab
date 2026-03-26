@@ -4,13 +4,13 @@ import {
     Text,
     TouchableOpacity,
     Image,
-    SafeAreaView,
     ScrollView,
     TextInput,
     KeyboardAvoidingView,
     Platform,
     Alert,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { MaterialIcons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { useAuth } from "../context/AuthContext";
@@ -23,7 +23,7 @@ export default function HomeScreen() {
     const handleSignOut = () => {
         if (Platform.OS === "web") {
             if (window.confirm("Are you sure you want to sign out?")) {
-                signOut().then(() => navigation.replace("Login"));
+                signOut();
             }
             return;
         }
@@ -34,7 +34,6 @@ export default function HomeScreen() {
                 style: "destructive",
                 onPress: async () => {
                     await signOut();
-                    navigation.replace("Login");
                 },
             },
         ]);
@@ -60,7 +59,8 @@ export default function HomeScreen() {
                 >
                     DailyPilot
                 </Text>
-                <TouchableOpacity onPress={handleSignOut}>
+                <TouchableOpacity onPress={handleSignOut} className="flex-row items-center gap-2">
+                    <Text className="text-sm font-semibold text-red-500 mr-2">Sign Out</Text>
                     <Image
                         source={{ uri: user?.user_metadata?.avatar_url || "https://i.pravatar.cc/150?u=a042581f4e29026704d" }}
                         className="w-9 h-9 rounded-full border border-outline-variant/20"

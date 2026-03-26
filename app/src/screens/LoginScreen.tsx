@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import { View, Text, TouchableOpacity, Image, SafeAreaView, ActivityIndicator } from "react-native";
+import { View, Text, TouchableOpacity, Image, ActivityIndicator, Platform } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { MaterialIcons } from "@expo/vector-icons";
 import * as WebBrowser from "expo-web-browser";
@@ -18,6 +19,17 @@ export default function LoginScreen() {
     const handleGoogleSignIn = async () => {
         setIsVerifying(true);
         try {
+            if (Platform.OS === "web") {
+                const { error } = await supabase.auth.signInWithOAuth({
+                    provider: "google",
+                    options: {
+                        redirectTo: window.location.origin,
+                    },
+                });
+                if (error) throw error;
+                return;
+            }
+
             const { data, error } = await supabase.auth.signInWithOAuth({
                 provider: "google",
                 options: {
@@ -36,23 +48,31 @@ export default function LoginScreen() {
 
             if (result.type === "success") {
                 const { url } = result;
-                // Extract tokens from the URL fragment
+
+                // Parse tokens from URL fragment/query
                 const { params, errorCode } = QueryParams.getQueryParams(url);
 
                 if (errorCode) throw new Error(errorCode);
 
-                const { access_token, refresh_token } = params;
-                if (access_token && refresh_token) {
+                // For implicit flow
+                if (params.access_token && params.refresh_token) {
                     await supabase.auth.setSession({
-                        access_token,
-                        refresh_token,
+                        access_token: params.access_token,
+                        refresh_token: params.refresh_token,
                     });
-                    // AuthContext will detect session change and update navigation
+                } else if (params.code) {
+                    // Modern Supabase (v2) uses PKCE by default and returns a 'code'
+                    const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(params.code);
+                    if (exchangeError) throw exchangeError;
+                } else {
+                    console.log("OAuth URL didn't contain access tokens or a code. URL:", url);
                 }
+            } else {
+                console.log("Browser Session closed with result:", result.type);
             }
-        } catch (e) {
+        } catch (e: any) {
             console.error(e);
-            alert("Failed to authenticate. Please try again.");
+            alert("Failed to authenticate: " + (e.message || "Unknown error"));
         } finally {
             setIsVerifying(false);
         }
@@ -128,7 +148,7 @@ export default function LoginScreen() {
                     {/* GitHub Auth - Currently Mocks transition to Home */}
                     <TouchableOpacity
                         className="w-full bg-[#24292e] py-4 px-6 rounded-lg flex-row items-center justify-center gap-3"
-                        onPress={() => navigation.navigate("Home")}
+                        onPress={() => alert("GitHub login not implemented yet")}
                     >
                         <MaterialIcons name="code" size={24} color="#ffffff" />
                         <Text
