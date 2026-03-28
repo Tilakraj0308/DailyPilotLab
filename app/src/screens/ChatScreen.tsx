@@ -1,0 +1,401 @@
+import React, { useState, useRef, useEffect } from 'react';
+import {
+    View,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    ScrollView,
+    KeyboardAvoidingView,
+    Platform,
+    ActivityIndicator,
+    Keyboard,
+    Alert
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { MaterialIcons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
+import * as FileSystem from 'expo-file-system';
+import { useChatSocket, ChatMessage } from '../hooks/useChatSocket';
+
+// Safely import expo-av
+let Audio: any = null;
+let isAudioAvailable = false;
+try {
+    Audio = require('expo-av').Audio;
+    isAudioAvailable = true;
+} catch (err) {
+    console.warn('⚠️ expo-av not available (native module issue)', err);
+}
+
+const MAX_RECORDING_MS = 60000; // 60s max per voice memo
+
+export default function ChatScreen() {
+    const navigation = useNavigation<any>();
+    const { messages, status, sendText, clearSession, isWaitingForResponse } = useChatSocket();
+    const [inputText, setInputText] = useState('');
+
+    // Audio recording state
+    const [isRecording, setIsRecording] = useState(false);
+    const [recordingDuration, setRecordingDuration] = useState(0);
+    const [isUploadingAudio, setIsUploadingAudio] = useState(false);
+    const recordingRef = useRef<Audio.Recording | null>(null);
+    const timerRef = useRef<NodeJS.Timeout | null>(null);
+    const scrollViewRef = useRef<ScrollView>(null);
+
+    // Setup audio permissions on mount
+    useEffect(() => {
+        setupAudioPermissions();
+    }, []);
+
+    const setupAudioPermissions = async () => {
+        try {
+            if (!isAudioAvailable) {
+                console.warn('⚠️ Audio module not available, skipping permission setup');
+                return;
+            }
+            const { status: existingStatus } = await Audio.getPermissionsAsync();
+            if (existingStatus !== 'granted') {
+                const { status: newStatus } = await Audio.requestPermissionsAsync();
+                if (newStatus !== 'granted') {
+                    console.warn('Audio permissions not granted');
+                }
+            }
+            await Audio.setAudioModeAsync({
+                allowsRecordingIOS: true,
+                playsInSilentModeIOS: true,
+                staysActiveInBackground: false,
+                shouldDuckAndroid: true,
+                playThroughEarpiece: false,
+            });
+        } catch (err) {
+            console.error("Failed to setup audio", err);
+        }
+    };
+
+    const handleSendText = () => {
+        if (!inputText.trim()) return;
+        sendText(inputText.trim());
+        setInputText('');
+    };
+
+    const startRecording = async () => {
+        try {
+            if (!isAudioAvailable) {
+                Alert.alert("Not Available", "Audio recording is not available on this device");
+                return;
+            }
+            console.log('🎤 Starting recording...');
+            setIsRecording(true);
+            setRecordingDuration(0);
+
+            const recording = new Audio.Recording();
+            await recording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+            await recording.startAsync();
+            recordingRef.current = recording;
+            console.log('✅ Recording started');
+
+            // Start timer
+            timerRef.current = setInterval(() => {
+                setRecordingDuration((prev) => {
+                    if (prev >= 60) {
+                        console.log('⏱️ Max recording time reached, stopping...');
+                        stopRecording(); // Auto-stop at 60 seconds
+                        return prev;
+                    }
+                    return prev + 1;
+                });
+            }, 1000);
+        } catch (err) {
+            console.error("Failed to start recording", err);
+            setIsRecording(false);
+            Alert.alert("Recording Error", "Failed to start audio recording");
+        }
+    };
+
+    const stopRecording = async () => {
+        try {
+            if (!isAudioAvailable) return;
+            console.log('🛑 Stopping recording...');
+            if (!recordingRef.current) return;
+
+            setIsRecording(false);
+            if (timerRef.current) {
+                clearInterval(timerRef.current);
+                timerRef.current = null;
+            }
+
+            await recordingRef.current.stopAndUnloadAsync();
+            const uri = recordingRef.current.getURI();
+            recordingRef.current = null;
+            console.log('✅ Recording stopped, URI:', uri);
+
+            if (!uri) {
+                Alert.alert("Error", "Failed to get recording URI");
+                return;
+            }
+
+            // Upload and transcribe
+            await uploadAndTranscribe(uri);
+        } catch (err) {
+            console.error("Failed to stop recording", err);
+            Alert.alert("Error", "Failed to stop recording");
+        }
+    };
+
+    const uploadAndTranscribe = async (audioUri: string) => {
+        try {
+            setIsUploadingAudio(true);
+            console.log('🎤 Starting transcription from:', audioUri);
+
+            // Read the audio file - handle both blob URIs (web) and file paths (native)
+            let mediaBlob: Blob;
+
+            if (audioUri.startsWith('blob:')) {
+                console.log('🌐 Web blob detected, fetching blob...');
+                const response = await fetch(audioUri);
+                mediaBlob = await response.blob();
+                console.log('✅ Blob fetched, size:', mediaBlob.size, 'bytes');
+            } else {
+                console.log('📱 Native file path detected, reading from FileSystem...');
+                const base64Audio = await FileSystem.readAsStringAsync(audioUri, {
+                    encoding: FileSystem.EncodingType.Base64,
+                });
+                // Convert base64 string to Blob
+                const binaryString = atob(base64Audio);
+                const bytes = new Uint8Array(binaryString.length);
+                for (let i = 0; i < binaryString.length; i++) {
+                    bytes[i] = binaryString.charCodeAt(i);
+                }
+                mediaBlob = new Blob([bytes], { type: 'audio/wav' });
+                console.log('✅ FileSystem base64 converted to Blob, size:', mediaBlob.size, 'bytes');
+            }
+
+            // Get API URL
+            const apiUrl = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000';
+            console.log('🔗 API URL:', apiUrl);
+
+            // Create FormData and send to backend
+            const formData = new FormData();
+            formData.append('file', mediaBlob, 'audio.wav');
+
+            console.log('📤 Uploading to /transcribe...');
+            const response = await fetch(`${apiUrl}/transcribe`, {
+                method: 'POST',
+                body: formData,
+            });
+
+            console.log('📥 Response status:', response.status);
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error('❌ Transcription error response:', errorText);
+                throw new Error(`Transcription failed: ${response.statusText}`);
+            }
+
+            const result = await response.json();
+            console.log('📝 Transcription result:', result);
+
+            if (result.success && result.text) {
+                console.log('✅ Transcribed text:', result.text);
+                console.log('� Connection status:', status);
+                console.log('�📨 Sending to chat...');
+                // Send transcribed text as chat message
+                sendText(result.text.trim());
+                console.log('✅ Message sent!');
+            } else {
+                console.error('❌ No text in result:', result);
+                Alert.alert("Error", result.error || "Failed to transcribe audio");
+            }
+        } catch (err) {
+            console.error("Transcription error:", err);
+            Alert.alert("Error", "Failed to transcribe audio: " + String(err));
+        } finally {
+            setIsUploadingAudio(false);
+        }
+    };
+
+    const formatDuration = (seconds: number) => {
+        const m = Math.floor(seconds / 60);
+        const s = Math.floor(seconds % 60);
+        return `${m}:${s.toString().padStart(2, '0')}`;
+    };
+
+    const renderMessage = ({ item }: { item: ChatMessage }) => {
+        const isUser = item.role === 'user';
+        return (
+            <View className={`w-full flex-col mb-4 ${isUser ? 'items-end' : 'items-start'}`}>
+                <View className={`flex-row gap-2 items-end max-w-[85%] ${isUser ? 'flex-row-reverse' : ''}`}>
+                    <View className={`w-8 h-8 rounded-full items-center justify-center -mb-2 ${isUser ? 'bg-surface-variant' : 'bg-secondary-container'}`}>
+                        <MaterialIcons name={isUser ? "person" : "smart-toy"} size={18} color={isUser ? "#586064" : "#4e45e4"} />
+                    </View>
+                    <View className={`p-4 rounded-2xl ${isUser ? 'bg-secondary rounded-br-sm' : 'bg-surface-container rounded-bl-sm'}`}>
+                        <Text
+                            className={`text-sm leading-relaxed ${isUser ? 'text-white' : 'text-on-surface'}`}
+                            style={{ fontFamily: isUser ? "Inter_500Medium" : "Inter_400Regular" }}
+                        >
+                            {item.content}
+                        </Text>
+                    </View>
+                </View>
+            </View>
+        );
+    };
+
+    const isStreaming = messages.length > 0 && messages[messages.length - 1].role === 'assistant' && status === 'connected';
+
+    return (
+        <SafeAreaView className="flex-1 bg-background" edges={['top']}>
+            {/* Header */}
+            <View className="flex-row items-center justify-between px-5 py-3 border-b border-outline-variant/10 bg-background">
+                <View className="flex-row items-center gap-3">
+                    <TouchableOpacity onPress={() => navigation.goBack()} className="p-1">
+                        <MaterialIcons name="arrow-back" size={24} color="#2b3437" />
+                    </TouchableOpacity>
+                    <Text className="text-lg font-bold text-on-surface" style={{ fontFamily: "Manrope_700Bold" }}>
+                        DailyPilot Chat
+                    </Text>
+                </View>
+                <TouchableOpacity onPress={clearSession} className="p-2 ml-auto" accessibilityLabel="New Chat">
+                    <MaterialIcons name="add-comment" size={22} color="#4e45e4" />
+                </TouchableOpacity>
+            </View>
+
+            {/* Connection Status Banner (if not connected) */}
+            {status !== 'connected' && (
+                <View className="bg-error-container/20 px-4 py-1 flex-row justify-center items-center gap-2">
+                    {status === 'connecting' || status === 'reconnecting' ? (
+                        <>
+                            <ActivityIndicator size="small" color="#ef4444" />
+                            <Text className="text-xs text-error" style={{ fontFamily: "Inter_500Medium" }}>Reconnecting...</Text>
+                        </>
+                    ) : (
+                        <Text className="text-xs text-error" style={{ fontFamily: "Inter_500Medium" }}>Disconnected. Features limited.</Text>
+                    )}
+                </View>
+            )}
+
+            {/* Main Content - Using KeyboardAvoidingView + ScrollView for proper Android keyboard handling */}
+            <KeyboardAvoidingView
+                behavior={Platform.OS === "ios" ? "padding" : "height"}
+                style={{ flex: 1 }}
+                keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
+            >
+                <View className="flex-1">
+                    {/* Chat Messages ScrollView */}
+                    <ScrollView
+                        ref={scrollViewRef}
+                        className="flex-1 bg-background"
+                        contentContainerStyle={{ paddingVertical: 16, paddingHorizontal: 16 }}
+                        onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
+                        showsVerticalScrollIndicator={false}
+                    >
+                        {messages.length === 0 ? (
+                            <View className="flex-1 justify-center items-center py-32 opacity-50">
+                                <MaterialIcons name="forum" size={64} color="#586064" />
+                                <Text className="text-lg mt-4 text-on-surface-variant" style={{ fontFamily: "Inter_500Medium" }}>Start a conversation</Text>
+                                <Text className="text-sm mt-1 text-center px-10 text-on-surface-variant" style={{ fontFamily: "Inter_400Regular" }}>
+                                    Type a message and press Enter or click send to chat.
+                                </Text>
+                            </View>
+                        ) : (
+                            messages.map(item => renderMessage({ item }))
+                        )}
+
+                        {/* Typing Indicator - Show while waiting for response */}
+                        {isWaitingForResponse && (
+                            <View className="py-2 flex-row items-center gap-2">
+                                <View className="w-8 h-8 rounded-full items-center justify-center bg-secondary-container">
+                                    <MaterialIcons name="smart-toy" size={16} color="#4e45e4" />
+                                </View>
+                                <View className="flex-row items-center gap-1">
+                                    <View className="w-2 h-2 rounded-full bg-on-surface-variant" style={{ opacity: 0.5 }} />
+                                    <View className="w-2 h-2 rounded-full bg-on-surface-variant" style={{ opacity: 0.7 }} />
+                                    <View className="w-2 h-2 rounded-full bg-on-surface-variant" style={{ opacity: 0.9 }} />
+                                </View>
+                                <Text className="text-xs text-on-surface-variant ml-1" style={{ fontFamily: "Inter_400Regular" }}>AI is thinking...</Text>
+                            </View>
+                        )}
+                    </ScrollView>
+
+                    {/* Input Bar - Fixed at bottom, NOT inside scroll view */}
+                    <View className="bg-surface border-t border-outline-variant/10 px-4 py-3">
+                        <View className="flex-row items-end gap-3">
+                            {/* Main Input Area */}
+                            <View className="flex-1 flex-row items-center rounded-3xl bg-surface-container px-4 py-1 border border-outline-variant/20">
+                                <TextInput
+                                    className="flex-1 max-h-32 text-sm text-on-surface py-3"
+                                    placeholder="Message DailyPilot..."
+                                    placeholderTextColor="#586064"
+                                    value={inputText}
+                                    onChangeText={setInputText}
+                                    onSubmitEditing={handleSendText}
+                                    multiline
+                                    style={{ fontFamily: "Inter_400Regular" }}
+                                    returnKeyType="send"
+                                    editable={status === 'connected'}
+                                />
+
+                                {/* Send or Mic Button inside the pill */}
+                                {inputText.trim().length > 0 ? (
+                                    <TouchableOpacity
+                                        onPress={handleSendText}
+                                        className="w-9 h-9 items-center justify-center bg-secondary rounded-full ml-2"
+                                        disabled={status !== 'connected'}
+                                    >
+                                        <MaterialIcons name="arrow-upward" size={20} color="#ffffff" />
+                                    </TouchableOpacity>
+                                ) : isAudioAvailable ? (
+                                    <View className="ml-2">
+                                        {/* Microphone Recording Button */}
+                                        {isUploadingAudio ? (
+                                            <View className="w-10 h-10 items-center justify-center rounded-full">
+                                                <ActivityIndicator size={22} color="#4e45e4" />
+                                            </View>
+                                        ) : (
+                                            <TouchableOpacity
+                                                onPress={() => {
+                                                    if (isRecording) {
+                                                        stopRecording();
+                                                    } else {
+                                                        startRecording();
+                                                    }
+                                                }}
+                                                className={`w-10 h-10 items-center justify-center rounded-full ${
+                                                    isRecording ? 'bg-error' : 'bg-surface-variant'
+                                                }`}
+                                                disabled={status !== 'connected'}
+                                            >
+                                                <MaterialIcons
+                                                    name={isRecording ? "stop" : "mic-none"}
+                                                    size={22}
+                                                    color={isRecording ? "#ffffff" : "#9CA4AA"}
+                                                />
+                                            </TouchableOpacity>
+                                        )}
+                                    </View>
+                                ) : (
+                                    <View className="w-10 h-10 items-center justify-center rounded-full bg-gray-400 opacity-50">
+                                        <MaterialIcons name="mic-off" size={22} color="#FFFFFF" />
+                                    </View>
+                                )}
+                            </View>
+                        </View>
+
+                        {/* Recording Indicator */}
+                        {isRecording && (
+                            <View className="mt-3 flex-row items-center gap-2 bg-error-container/10 px-4 py-2 rounded-lg border border-error/30">
+                                <View className="w-3 h-3 rounded-full bg-error animate-pulse" />
+                                <Text className="text-sm text-error font-semibold" style={{ fontFamily: "Inter_600SemiBold" }}>
+                                    Recording: {formatDuration(recordingDuration)}
+                                </Text>
+                                <Text className="text-xs text-error/70 ml-auto" style={{ fontFamily: "Inter_400Regular" }}>
+                                    Release to send
+                                </Text>
+                            </View>
+                        )}
+                    </View>
+                </View>
+            </KeyboardAvoidingView>
+        </SafeAreaView>
+    );
+}

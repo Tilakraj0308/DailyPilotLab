@@ -2,3 +2,5 @@ __pycache__/
 
 app/.env
 server/.env
+app/.env.local
+server/.env.local

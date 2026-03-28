@@ -9,6 +9,8 @@ import {
     KeyboardAvoidingView,
     Platform,
     Alert,
+    Modal,
+    TouchableWithoutFeedback,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MaterialIcons } from "@expo/vector-icons";
@@ -17,6 +19,7 @@ import { useAuth } from "../context/AuthContext";
 
 export default function HomeScreen() {
     const [chatInput, setChatInput] = useState("");
+    const [isProfileMenuVisible, setIsProfileMenuVisible] = useState(false);
     const { signOut, user } = useAuth();
     const navigation = useNavigation<any>();
 
@@ -59,13 +62,38 @@ export default function HomeScreen() {
                 >
                     DailyPilot
                 </Text>
-                <TouchableOpacity onPress={handleSignOut} className="flex-row items-center gap-2">
-                    <Text className="text-sm font-semibold text-red-500 mr-2">Sign Out</Text>
+                <TouchableOpacity onPress={() => setIsProfileMenuVisible(true)}>
                     <Image
                         source={{ uri: user?.user_metadata?.avatar_url || "https://i.pravatar.cc/150?u=a042581f4e29026704d" }}
                         className="w-9 h-9 rounded-full border border-outline-variant/20"
                     />
                 </TouchableOpacity>
+
+                <Modal
+                    visible={isProfileMenuVisible}
+                    transparent={true}
+                    animationType="fade"
+                    onRequestClose={() => setIsProfileMenuVisible(false)}
+                >
+                    <TouchableWithoutFeedback onPress={() => setIsProfileMenuVisible(false)}>
+                        <View className="flex-1 bg-black/20 justify-start items-end pt-16 pr-5">
+                            <TouchableWithoutFeedback>
+                                <View className="bg-surface-container-lowest rounded-xl py-2 px-4 shadow-sm border border-outline-variant/15 min-w-[150px]">
+                                    <TouchableOpacity
+                                        onPress={() => {
+                                            setIsProfileMenuVisible(false);
+                                            handleSignOut();
+                                        }}
+                                        className="py-2 flex-row items-center justify-between"
+                                    >
+                                        <Text className="text-sm font-semibold text-red-500" style={{ fontFamily: "Inter_500Medium" }}>Sign Out</Text>
+                                        <MaterialIcons name="logout" size={18} color="#ef4444" />
+                                    </TouchableOpacity>
+                                </View>
+                            </TouchableWithoutFeedback>
+                        </View>
+                    </TouchableWithoutFeedback>
+                </Modal>
             </View>
 
             {/* Main Scrollable Content */}
@@ -312,11 +340,19 @@ export default function HomeScreen() {
                 {[
                     { label: "Home", icon: "home", active: true },
                     { label: "Tasks", icon: "check-circle", active: false },
-                    { label: "Updates", icon: "calendar-view-month", active: false },
+                    { label: "Chat", icon: "chat-bubble", active: false },
                     { label: "Library", icon: "auto-stories", active: false },
                     { label: "Me", icon: "person", active: false },
                 ].map((tab, idx) => (
-                    <TouchableOpacity key={idx} className="items-center justify-center flex-1">
+                    <TouchableOpacity
+                        key={idx}
+                        className="items-center justify-center flex-1"
+                        onPress={() => {
+                            if (tab.label === 'Chat') {
+                                navigation.navigate('Chat');
+                            }
+                        }}
+                    >
                         <View
                             className={`px-4 py-1 rounded-xl mb-1 ${tab.active ? "opacity-100" : "opacity-100"
                                 }`}
