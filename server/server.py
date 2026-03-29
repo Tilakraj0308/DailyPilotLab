@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Response, WebSocket, WebSocketDisconnect, UploadFile, File
+from fastapi import FastAPI, Response, WebSocket, WebSocketDisconnect, UploadFile, File, Depends
 import json
 import asyncio
 import time
@@ -7,7 +7,8 @@ from utils.idea_manager import get_ideas, create_idea, create_ideas, update_idea
 from models.ideas import IdeaCreateInput, IdeaOut, IdeaUpdateInput, IdeaDeleteInput
 from models.users import GoogleAuthRequest, AuthResponse, UserOut
 from utils.helpers import assign_idea_to_topic, semantic_search_memories, update_traits
-from services.auth_service import verify_google_token, get_or_create_user, create_access_token
+from services.auth_service import get_or_create_user
+from utils.auth_middleware import get_current_user
 from typing import List 
 from dotenv import load_dotenv
 from utils.topic_manager import update_topic_recency
@@ -80,32 +81,46 @@ async def transcribe_endpoint(file: UploadFile = File(...)):
 
 # ─── Authentication ─────────────────────────────────────────────────────────
 
-@app.post("/auth/google", response_model=AuthResponse)
-def google_auth(payload: GoogleAuthRequest):
+# @app.post("/auth/google", response_model=AuthResponse)
+# def google_auth(payload: GoogleAuthRequest):
+#     """
+#     Authenticate via Google OAuth.
+#     The client sends the Google ID token obtained from Google Sign-In.
+#     """
+#     # 1. Verify the Google ID token
+#     google_info = verify_google_token(payload.id_token)
+
+#     # 2. Get or create user in our DB
+#     user = get_or_create_user(
+#         google_id=google_info["sub"],
+#         email=google_info.get("email", ""),
+#         display_name=google_info.get("name"),
+#         avatar_url=google_info.get("picture"),
+#     )
+
+#     # 3. Issue our own JWT
+#     access_token = create_access_token(user["id"])
+
+#     # 4. Return JWT + user info
+#     return AuthResponse(
+#         access_token=access_token,
+#         user=UserOut(**user),
+#     )
+
+@app.get("/auth/profile")
+def sync_profile(payload: dict = Depends(get_current_user)):
     """
-    Authenticate via Google OAuth.
-    The client sends the Google ID token obtained from Google Sign-In.
+    Syncs the Supabase user profile into the custom public.users table.
+    Expects a valid Supabase JWT in the Authorization header.
     """
-    # 1. Verify the Google ID token
-    google_info = verify_google_token(payload.id_token)
-
-    # 2. Get or create user in our DB
-    user = get_or_create_user(
-        google_id=google_info["sub"],
-        email=google_info.get("email", ""),
-        display_name=google_info.get("name"),
-        avatar_url=google_info.get("picture"),
-    )
-
-    # 3. Issue our own JWT
-    access_token = create_access_token(user["id"])
-
-    # 4. Return JWT + user info
-    return AuthResponse(
-        access_token=access_token,
-        user=UserOut(**user),
-    )
-
+    user_metadata = payload.get("user_metadata", {})
+    email = payload.get("email", "")
+    google_id = payload.get("sub", "")
+    name = user_metadata.get("full_name") or user_metadata.get("name")
+    avatar_url = user_metadata.get("avatar_url")
+    
+    user = get_or_create_user(google_id, email, name, avatar_url)
+    return {"status": "success", "user": user}
 
 # ─── Ideas ───────────────────────────────────────────────────────────────────
     

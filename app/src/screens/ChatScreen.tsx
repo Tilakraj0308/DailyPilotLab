@@ -220,10 +220,10 @@ export default function ChatScreen() {
         return `${m}:${s.toString().padStart(2, '0')}`;
     };
 
-    const renderMessage = ({ item }: { item: ChatMessage }) => {
+    const renderMessage = ({ item, index }: { item: ChatMessage, index: number }) => {
         const isUser = item.role === 'user';
         return (
-            <View className={`w-full flex-col mb-4 ${isUser ? 'items-end' : 'items-start'}`}>
+            <View key={item.id || index} className={`w-full flex-col mb-4 ${isUser ? 'items-end' : 'items-start'}`}>
                 <View className={`flex-row gap-2 items-end max-w-[85%] ${isUser ? 'flex-row-reverse' : ''}`}>
                     <View className={`w-8 h-8 rounded-full items-center justify-center -mb-2 ${isUser ? 'bg-surface-variant' : 'bg-secondary-container'}`}>
                         <MaterialIcons name={isUser ? "person" : "smart-toy"} size={18} color={isUser ? "#586064" : "#4e45e4"} />
@@ -298,7 +298,7 @@ export default function ChatScreen() {
                                 </Text>
                             </View>
                         ) : (
-                            messages.map(item => renderMessage({ item }))
+                            messages.map((item, index) => renderMessage({ item, index }))
                         )}
 
                         {/* Typing Indicator - Show while waiting for response */}
@@ -360,9 +360,8 @@ export default function ChatScreen() {
                                                         startRecording();
                                                     }
                                                 }}
-                                                className={`w-10 h-10 items-center justify-center rounded-full ${
-                                                    isRecording ? 'bg-error' : 'bg-surface-variant'
-                                                }`}
+                                                className={`w-10 h-10 items-center justify-center rounded-full ${isRecording ? 'bg-error' : 'bg-surface-variant'
+                                                    }`}
                                                 disabled={status !== 'connected'}
                                             >
                                                 <MaterialIcons

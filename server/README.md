@@ -74,6 +74,9 @@ dbname=postgres
 # ── OpenAI ───────────────────────────────────────────────────────────────────
 OPENAPI=sk-...
 
+# ── Supabase Auth ────────────────────────────────────────────────────────────
+SUPABASE_JWT_SECRET=your-supabase-jwt-secret
+
 # ── Tuning knobs (leave defaults unless you know what you're changing) ────────
 TOPIC_ASSIGNMENT_THRESHOLD_SIMILARITY=0.48
 TOPIC_SIMILARITY_THRESHOLD=0.2

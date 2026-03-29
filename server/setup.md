@@ -3,12 +3,14 @@
 This guide walks you through creating the Google OAuth credentials required for the DailyPilot React Native (Expo) app and the Python (FastAPI) backend.
 
 ## 1. Create a Project in Google Cloud
+
 1. Go to the [Google Cloud Console](https://console.cloud.google.com/).
 2. Click the project dropdown in the top left and select **New Project**.
 3. Name it `DailyPilot` and click **Create**.
 4. Make sure your newly created project is selected in the top-left dropdown.
 
 ## 2. Configure the OAuth Consent Screen
+
 Before creating credentials, you must set up the consent screen (the screen users see when they click "Continue with Google").
 
 1. In the left sidebar menu, go to **APIs & Services > OAuth consent screen**.
@@ -22,6 +24,7 @@ Before creating credentials, you must set up the consent screen (the screen user
 6. On the **Test users** step, click **Add Users** and add your own Google email address so you can test it while the app is unpublished. Click **Save and Continue**.
 
 ## 3. Create the Web Client ID (Crucial for Expo AuthSession & Backend)
+
 We will create a **Web application** Client ID. Even though we are building a mobile app, Expo's `AuthSession` uses a web-based proxy for maximum compatibility during development, and the Python backend requires a Web Client ID to verify tokens securely.
 
 1. Go to **APIs & Services > Credentials** in the left menu.
@@ -36,16 +39,17 @@ We will create a **Web application** Client ID. Even though we are building a mo
 8. A modal will pop up with your **Client ID** and **Client Secret**.
 
 ## 4. Update the Backend Environment
+
 1. Copy the **Client ID** from the previous step.
 2. Open your VSCode and create a new file at `backend/.env`.
 3. Paste the following into the file:
 
 ```env
-GOOGLE_CLIENT_ID=your-copied-client-id.apps.googleusercontent.com
-JWT_SECRET_KEY=generate_a_random_long_string_here_like_dj73nd8q3id91k
+SUPABASE_JWT_SECRET=generate_a_random_long_string_here_like_dj73nd8q3id91k
 ```
 
 > **Note:** The backend only needs the Client ID, not the Secret, because it only verifies incoming ID tokens.
 
 ## 5. Next Steps
+
 Once your `backend/.env` file is saved with the active Client ID, our authentication backend is fully ready to receive tokens from the frontend!

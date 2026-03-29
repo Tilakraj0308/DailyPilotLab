@@ -22,22 +22,19 @@ const AuthContext = createContext<AuthContextType>({
  */
 function getApiUrl(): string {
     const envUrl = process.env.EXPO_PUBLIC_API_URL;
-    
+
     // For web
     if (!Platform.OS || Platform.OS === 'web') {
         return envUrl || 'http://localhost:8000';
     }
-    
     // If environment variable is set, use it (physical device)
     if (envUrl) {
         return envUrl;
     }
-    
     // For Android emulator ONLY (when envUrl is not set), use special 10.0.2.2 address
     if (Platform.OS === 'android') {
         return 'http://10.0.2.2:8000';
     }
-    
     // For iOS simulator & physical devices without env var
     return 'http://localhost:8000';
 }
@@ -75,7 +72,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const syncProfile = async (sess: Session) => {
         try {
             const apiUrl = getApiUrl();
-            
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
 
