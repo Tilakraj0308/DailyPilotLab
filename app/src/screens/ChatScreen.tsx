@@ -16,16 +16,32 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import * as FileSystem from 'expo-file-system';
 import { useChatSocket, ChatMessage } from '../hooks/useChatSocket';
+import { useAudioRecorder, requestRecordingPermissionsAsync, setAudioModeAsync } from 'expo-audio';
 
-// Safely import expo-av
-let Audio: any = null;
-let isAudioAvailable = false;
-try {
-    Audio = require('expo-av').Audio;
-    isAudioAvailable = true;
-} catch (err) {
-    console.warn('⚠️ expo-av not available (native module issue)', err);
-}
+// Safely imported expo-audio
+const isAudioAvailable = true;
+
+const HIGH_QUALITY_OPTIONS = {
+    extension: '.m4a',
+    sampleRate: 44100,
+    numberOfChannels: 2,
+    bitRate: 128000,
+    android: {
+        outputFormat: 'mpeg4',
+        audioEncoder: 'aac',
+    },
+    ios: {
+        outputFormat: 'aac ',
+        audioQuality: 127,
+        linearPCMBitDepth: 16,
+        linearPCMIsBigEndian: false,
+        linearPCMIsFloat: false,
+    },
+    web: {
+        mimeType: 'audio/webm',
+        bitsPerSecond: 128000,
+    },
+} as any;
 
 const MAX_RECORDING_MS = 60000; // 60s max per voice memo
 
@@ -38,7 +54,7 @@ export default function ChatScreen() {
     const [isRecording, setIsRecording] = useState(false);
     const [recordingDuration, setRecordingDuration] = useState(0);
     const [isUploadingAudio, setIsUploadingAudio] = useState(false);
-    const recordingRef = useRef<Audio.Recording | null>(null);
+    const recorder = useAudioRecorder(HIGH_QUALITY_OPTIONS);
     const timerRef = useRef<NodeJS.Timeout | null>(null);
     const scrollViewRef = useRef<ScrollView>(null);
 
@@ -49,23 +65,15 @@ export default function ChatScreen() {
 
     const setupAudioPermissions = async () => {
         try {
-            if (!isAudioAvailable) {
-                console.warn('⚠️ Audio module not available, skipping permission setup');
-                return;
+            const { status } = await requestRecordingPermissionsAsync();
+            if (status !== 'granted') {
+                console.warn('Audio permissions not granted');
             }
-            const { status: existingStatus } = await Audio.getPermissionsAsync();
-            if (existingStatus !== 'granted') {
-                const { status: newStatus } = await Audio.requestPermissionsAsync();
-                if (newStatus !== 'granted') {
-                    console.warn('Audio permissions not granted');
-                }
-            }
-            await Audio.setAudioModeAsync({
-                allowsRecordingIOS: true,
-                playsInSilentModeIOS: true,
-                staysActiveInBackground: false,
-                shouldDuckAndroid: true,
-                playThroughEarpiece: false,
+            await setAudioModeAsync({
+                allowsRecording: true,
+                playsInSilentMode: true,
+                interruptionMode: 'duckOthers',
+                shouldRouteThroughEarpiece: false,
             });
         } catch (err) {
             console.error("Failed to setup audio", err);
@@ -73,6 +81,7 @@ export default function ChatScreen() {
     };
 
     const handleSendText = () => {
+        console.log("CALLED HANDLESENDTEXT")
         if (!inputText.trim()) return;
         sendText(inputText.trim());
         setInputText('');
@@ -80,18 +89,12 @@ export default function ChatScreen() {
 
     const startRecording = async () => {
         try {
-            if (!isAudioAvailable) {
-                Alert.alert("Not Available", "Audio recording is not available on this device");
-                return;
-            }
             console.log('🎤 Starting recording...');
             setIsRecording(true);
             setRecordingDuration(0);
 
-            const recording = new Audio.Recording();
-            await recording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
-            await recording.startAsync();
-            recordingRef.current = recording;
+            await recorder.prepareToRecordAsync();
+            recorder.record();
             console.log('✅ Recording started');
 
             // Start timer
@@ -114,9 +117,7 @@ export default function ChatScreen() {
 
     const stopRecording = async () => {
         try {
-            if (!isAudioAvailable) return;
             console.log('🛑 Stopping recording...');
-            if (!recordingRef.current) return;
 
             setIsRecording(false);
             if (timerRef.current) {
@@ -124,9 +125,8 @@ export default function ChatScreen() {
                 timerRef.current = null;
             }
 
-            await recordingRef.current.stopAndUnloadAsync();
-            const uri = recordingRef.current.getURI();
-            recordingRef.current = null;
+            await recorder.stop();
+            const uri = recorder.uri;
             console.log('✅ Recording stopped, URI:', uri);
 
             if (!uri) {
@@ -142,46 +142,115 @@ export default function ChatScreen() {
         }
     };
 
+    // const uploadAndTranscribe = async (audioUri: string) => {
+    //     try {
+    //         setIsUploadingAudio(true);
+    //         console.log('🎤 Starting transcription from:', audioUri);
+
+    //         // Read the audio file - handle both blob URIs (web) and file paths (native)
+    //         let mediaBlob: Blob;
+
+    //         if (audioUri.startsWith('blob:')) {
+    //             console.log('🌐 Web blob detected, fetching blob...');
+    //             const response = await fetch(audioUri);
+    //             mediaBlob = await response.blob();
+    //             console.log('✅ Blob fetched, size:', mediaBlob.size, 'bytes');
+    //         } else {
+    //             console.log('📱 Native file path detected, reading from FileSystem...');
+    //             const base64Audio = await FileSystem.readAsStringAsync(audioUri, {
+    //                 encoding: FileSystem.EncodingType.Base64,
+    //             });
+    //             // Convert base64 string to Blob
+    //             const binaryString = atob(base64Audio);
+    //             const bytes = new Uint8Array(binaryString.length);
+    //             for (let i = 0; i < binaryString.length; i++) {
+    //                 bytes[i] = binaryString.charCodeAt(i);
+    //             }
+    //             mediaBlob = new Blob([bytes], { type: 'audio/wav' });
+    //             console.log('✅ FileSystem base64 converted to Blob, size:', mediaBlob.size, 'bytes');
+    //         }
+
+    //         // Get API URL
+    //         const apiUrl = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000';
+    //         console.log('🔗 API URL:', apiUrl);
+
+    //         // Create FormData and send to backend
+    //         const formData = new FormData();
+    //         formData.append('file', mediaBlob, 'audio.wav');
+
+    //         console.log('📤 Uploading to /transcribe...');
+    //         const response = await fetch(`${apiUrl}/transcribe`, {
+    //             method: 'POST',
+    //             body: formData,
+    //         });
+
+    //         console.log('📥 Response status:', response.status);
+
+    //         if (!response.ok) {
+    //             const errorText = await response.text();
+    //             console.error('❌ Transcription error response:', errorText);
+    //             throw new Error(`Transcription failed: ${response.statusText}`);
+    //         }
+
+    //         const result = await response.json();
+    //         console.log('📝 Transcription result:', result);
+
+    //         if (result.success && result.text) {
+    //             console.log('✅ Transcribed text:', result.text);
+    //             console.log('� Connection status:', status);
+    //             console.log('�📨 Sending to chat...');
+    //             // Send transcribed text as chat message
+    //             sendText(result.text.trim());
+    //             console.log('✅ Message sent!');
+    //         } else {
+    //             console.error('❌ No text in result:', result);
+    //             Alert.alert("Error", result.error || "Failed to transcribe audio");
+    //         }
+    //     } catch (err) {
+    //         console.error("Transcription error:", err);
+    //         Alert.alert("Error", "Failed to transcribe audio: " + String(err));
+    //     } finally {
+    //         setIsUploadingAudio(false);
+    //     }
+    // };
+
     const uploadAndTranscribe = async (audioUri: string) => {
         try {
             setIsUploadingAudio(true);
             console.log('🎤 Starting transcription from:', audioUri);
 
-            // Read the audio file - handle both blob URIs (web) and file paths (native)
-            let mediaBlob: Blob;
+            const formData = new FormData();
 
+            // 1. Differentiate between Web and Native environments
             if (audioUri.startsWith('blob:')) {
+                // 🌐 Web handling: Fetch as blob
                 console.log('🌐 Web blob detected, fetching blob...');
                 const response = await fetch(audioUri);
-                mediaBlob = await response.blob();
+                const mediaBlob = await response.blob();
+                formData.append('file', mediaBlob, 'audio.webm');
                 console.log('✅ Blob fetched, size:', mediaBlob.size, 'bytes');
             } else {
-                console.log('📱 Native file path detected, reading from FileSystem...');
-                const base64Audio = await FileSystem.readAsStringAsync(audioUri, {
-                    encoding: FileSystem.EncodingType.Base64,
-                });
-                // Convert base64 string to Blob
-                const binaryString = atob(base64Audio);
-                const bytes = new Uint8Array(binaryString.length);
-                for (let i = 0; i < binaryString.length; i++) {
-                    bytes[i] = binaryString.charCodeAt(i);
-                }
-                mediaBlob = new Blob([bytes], { type: 'audio/wav' });
-                console.log('✅ FileSystem base64 converted to Blob, size:', mediaBlob.size, 'bytes');
+                // 📱 Native handling (iOS/Android)
+                // React Native FormData allows passing the URI directly. Zero-copy, high performance.
+                console.log('📱 Native file path detected, appending directly to FormData...');
+                formData.append('file', {
+                    uri: audioUri,
+                    name: 'audio.m4a',
+                    type: 'audio/mp4'
+                } as any);
             }
 
-            // Get API URL
+            // 2. Get API URL
             const apiUrl = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000';
             console.log('🔗 API URL:', apiUrl);
 
-            // Create FormData and send to backend
-            const formData = new FormData();
-            formData.append('file', mediaBlob, 'audio.wav');
-
+            // 3. Upload to backend
             console.log('📤 Uploading to /transcribe...');
             const response = await fetch(`${apiUrl}/transcribe`, {
                 method: 'POST',
                 body: formData,
+                // Note: Do NOT manually set 'Content-Type': 'multipart/form-data'. 
+                // Let fetch set it automatically with the correct boundary!
             });
 
             console.log('📥 Response status:', response.status);
@@ -192,13 +261,15 @@ export default function ChatScreen() {
                 throw new Error(`Transcription failed: ${response.statusText}`);
             }
 
+            // 4. Handle Response
             const result = await response.json();
             console.log('📝 Transcription result:', result);
 
             if (result.success && result.text) {
                 console.log('✅ Transcribed text:', result.text);
-                console.log('� Connection status:', status);
-                console.log('�📨 Sending to chat...');
+                console.log('🔌 Connection status:', status);
+                console.log('📨 Sending to chat...');
+
                 // Send transcribed text as chat message
                 sendText(result.text.trim());
                 console.log('✅ Message sent!');

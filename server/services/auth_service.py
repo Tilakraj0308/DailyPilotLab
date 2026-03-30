@@ -44,16 +44,16 @@ from db.dbConnection import get_dict_cursor
 #         raise ValueError(f"Invalid Google token: {e}")
 
 
-def get_or_create_user(google_id: str, email: str, display_name: str | None, avatar_url: str | None) -> dict:
+def get_or_create_user(auth_id: str, email: str, display_name: str | None, avatar_url: str | None) -> dict:
     """
-    Look up a user by google_id. If they don't exist, create one.
+    Look up a user by auth_id. If they don't exist, create one.
     Returns the user record as a dict.
     """
     with get_dict_cursor() as cur:
         # Try to find existing user
         cur.execute(
-            "SELECT id, google_id, email, display_name, avatar_url FROM public.users WHERE google_id = %s",
-            (google_id,),
+            "SELECT id, auth_id, email, display_name, avatar_url FROM public.users WHERE auth_id = %s",
+            (auth_id,),
         )
         user = cur.fetchone()
 
@@ -63,11 +63,11 @@ def get_or_create_user(google_id: str, email: str, display_name: str | None, ava
         # Create new user
         cur.execute(
             """
-            INSERT INTO public.users (google_id, email, display_name, avatar_url)
+            INSERT INTO public.users (auth_id, email, display_name, avatar_url)
             VALUES (%s, %s, %s, %s)
-            RETURNING id, google_id, email, display_name, avatar_url
+            RETURNING id, auth_id, email, display_name, avatar_url
             """,
-            (google_id, email, display_name, avatar_url),
+            (auth_id, email, display_name, avatar_url),
         )
         new_user = cur.fetchone()
         return dict(new_user)

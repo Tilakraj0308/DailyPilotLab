@@ -1,6 +1,6 @@
 import "./global.css";
 import React, { useEffect } from "react";
-import { View, ActivityIndicator } from "react-native";
+import { View, ActivityIndicator, Text, ScrollView } from "react-native";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { useFonts } from "expo-font";
@@ -21,6 +21,44 @@ const Stack = createNativeStackNavigator();
 // Keep splash screen visible while we load fonts and auth state
 SplashScreen.preventAutoHideAsync();
 
+// Error Boundary to catch and display runtime crashes
+class ErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean; error: Error | null }
+> {
+  constructor(props: any) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    console.error("🔴 ErrorBoundary caught:", error.message, info.componentStack);
+  }
+  render() {
+    if (this.state.hasError) {
+      SplashScreen.hideAsync();
+      return (
+        <View style={{ flex: 1, backgroundColor: "#1a1a2e", padding: 20, justifyContent: "center" }}>
+          <Text style={{ color: "#ff6b6b", fontSize: 20, fontWeight: "bold", marginBottom: 12 }}>
+            App Crashed
+          </Text>
+          <ScrollView style={{ backgroundColor: "#16213e", borderRadius: 8, padding: 12, maxHeight: 400 }}>
+            <Text style={{ color: "#e2e8f0", fontSize: 13, fontFamily: "monospace" }}>
+              {this.state.error?.message}
+            </Text>
+            <Text style={{ color: "#94a3b8", fontSize: 11, fontFamily: "monospace", marginTop: 8 }}>
+              {this.state.error?.stack}
+            </Text>
+          </ScrollView>
+        </View>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 function AppNavigator() {
   const { session, isLoading } = useAuth();
   const incomingUrl = Linking.useURL();
@@ -40,7 +78,7 @@ function AppNavigator() {
     }
   }, [incomingUrl]);
 
-  const [fontsLoaded] = useFonts({
+  const [fontsLoaded, fontError] = useFonts({
     Inter_400Regular,
     Inter_500Medium,
     Inter_600SemiBold,
@@ -51,10 +89,10 @@ function AppNavigator() {
   });
 
   useEffect(() => {
-    if (fontsLoaded && !isLoading) {
+    if ((fontsLoaded || fontError) && !isLoading) {
       SplashScreen.hideAsync();
     }
-  }, [fontsLoaded, isLoading]);
+  }, [fontsLoaded, fontError, isLoading]);
 
   if (!fontsLoaded || isLoading) {
     return (
@@ -82,8 +120,11 @@ function AppNavigator() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <AppNavigator />
-    </AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <AppNavigator />
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }
+

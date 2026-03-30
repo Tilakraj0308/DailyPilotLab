@@ -130,7 +130,7 @@ Seed complete.
 ## Run the Server
 
 ```bash
-.venv/bin/fastapi dev server.py
+.venv/bin/fastapi dev server.py --host 0.0.0.0
 ```
 
 The API is then available at `http://127.0.0.1:8000`.  
