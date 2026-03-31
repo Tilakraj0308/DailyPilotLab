@@ -4,3 +4,4 @@ app/.env
 server/.env
 app/.env.local
 server/.env.local
+supabase/.temp/
