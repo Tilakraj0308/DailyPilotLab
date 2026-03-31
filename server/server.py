@@ -54,6 +54,7 @@ async def transcribe_endpoint(file: UploadFile = File(...)):
     Returns: Transcribed text
     """
     try:
+        print("INSIDE THE FUNTION")
         # Read the audio file
         audio_bytes = await file.read()
         
@@ -63,7 +64,7 @@ async def transcribe_endpoint(file: UploadFile = File(...)):
         # Convert to base64 for the transcribe_audio function
         import base64
         audio_b64 = base64.b64encode(audio_bytes).decode('utf-8')
-        
+        print("GOING TO TRANSCRIBE")
         # Transcribe using OpenAI Whisper API
         transcript = await transcribe_audio(audio_b64)
         
@@ -115,11 +116,11 @@ def sync_profile(payload: dict = Depends(get_current_user)):
     """
     user_metadata = payload.get("user_metadata", {})
     email = payload.get("email", "")
-    google_id = payload.get("sub", "")
+    auth_id = payload.get("sub", "")
     name = user_metadata.get("full_name") or user_metadata.get("name")
     avatar_url = user_metadata.get("avatar_url")
     
-    user = get_or_create_user(google_id, email, name, avatar_url)
+    user = get_or_create_user(auth_id, email, name, avatar_url)
     return {"status": "success", "user": user}
 
 # ─── Ideas ───────────────────────────────────────────────────────────────────
