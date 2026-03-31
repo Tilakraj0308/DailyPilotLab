@@ -74,6 +74,9 @@ dbname=postgres
 # ── OpenAI ───────────────────────────────────────────────────────────────────
 OPENAPI=sk-...
 
+# ── Supabase Auth ────────────────────────────────────────────────────────────
+SUPABASE_JWT_SECRET=your-supabase-jwt-secret
+
 # ── Tuning knobs (leave defaults unless you know what you're changing) ────────
 TOPIC_ASSIGNMENT_THRESHOLD_SIMILARITY=0.48
 TOPIC_SIMILARITY_THRESHOLD=0.2
@@ -127,7 +130,7 @@ Seed complete.
 ## Run the Server
 
 ```bash
-.venv/bin/fastapi dev server.py
+.venv/bin/fastapi dev server.py --host 0.0.0.0
 ```
 
 The API is then available at `http://127.0.0.1:8000`.  

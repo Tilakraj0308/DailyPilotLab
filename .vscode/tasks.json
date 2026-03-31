@@ -1,0 +1,28 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Start Backend Server",
+			"type": "shell",
+			"command": "cd /home/bharat/vscode/DailyPilotLab/server && source .venv/bin/activate && fastapi dev server.py --host 0.0.0.0 --port 8000",
+			"isBackground": true,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Start Backend Server",
+			"type": "shell",
+			"command": "cd /home/bharat/vscode/DailyPilotLab/server && source .venv/bin/activate && fastapi dev server.py --host 0.0.0.0 --port 8000",
+			"isBackground": true,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Start Backend with Whisper",
+			"type": "shell",
+			"command": "cd /home/bharat/vscode/DailyPilotLab/server && source .venv/bin/activate && fastapi dev server.py --host 0.0.0.0 --port 8000",
+			"isBackground": true,
+			"group": "build"
+		}
+	]
+}
