@@ -2,6 +2,7 @@ from fastapi import FastAPI, Response, WebSocket, WebSocketDisconnect, UploadFil
 import json
 import asyncio
 import time
+import os
 from fastapi.middleware.cors import CORSMiddleware
 from utils.idea_manager import get_ideas, create_idea, create_ideas, update_idea, delete_idea, delete_ideas, delete_all_ideas, raw_to_refined_ideas
 from models.ideas import IdeaCreateInput, IdeaOut, IdeaUpdateInput, IdeaDeleteInput
@@ -12,8 +13,18 @@ from utils.auth_middleware import get_current_user
 from typing import List 
 from dotenv import load_dotenv
 from utils.topic_manager import update_topic_recency
-from services.chat_service import transcribe_audio, stream_chat
+from pydantic import BaseModel
+from fastapi.responses import StreamingResponse
+from deepgram import DeepgramClient
+from deepgram.core.events import EventType
+import threading
+import queue
+from services.chat_service import stream_chat, transcribe_audio
 from services.chat_db import get_or_create_session, save_message, load_history
+
+class ChatRequest(BaseModel):
+    session_id: str
+    content: str
 
 load_dotenv()
 app = FastAPI()
@@ -193,69 +204,118 @@ def updateTraits(response: Response):
 
 # ─── Chat ────────────────────────────────────────────────────────────────────
 
-@app.websocket("/ws/chat")
-async def chat_ws(websocket: WebSocket):
+@app.post("/api/chat")
+async def chat_http(req: ChatRequest):
+    session_id = req.session_id
+    user_text = req.content
+
+    await asyncio.to_thread(get_or_create_session, session_id)
+    await asyncio.to_thread(save_message, session_id, "user", user_text)
+
+    history_rows = await asyncio.to_thread(load_history, session_id)
+    history = [{"role": r["role"], "content": r["content"]} for r in history_rows]
+
+    async def sse_generator():
+        full_response = ""
+        try:
+            async for token in stream_chat(history):
+                full_response += token
+                # Yield standard SSE token
+                yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
+            
+            await asyncio.to_thread(save_message, session_id, "assistant", full_response)
+            yield f"data: {json.dumps({'type': 'done', 'content': ''})}\n\n"
+        except Exception as e:
+            print(f"Chat stream error: {e}")
+            yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
+
+    return StreamingResponse(sse_generator(), media_type="text/event-stream", headers={
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive"
+    })
+
+@app.websocket("/ws/transcribe")
+async def transcribe_live_ws(websocket: WebSocket):
     await websocket.accept()
-    session_id = None
-    last_ping_time = time.time()
-    ping_interval = 30  # Send ping every 30 seconds to keep connection alive
-    
+    audio_queue = queue.Queue()
+    is_active = threading.Event()
+    is_active.set()
+    loop = asyncio.get_running_loop()
+
+    def deepgram_thread():
+        try:
+            client = DeepgramClient(api_key=os.getenv("DEEPGRAM_API_KEY", ""))
+            
+            with client.listen.v1.connect(
+                model="nova-3",
+                language="en",
+                smart_format="true",
+                interim_results="false"
+            ) as connection:
+                
+                def on_message(*args, **kwargs):
+                    if not is_active.is_set():
+                        return
+                    result = kwargs.get('result') or (args[1] if len(args) > 1 else args[0])
+                    channel = getattr(result, "channel", None)
+                    if channel and hasattr(channel, "alternatives"):
+                        transcript = channel.alternatives[0].transcript
+                        is_final = getattr(result, "is_final", False)
+                        if transcript:
+                            asyncio.run_coroutine_threadsafe(
+                                websocket.send_json({"text": transcript, "is_final": is_final}),
+                                loop
+                            )
+
+                def on_error(*args, **kwargs):
+                    error = kwargs.get('error') or (args[1] if len(args) > 1 else args[0])
+                    print(f"Deepgram error: {error}")
+
+                connection.on(EventType.MESSAGE, on_message)
+                connection.on(EventType.ERROR, on_error)
+
+                def consume_queue():
+                    while is_active.is_set():
+                        try:
+                            chunk = audio_queue.get(timeout=0.1)
+                            if chunk is None:
+                                break
+                            connection.send_media(chunk)
+                        except queue.Empty:
+                            continue
+                    try:
+                        connection.finish()
+                    except Exception as e:
+                        pass
+
+                cq_thread = threading.Thread(target=consume_queue, daemon=True)
+                cq_thread.start()
+
+                connection.start_listening()
+        except Exception as e:
+            print(f"Deepgram thread error: {e}")
+
+    dg_thread = threading.Thread(target=deepgram_thread, daemon=True)
+    dg_thread.start()
+
     try:
         while True:
-            try:
-                # Use receive_text with timeout to allow periodic pings
-                # Wait for message with 20 second timeout
-                raw = await asyncio.wait_for(websocket.receive_text(), timeout=20.0)
-                req = json.loads(raw)
-                session_id = req["session_id"]
-                last_ping_time = time.time()  # Reset ping timer on message
-
-                await asyncio.to_thread(get_or_create_session, session_id)
-
-                # Resolve user text
-                if req.get("type") == "audio" and req.get("audio_data"):
-                    user_text = await transcribe_audio(req["audio_data"])
-                    await websocket.send_json({
-                        "type": "transcription", "content": user_text
-                    })
-                else:
-                    user_text = req.get("content", "")
-
-                # Persist user message
-                await asyncio.to_thread(save_message, session_id, "user", user_text)
-
-                # Load full history from DB for context
-                history_rows = await asyncio.to_thread(load_history, session_id)
-                history = [{"role": r["role"], "content": r["content"]} for r in history_rows]
-
-                # Stream GPT response
-                full_response = ""
-                async for token in stream_chat(history):
-                    full_response += token
-                    await websocket.send_json({"type": "token", "content": token})
-
-                # Persist assistant message
-                await asyncio.to_thread(save_message, session_id, "assistant", full_response)
-                await websocket.send_json({"type": "done", "content": ""})
-                
-            except asyncio.TimeoutError:
-                # No message received in timeout period - send keepalive ping
-                current_time = time.time()
-                if current_time - last_ping_time >= ping_interval:
-                    try:
-                        await websocket.send_json({"type": "ping", "timestamp": current_time})
-                        last_ping_time = current_time
-                        print(f"Sent keepalive ping for session {session_id if session_id else 'unknown'}")
-                    except Exception as ping_error:
-                        print(f"Failed to send ping: {ping_error}")
-                        break
-
+            data = await websocket.receive()
+            if data.get("type") == "websocket.disconnect":
+                break
+            if "text" in data:
+                import base64
+                payload = json.loads(data["text"])
+                if payload.get("type") == "audio" and dict.get(payload, "data"):
+                    chunk = base64.b64decode(payload["data"])
+                    audio_queue.put(chunk)
+            elif "bytes" in data:
+                audio_queue.put(data["bytes"])
     except WebSocketDisconnect:
-        print(f"Chat websocket disconnected for session {session_id if session_id else 'unknown'}")
+        pass
     except Exception as e:
-        print(f"Chat error: {e}")
-        try:
-            await websocket.send_json({"type": "error", "content": f"Server error: {str(e)}"})
-        except:
-            pass  # Connection already closed
+        print(f"WS Transcribe Error: {e}")
+    finally:
+        is_active.clear()
+        audio_queue.put(None)
 

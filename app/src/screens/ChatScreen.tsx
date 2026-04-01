@@ -15,27 +15,27 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import * as FileSystem from 'expo-file-system/legacy';
-import { useChatSocket, ChatMessage } from '../hooks/useChatSocket';
+import { useChatStream, ChatMessage } from '../hooks/useChatStream';
 import { useAudioRecorder, requestRecordingPermissionsAsync, setAudioModeAsync } from 'expo-audio';
 
 // Safely imported expo-audio
 const isAudioAvailable = true;
 
 const HIGH_QUALITY_OPTIONS = {
-    extension: '.m4a',
-    sampleRate: 44100,
-    numberOfChannels: 2,
+    extension: '.aac',
+    sampleRate: 16000,
+    numberOfChannels: 1,
     bitRate: 128000,
     android: {
-        outputFormat: 'mpeg4',
+        extension: '.aac',
+        outputFormat: 'aac_adts',
         audioEncoder: 'aac',
     },
     ios: {
-        outputFormat: 'aac ',
-        audioQuality: 127,
-        linearPCMBitDepth: 16,
-        linearPCMIsBigEndian: false,
-        linearPCMIsFloat: false,
+        extension: '.aac',
+        audioQuality: 'max',
+        sampleRate: 16000,
+        numberOfChannels: 1,
     },
     web: {
         mimeType: 'audio/webm',
@@ -47,16 +47,29 @@ const MAX_RECORDING_MS = 60000; // 60s max per voice memo
 
 export default function ChatScreen() {
     const navigation = useNavigation<any>();
-    const { messages, status, sendText, sendAudio, clearSession, isWaitingForResponse } = useChatSocket();
+    const {
+        messages, status, sendText, clearSession, isWaitingForResponse,
+        startLiveTranscription, stopLiveTranscription, sendAudioChunk,
+        transcribedText, resetTranscription
+    } = useChatStream();
+
     const [inputText, setInputText] = useState('');
 
     // Audio recording state
     const [isRecording, setIsRecording] = useState(false);
     const [recordingDuration, setRecordingDuration] = useState(0);
-    const [isUploadingAudio, setIsUploadingAudio] = useState(false);
     const recorder = useAudioRecorder(HIGH_QUALITY_OPTIONS);
     const timerRef = useRef<NodeJS.Timeout | null>(null);
+    const transmitTimerRef = useRef<NodeJS.Timeout | null>(null);
+    const lastPosRef = useRef(0); // For AAC stream, we don't skip header payload
     const scrollViewRef = useRef<ScrollView>(null);
+
+    // Sync Deepgram transcription to input bar natively
+    useEffect(() => {
+        if (transcribedText) {
+            setInputText(transcribedText);
+        }
+    }, [transcribedText]);
 
     // Setup audio permissions on mount
     useEffect(() => {
@@ -92,10 +105,35 @@ export default function ChatScreen() {
             console.log('🎤 Starting recording...');
             setIsRecording(true);
             setRecordingDuration(0);
+            resetTranscription();
+            startLiveTranscription();
 
             await recorder.prepareToRecordAsync();
             recorder.record();
             console.log('✅ Recording started');
+            lastPosRef.current = 0; // AAC has no rigid initial global header like WAV
+
+            // Start transmit interval
+            transmitTimerRef.current = setInterval(async () => {
+                if (!recorder.uri) return;
+                try {
+                    const info: any = await FileSystem.getInfoAsync(recorder.uri);
+                    if (info.exists && info.size && info.size > lastPosRef.current) {
+                        const lengthToRead = info.size - lastPosRef.current;
+                        const chunk = await FileSystem.readAsStringAsync(recorder.uri, {
+                            encoding: 'base64',
+                            position: lastPosRef.current,
+                            length: lengthToRead
+                        });
+                        if (chunk) {
+                            sendAudioChunk(chunk);
+                            lastPosRef.current += lengthToRead;
+                        }
+                    }
+                } catch (e) {
+                    console.warn("Chunk read error:", e);
+                }
+            }, 1000);
 
             // Start timer
             timerRef.current = setInterval(() => {
@@ -112,45 +150,22 @@ export default function ChatScreen() {
             console.error("Failed to start recording", err);
             setIsRecording(false);
             Alert.alert("Recording Error", "Failed to start audio recording");
+            stopLiveTranscription();
         }
     };
 
     const stopRecording = async () => {
         try {
             console.log('🛑 Stopping recording...');
-
             setIsRecording(false);
-            if (timerRef.current) {
-                clearInterval(timerRef.current);
-                timerRef.current = null;
-            }
+
+            if (timerRef.current) clearInterval(timerRef.current);
+            if (transmitTimerRef.current) clearInterval(transmitTimerRef.current);
+
+            // Allow last few transcriptions to arrive
+            setTimeout(() => stopLiveTranscription(), 2000);
 
             await recorder.stop();
-            const uri = recorder.uri;
-            console.log('✅ Recording stopped, URI:', uri);
-
-            if (!uri) {
-                Alert.alert("Error", "Failed to get recording URI");
-                return;
-            }
-
-            // Read audio file as base64 and send via WebSocket
-            try {
-                setIsUploadingAudio(true);
-                console.log('📱 Reading audio file as base64...');
-                const base64Audio = await FileSystem.readAsStringAsync(uri, {
-                    encoding: 'base64',
-                });
-                console.log('✅ Base64 audio ready, length:', base64Audio.length);
-                console.log('📤 Sending audio via WebSocket...');
-                sendAudio(base64Audio);
-                console.log('✅ Audio sent via WebSocket!');
-            } catch (uploadErr) {
-                console.error('❌ Failed to send audio:', uploadErr);
-                Alert.alert("Error", "Failed to send audio: " + String(uploadErr));
-            } finally {
-                setIsUploadingAudio(false);
-            }
         } catch (err) {
             console.error("Failed to stop recording", err);
             Alert.alert("Error", "Failed to stop recording");
@@ -184,7 +199,7 @@ export default function ChatScreen() {
         );
     };
 
-    const isStreaming = messages.length > 0 && messages[messages.length - 1].role === 'assistant' && status === 'connected';
+    const isStreaming = messages.length > 0 && messages[messages.length - 1].role === 'assistant' && status === 'streaming';
 
     return (
         <SafeAreaView className="flex-1 bg-background" edges={['top']}>
@@ -204,16 +219,9 @@ export default function ChatScreen() {
             </View>
 
             {/* Connection Status Banner (if not connected) */}
-            {status !== 'connected' && (
+            {status === 'error' && (
                 <View className="bg-error-container/20 px-4 py-1 flex-row justify-center items-center gap-2">
-                    {status === 'connecting' || status === 'reconnecting' ? (
-                        <>
-                            <ActivityIndicator size="small" color="#ef4444" />
-                            <Text className="text-xs text-error" style={{ fontFamily: "Inter_500Medium" }}>Reconnecting...</Text>
-                        </>
-                    ) : (
-                        <Text className="text-xs text-error" style={{ fontFamily: "Inter_500Medium" }}>Disconnected. Features limited.</Text>
-                    )}
+                    <Text className="text-xs text-error" style={{ fontFamily: "Inter_500Medium" }}>Disconnected. Features limited.</Text>
                 </View>
             )}
 
@@ -275,7 +283,7 @@ export default function ChatScreen() {
                                     multiline
                                     style={{ fontFamily: "Inter_400Regular" }}
                                     returnKeyType="send"
-                                    editable={status === 'connected'}
+                                    editable={status !== 'error'}
                                 />
 
                                 {/* Send or Mic Button inside the pill */}
@@ -283,37 +291,29 @@ export default function ChatScreen() {
                                     <TouchableOpacity
                                         onPress={handleSendText}
                                         className="w-9 h-9 items-center justify-center bg-secondary rounded-full ml-2"
-                                        disabled={status !== 'connected'}
                                     >
                                         <MaterialIcons name="arrow-upward" size={20} color="#ffffff" />
                                     </TouchableOpacity>
                                 ) : isAudioAvailable ? (
                                     <View className="ml-2">
                                         {/* Microphone Recording Button */}
-                                        {isUploadingAudio ? (
-                                            <View className="w-10 h-10 items-center justify-center rounded-full">
-                                                <ActivityIndicator size={22} color="#4e45e4" />
-                                            </View>
-                                        ) : (
-                                            <TouchableOpacity
-                                                onPress={() => {
-                                                    if (isRecording) {
-                                                        stopRecording();
-                                                    } else {
-                                                        startRecording();
-                                                    }
-                                                }}
-                                                className={`w-10 h-10 items-center justify-center rounded-full ${isRecording ? 'bg-error' : 'bg-surface-variant'
-                                                    }`}
-                                                disabled={status !== 'connected'}
-                                            >
-                                                <MaterialIcons
-                                                    name={isRecording ? "stop" : "mic-none"}
-                                                    size={22}
-                                                    color={isRecording ? "#ffffff" : "#9CA4AA"}
-                                                />
-                                            </TouchableOpacity>
-                                        )}
+                                        <TouchableOpacity
+                                            onPress={() => {
+                                                if (isRecording) {
+                                                    stopRecording();
+                                                } else {
+                                                    startRecording();
+                                                }
+                                            }}
+                                            className={`w-10 h-10 items-center justify-center rounded-full ${isRecording ? 'bg-error' : 'bg-surface-variant'
+                                                }`}
+                                        >
+                                            <MaterialIcons
+                                                name={isRecording ? "stop" : "mic-none"}
+                                                size={22}
+                                                color={isRecording ? "#ffffff" : "#9CA4AA"}
+                                            />
+                                        </TouchableOpacity>
                                     </View>
                                 ) : (
                                     <View className="w-10 h-10 items-center justify-center rounded-full bg-gray-400 opacity-50">
