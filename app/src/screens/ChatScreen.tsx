@@ -15,7 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import * as FileSystem from 'expo-file-system/legacy';
-import { useChatSocket, ChatMessage } from '../hooks/useChatSocket';
+import { useChat, ChatMessage } from '../hooks/useChat';
 import { useAudioRecorder, requestRecordingPermissionsAsync, setAudioModeAsync } from 'expo-audio';
 
 // Safely imported expo-audio
@@ -47,7 +47,7 @@ const MAX_RECORDING_MS = 60000; // 60s max per voice memo
 
 export default function ChatScreen() {
     const navigation = useNavigation<any>();
-    const { messages, status, sendText, sendAudio, clearSession, isWaitingForResponse } = useChatSocket();
+    const { messages, status, sendText, sendAudio, clearSession, isWaitingForResponse } = useChat();
     const [inputText, setInputText] = useState('');
 
     // Audio recording state
@@ -56,6 +56,7 @@ export default function ChatScreen() {
     const [isUploadingAudio, setIsUploadingAudio] = useState(false);
     const recorder = useAudioRecorder(HIGH_QUALITY_OPTIONS);
     const timerRef = useRef<NodeJS.Timeout | null>(null);
+    const silenceTimerRef = useRef<number>(0);
     const scrollViewRef = useRef<ScrollView>(null);
 
     // Setup audio permissions on mount
@@ -97,16 +98,16 @@ export default function ChatScreen() {
             recorder.record();
             console.log('✅ Recording started');
 
+            silenceTimerRef.current = 0;
             // Start timer
             timerRef.current = setInterval(() => {
-                setRecordingDuration((prev) => {
-                    if (prev >= 60) {
-                        console.log('⏱️ Max recording time reached, stopping...');
-                        stopRecording(); // Auto-stop at 60 seconds
-                        return prev;
-                    }
-                    return prev + 1;
-                });
+                setRecordingDuration((prev) => prev + 1);
+
+                silenceTimerRef.current += 1;
+                if (silenceTimerRef.current >= 5) {
+                    console.log('⏱️ 5 seconds of silence/inactivity detected, auto-stopping...');
+                    stopRecording();
+                }
             }, 1000);
         } catch (err) {
             console.error("Failed to start recording", err);
@@ -134,20 +135,18 @@ export default function ChatScreen() {
                 return;
             }
 
-            // Read audio file as base64 and send via WebSocket
+            // Send audio to transcribe and place into input
             try {
                 setIsUploadingAudio(true);
-                console.log('📱 Reading audio file as base64...');
-                const base64Audio = await FileSystem.readAsStringAsync(uri, {
-                    encoding: 'base64',
-                });
-                console.log('✅ Base64 audio ready, length:', base64Audio.length);
-                console.log('📤 Sending audio via WebSocket...');
-                sendAudio(base64Audio);
-                console.log('✅ Audio sent via WebSocket!');
+                console.log('📤 Sending audio for transcription...');
+                const transcribedText = await sendAudio(uri);
+                console.log('✅ Transcribed text received', transcribedText);
+                if (transcribedText) {
+                    setInputText(transcribedText);
+                }
             } catch (uploadErr) {
-                console.error('❌ Failed to send audio:', uploadErr);
-                Alert.alert("Error", "Failed to send audio: " + String(uploadErr));
+                console.error('❌ Failed to transcribe audio:', uploadErr);
+                Alert.alert("Error", "Failed to transcribe audio: " + String(uploadErr));
             } finally {
                 setIsUploadingAudio(false);
             }
@@ -187,7 +186,7 @@ export default function ChatScreen() {
     const isStreaming = messages.length > 0 && messages[messages.length - 1].role === 'assistant' && status === 'connected';
 
     return (
-        <SafeAreaView className="flex-1 bg-background" edges={['top']}>
+        <SafeAreaView className="flex-1 bg-background" edges={['top']} onTouchStart={() => { silenceTimerRef.current = 0; }}>
             {/* Header */}
             <View className="flex-row items-center justify-between px-5 py-3 border-b border-outline-variant/10 bg-background">
                 <View className="flex-row items-center gap-3">
@@ -300,18 +299,23 @@ export default function ChatScreen() {
                                                     if (isRecording) {
                                                         stopRecording();
                                                     } else {
+                                                        silenceTimerRef.current = 0;
                                                         startRecording();
                                                     }
                                                 }}
-                                                className={`w-10 h-10 items-center justify-center rounded-full ${isRecording ? 'bg-error' : 'bg-surface-variant'
+                                                className={`w-10 h-10 items-center justify-center rounded-full ${isRecording ? 'bg-secondary' : 'bg-surface-variant'
                                                     }`}
                                                 disabled={status !== 'connected'}
                                             >
-                                                <MaterialIcons
-                                                    name={isRecording ? "stop" : "mic-none"}
-                                                    size={22}
-                                                    color={isRecording ? "#ffffff" : "#9CA4AA"}
-                                                />
+                                                {isRecording ? (
+                                                    <View className="flex-row items-center justify-center gap-[2px]">
+                                                        <View className="w-1.5 h-3 bg-white rounded-full animate-pulse" />
+                                                        <View className="w-1.5 h-4 bg-white rounded-full animate-pulse" />
+                                                        <View className="w-1.5 h-2.5 bg-white rounded-full animate-pulse" />
+                                                    </View>
+                                                ) : (
+                                                    <MaterialIcons name="mic-none" size={22} color="#9CA4AA" />
+                                                )}
                                             </TouchableOpacity>
                                         )}
                                     </View>

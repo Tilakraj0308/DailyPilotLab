@@ -1,4 +1,6 @@
-from fastapi import FastAPI, Response, WebSocket, WebSocketDisconnect, UploadFile, File, Depends
+from fastapi import FastAPI, Response, UploadFile, File, Depends
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 import json
 import asyncio
 import time
@@ -193,69 +195,29 @@ def updateTraits(response: Response):
 
 # ─── Chat ────────────────────────────────────────────────────────────────────
 
-@app.websocket("/ws/chat")
-async def chat_ws(websocket: WebSocket):
-    await websocket.accept()
-    session_id = None
-    last_ping_time = time.time()
-    ping_interval = 30  # Send ping every 30 seconds to keep connection alive
-    
-    try:
-        while True:
-            try:
-                # Use receive_text with timeout to allow periodic pings
-                # Wait for message with 20 second timeout
-                raw = await asyncio.wait_for(websocket.receive_text(), timeout=20.0)
-                req = json.loads(raw)
-                session_id = req["session_id"]
-                last_ping_time = time.time()  # Reset ping timer on message
+class ChatStreamRequest(BaseModel):
+    session_id: str
+    content: str
 
-                await asyncio.to_thread(get_or_create_session, session_id)
+@app.post("/chat/stream")
+async def chat_stream(req: ChatStreamRequest):
+    session_id = req.session_id
+    user_text = req.content
 
-                # Resolve user text
-                if req.get("type") == "audio" and req.get("audio_data"):
-                    user_text = await transcribe_audio(req["audio_data"])
-                    await websocket.send_json({
-                        "type": "transcription", "content": user_text
-                    })
-                else:
-                    user_text = req.get("content", "")
+    await asyncio.to_thread(get_or_create_session, session_id)
+    await asyncio.to_thread(save_message, session_id, "user", user_text)
 
-                # Persist user message
-                await asyncio.to_thread(save_message, session_id, "user", user_text)
+    history_rows = await asyncio.to_thread(load_history, session_id)
+    history = [{"role": r["role"], "content": r["content"]} for r in history_rows]
 
-                # Load full history from DB for context
-                history_rows = await asyncio.to_thread(load_history, session_id)
-                history = [{"role": r["role"], "content": r["content"]} for r in history_rows]
+    async def event_stream():
+        full_response = ""
+        async for token in stream_chat(history):
+            full_response += token
+            yield f'data: {json.dumps({"type": "token", "content": token})}\n\n'
+        
+        await asyncio.to_thread(save_message, session_id, "assistant", full_response)
+        yield f'data: {json.dumps({"type": "done", "content": ""})}\n\n'
 
-                # Stream GPT response
-                full_response = ""
-                async for token in stream_chat(history):
-                    full_response += token
-                    await websocket.send_json({"type": "token", "content": token})
-
-                # Persist assistant message
-                await asyncio.to_thread(save_message, session_id, "assistant", full_response)
-                await websocket.send_json({"type": "done", "content": ""})
-                
-            except asyncio.TimeoutError:
-                # No message received in timeout period - send keepalive ping
-                current_time = time.time()
-                if current_time - last_ping_time >= ping_interval:
-                    try:
-                        await websocket.send_json({"type": "ping", "timestamp": current_time})
-                        last_ping_time = current_time
-                        print(f"Sent keepalive ping for session {session_id if session_id else 'unknown'}")
-                    except Exception as ping_error:
-                        print(f"Failed to send ping: {ping_error}")
-                        break
-
-    except WebSocketDisconnect:
-        print(f"Chat websocket disconnected for session {session_id if session_id else 'unknown'}")
-    except Exception as e:
-        print(f"Chat error: {e}")
-        try:
-            await websocket.send_json({"type": "error", "content": f"Server error: {str(e)}"})
-        except:
-            pass  # Connection already closed
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
