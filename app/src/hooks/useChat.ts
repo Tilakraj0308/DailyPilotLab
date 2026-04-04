@@ -136,7 +136,7 @@ export function useChat() {
 
             const data = JSON.parse(response.body);
             if (data.success && data.text) {
-                return data.text;
+                return data.text.trim();
             } else {
                 throw new Error(data.error || 'Failed to transcribe audio');
             }

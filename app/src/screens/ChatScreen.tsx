@@ -59,16 +59,12 @@ export default function ChatScreen() {
     const silenceTimerRef = useRef<number>(0);
     const scrollViewRef = useRef<ScrollView>(null);
 
-    // Setup audio permissions on mount
-    useEffect(() => {
-        setupAudioPermissions();
-    }, []);
-
     const setupAudioPermissions = async () => {
         try {
             const { status } = await requestRecordingPermissionsAsync();
             if (status !== 'granted') {
                 console.warn('Audio permissions not granted');
+                return false;
             }
             await setAudioModeAsync({
                 allowsRecording: true,
@@ -76,8 +72,10 @@ export default function ChatScreen() {
                 interruptionMode: 'duckOthers',
                 shouldRouteThroughEarpiece: false,
             });
+            return true;
         } catch (err) {
             console.error("Failed to setup audio", err);
+            return false;
         }
     };
 
@@ -90,6 +88,12 @@ export default function ChatScreen() {
 
     const startRecording = async () => {
         try {
+            const hasPermission = await setupAudioPermissions();
+            if (!hasPermission) {
+                Alert.alert("Permission Required", "Please grant audio recording permissions to use voice chat.");
+                return;
+            }
+
             console.log('🎤 Starting recording...');
             setIsRecording(true);
             setRecordingDuration(0);
