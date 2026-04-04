@@ -3,6 +3,9 @@ import * as Crypto from 'expo-crypto';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import EventSource from 'react-native-sse';
+import * as FileSystem from 'expo-file-system/legacy';
+import { FileSystemUploadType } from 'expo-file-system/legacy';
+
 export type ChatMessage = {
     id: string;
     role: 'user' | 'assistant';
@@ -111,34 +114,42 @@ export function useChat() {
         }
     };
 
-    const sendAudio = async (uri: string): Promise<string | null> => {
+    const sendAudio = async (uri: string, retryCount = 0): Promise<string | null> => {
         if (status !== 'connected' || !sessionId) return null;
 
         try {
-            const formData = new FormData();
-            formData.append('file', {
-                uri,
-                name: 'audio.m4a',
-                type: 'audio/m4a'
-            } as any);
+            // Wait briefly on retry to ensure disk flushing
+            if (retryCount > 0) {
+                await new Promise(resolve => setTimeout(resolve, 500));
+            }
 
+            const fileUri = Platform.OS === 'android' && !uri.startsWith('file://') ? `file://${uri}` : uri;
             const apiUrl = getApiUrl();
-            const response = await fetch(`${apiUrl}/transcribe`, {
-                method: 'POST',
-                body: formData,
-                headers: {
-                    'Accept': 'application/json'
-                }
+
+            // Use FileSystem.uploadAsync instead of fetch + FormData for reliable file uploads
+            const response = await FileSystem.uploadAsync(`${apiUrl}/transcribe`, fileUri, {
+                httpMethod: 'POST',
+                uploadType: FileSystemUploadType.MULTIPART,
+                fieldName: 'file',
+                mimeType: 'audio/m4a',
             });
 
-            const data = await response.json();
+            const data = JSON.parse(response.body);
             if (data.success && data.text) {
-                return data.text;
+                return data.text.trim();
             } else {
                 throw new Error(data.error || 'Failed to transcribe audio');
             }
-        } catch (error) {
-            console.error('Audio Transcription Error:', error);
+        } catch (error: any) {
+            console.error(`Audio Transcription Error (Attempt ${retryCount + 1}):`, error);
+
+            // Retry logic
+            const errorMessage = error?.message || String(error);
+            if (retryCount < 2 && (errorMessage.includes('Network request failed') || errorMessage.includes('Socket closed'))) {
+                console.log(`Retrying audio upload... (${retryCount + 1}/2)`);
+                return sendAudio(uri, retryCount + 1);
+            }
+
             return null;
         }
     };
