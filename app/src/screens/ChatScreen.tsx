@@ -163,6 +163,7 @@ export default function ChatScreen() {
     };
 
     const renderMessage = ({ item, index }: { item: ChatMessage, index: number }) => {
+        if (!item.content && item.role === 'assistant') return null;
         const isUser = item.role === 'user';
         return (
             <View key={item.id || index} className={`w-full flex-col mb-4 ${isUser ? 'items-end' : 'items-start'}`}>

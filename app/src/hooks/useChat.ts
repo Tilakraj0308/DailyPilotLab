@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import * as Crypto from 'expo-crypto';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
-
+import EventSource from 'react-native-sse';
 export type ChatMessage = {
     id: string;
     role: 'user' | 'assistant';
@@ -65,57 +65,48 @@ export function useChat() {
 
         try {
             const apiUrl = getApiUrl();
-            const response = await fetch(`${apiUrl}/chat/stream`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ session_id: sessionId, content: text })
-            });
-
-            if (!response.ok) {
-                throw new Error('Failed to complete request');
-            }
-
-            const reader = response.body?.getReader();
-            const decoder = new TextDecoder('utf-8');
             let assistantMessageId = Crypto.randomUUID();
             let assistantMessageContent = '';
 
             // Add placeholder message
             setMessages(prev => [...prev, { id: assistantMessageId, role: 'assistant', content: '' }]);
 
-            if (reader) {
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
+            const es = new EventSource(`${apiUrl}/chat/stream`, {
+                headers: { 'Content-Type': 'application/json' },
+                method: 'POST',
+                body: JSON.stringify({ session_id: sessionId, content: text })
+            });
 
-                    const chunk = decoder.decode(value, { stream: true });
-                    const lines = chunk.split('\n\n');
-
-                    for (const line of lines) {
-                        if (line.startsWith('data: ')) {
-                            const dataStr = line.replace('data: ', '').trim();
-                            if (!dataStr) continue;
-                            try {
-                                const data = JSON.parse(dataStr);
-                                if (data.type === 'token') {
-                                    setIsWaitingForResponse(false);
-                                    assistantMessageContent += data.content;
-                                    setMessages(prev => {
-                                        const rest = prev.slice(0, -1);
-                                        return [...rest, { id: assistantMessageId, role: 'assistant', content: assistantMessageContent }];
-                                    });
-                                } else if (data.type === 'done') {
-                                    setIsWaitingForResponse(false);
-                                }
-                            } catch (e) {
-                                console.error('Error parsing SSE data line:', e);
-                            }
-                        }
+            es.addEventListener('message', (event: any) => {
+                if (!event.data) return;
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data.type === 'token') {
+                        setIsWaitingForResponse(false);
+                        assistantMessageContent += data.content;
+                        setMessages(prev => {
+                            const rest = prev.slice(0, -1);
+                            return [...rest, { id: assistantMessageId, role: 'assistant', content: assistantMessageContent }];
+                        });
+                    } else if (data.type === 'done') {
+                        setIsWaitingForResponse(false);
+                        es.removeAllEventListeners();
+                        es.close();
                     }
+                } catch (e) {
+                    console.error('Error parsing SSE data line:', e);
                 }
-            }
+            });
+
+            es.addEventListener('error', (event: any) => {
+                console.error('Chat SSE Error:', event);
+                setIsWaitingForResponse(false);
+                es.removeAllEventListeners();
+                es.close();
+            });
+
         } catch (error) {
-            console.error('Chat SSE Error:', error);
+            console.error('Chat Setup Error:', error);
             setIsWaitingForResponse(false);
         }
     };
