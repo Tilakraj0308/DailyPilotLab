@@ -17,6 +17,8 @@ import { useNavigation } from '@react-navigation/native';
 import * as FileSystem from 'expo-file-system/legacy';
 import { useChat, ChatMessage } from '../hooks/useChat';
 import { useAudioRecorder, requestRecordingPermissionsAsync, setAudioModeAsync } from 'expo-audio';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming, interpolate, Extrapolation } from 'react-native-reanimated';
+import LottieView from 'lottie-react-native';
 
 // Safely imported expo-audio
 const isAudioAvailable = true;
@@ -64,6 +66,26 @@ export default function ChatScreen() {
     const hasSpokenRef = useRef<boolean>(false);
     const silenceTicksRef = useRef<number>(0);
     const scrollViewRef = useRef<ScrollView>(null);
+    const volumeAnim = useSharedValue(-60);
+
+    const animatedWaveStyle = useAnimatedStyle(() => {
+        const scaleY = interpolate(
+            volumeAnim.value,
+            [-60, -10],
+            [0.1, 1.5],
+            Extrapolation.CLAMP
+        );
+        const opacity = interpolate(
+            volumeAnim.value,
+            [-60, -10],
+            [0.6, 1],
+            Extrapolation.CLAMP
+        );
+        return {
+            transform: [{ scaleY }],
+            opacity,
+        };
+    });
 
     const setupAudioPermissions = async () => {
         try {
@@ -164,13 +186,22 @@ export default function ChatScreen() {
                             hasSpokenRef.current = true;
                             silenceTicksRef.current = 0;
                             console.log(`[Speech] Vol: ${currentVolume.toFixed(2)}dB, Var: ${variance.toFixed(2)}dB`);
+
+                            // Animate wave only for active speech
+                            volumeAnim.value = withTiming(currentVolume, { duration: 100 });
                         } else {
                             silenceTicksRef.current++;
                             console.log(`[Steady Noise] Vol: ${currentVolume.toFixed(2)}dB, Var: ${variance.toFixed(2)}dB -> Silence Tick: ${silenceTicksRef.current}`);
+
+                            // Retract wave when not speaking
+                            volumeAnim.value = withTiming(-60, { duration: 200 });
                         }
                     } else {
                         silenceTicksRef.current++;
                         console.log(`[Silence] Vol: ${currentVolume.toFixed(2)}dB (under threshold ${speechThreshold.toFixed(2)}dB) -> Silence Tick: ${silenceTicksRef.current}`);
+
+                        // Retract wave on silence
+                        volumeAnim.value = withTiming(-60, { duration: 200 });
                     }
 
                     // Phase 3: Auto-Stop Triggers
@@ -359,67 +390,72 @@ export default function ChatScreen() {
                     <View className="bg-surface border-t border-outline-variant/10 px-4 py-3">
                         <View className="flex-row items-end gap-3">
                             {/* Main Input Area */}
-                            <View className="flex-1 flex-row items-center rounded-3xl bg-surface-container px-4 py-1 border border-outline-variant/20">
-                                <TextInput
-                                    className="flex-1 max-h-32 text-sm text-on-surface py-3"
-                                    placeholder="Message DailyPilot..."
-                                    placeholderTextColor="#586064"
-                                    value={inputText}
-                                    onChangeText={setInputText}
-                                    onSubmitEditing={handleSendText}
-                                    multiline
-                                    style={{ fontFamily: "Inter_400Regular" }}
-                                    returnKeyType="send"
-                                    editable={status === 'connected'}
-                                />
+                            {!isRecording ? (
+                                <View className="flex-1 flex-row items-center rounded-3xl bg-surface-container px-4 py-1 border border-outline-variant/20">
+                                    <TextInput
+                                        className="flex-1 max-h-32 text-sm text-on-surface py-3"
+                                        placeholder="Message DailyPilot..."
+                                        placeholderTextColor="#586064"
+                                        value={inputText}
+                                        onChangeText={setInputText}
+                                        onSubmitEditing={handleSendText}
+                                        multiline
+                                        style={{ fontFamily: "Inter_400Regular" }}
+                                        returnKeyType="send"
+                                        editable={status === 'connected'}
+                                    />
 
-                                {/* Send or Mic Button inside the pill */}
-                                {inputText.trim().length > 0 ? (
-                                    <TouchableOpacity
-                                        onPress={handleSendText}
-                                        className="w-9 h-9 items-center justify-center bg-secondary rounded-full ml-2"
-                                        disabled={status !== 'connected'}
-                                    >
-                                        <MaterialIcons name="arrow-upward" size={20} color="#ffffff" />
-                                    </TouchableOpacity>
-                                ) : isAudioAvailable ? (
-                                    <View className="ml-2">
-                                        {/* Microphone Recording Button */}
-                                        {isUploadingAudio ? (
-                                            <View className="w-10 h-10 items-center justify-center rounded-full">
-                                                <ActivityIndicator size={22} color="#4e45e4" />
-                                            </View>
-                                        ) : (
-                                            <TouchableOpacity
-                                                onPress={() => {
-                                                    if (isRecording) {
-                                                        stopRecording();
-                                                    } else {
-                                                        startRecording();
-                                                    }
-                                                }}
-                                                className={`w-10 h-10 items-center justify-center rounded-full ${isRecording ? 'bg-secondary' : 'bg-surface-variant'
-                                                    }`}
-                                                disabled={status !== 'connected'}
-                                            >
-                                                {isRecording ? (
-                                                    <View className="flex-row items-center justify-center gap-[2px]">
-                                                        <View className="w-1.5 h-3 bg-white rounded-full animate-pulse" />
-                                                        <View className="w-1.5 h-4 bg-white rounded-full animate-pulse" />
-                                                        <View className="w-1.5 h-2.5 bg-white rounded-full animate-pulse" />
-                                                    </View>
-                                                ) : (
+                                    {/* Send or Mic Button inside the pill */}
+                                    {inputText.trim().length > 0 ? (
+                                        <TouchableOpacity
+                                            onPress={handleSendText}
+                                            className="w-9 h-9 items-center justify-center bg-secondary rounded-full ml-2"
+                                            disabled={status !== 'connected'}
+                                        >
+                                            <MaterialIcons name="arrow-upward" size={20} color="#ffffff" />
+                                        </TouchableOpacity>
+                                    ) : isAudioAvailable ? (
+                                        <View className="ml-2">
+                                            {/* Microphone Recording Button */}
+                                            {isUploadingAudio ? (
+                                                <View className="w-10 h-10 items-center justify-center rounded-full">
+                                                    <ActivityIndicator size={22} color="#4e45e4" />
+                                                </View>
+                                            ) : (
+                                                <TouchableOpacity
+                                                    onPress={() => startRecording()}
+                                                    className="w-10 h-10 items-center justify-center rounded-full bg-surface-variant"
+                                                    disabled={status !== 'connected'}
+                                                >
                                                     <MaterialIcons name="mic-none" size={22} color="#9CA4AA" />
-                                                )}
-                                            </TouchableOpacity>
-                                        )}
-                                    </View>
-                                ) : (
-                                    <View className="w-10 h-10 items-center justify-center rounded-full bg-gray-400 opacity-50">
-                                        <MaterialIcons name="mic-off" size={22} color="#FFFFFF" />
-                                    </View>
-                                )}
-                            </View>
+                                                </TouchableOpacity>
+                                            )}
+                                        </View>
+                                    ) : (
+                                        <View className="w-10 h-10 items-center justify-center rounded-full bg-gray-400 opacity-50">
+                                            <MaterialIcons name="mic-off" size={22} color="#FFFFFF" />
+                                        </View>
+                                    )}
+                                </View>
+                            ) : (
+                                <View className="flex-1 flex-row items-center justify-center rounded-3xl bg-surface-container overflow-hidden h-12 relative border border-outline-variant/20">
+                                    <Animated.View style={[{ width: '100%', height: '100%', position: 'absolute' }, animatedWaveStyle]}>
+                                        <LottieView
+                                            source={require('../../assets/voice-wave.json')}
+                                            autoPlay
+                                            loop
+                                            style={{ width: '100%', height: '100%' }}
+                                            resizeMode="cover"
+                                        />
+                                    </Animated.View>
+                                    <TouchableOpacity
+                                        onPress={() => stopRecording()}
+                                        className="absolute right-1 z-10 w-10 h-10 items-center justify-center bg-error rounded-full shadow-sm"
+                                    >
+                                        <MaterialIcons name="stop" size={24} color="#FFFFFF" />
+                                    </TouchableOpacity>
+                                </View>
+                            )}
                         </View>
 
                         {/* Recording Indicator */}
