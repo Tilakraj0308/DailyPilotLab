@@ -26,6 +26,7 @@ const HIGH_QUALITY_OPTIONS = {
     sampleRate: 44100,
     numberOfChannels: 2,
     bitRate: 128000,
+    isMeteringEnabled: true,
     android: {
         outputFormat: 'mpeg4',
         audioEncoder: 'aac',
@@ -56,7 +57,12 @@ export default function ChatScreen() {
     const [isUploadingAudio, setIsUploadingAudio] = useState(false);
     const recorder = useAudioRecorder(HIGH_QUALITY_OPTIONS);
     const timerRef = useRef<NodeJS.Timeout | null>(null);
-    const silenceTimerRef = useRef<number>(0);
+    const isCalibratingRef = useRef<boolean>(true);
+    const noiseFloorRef = useRef<number>(-160);
+    const calibrationSamplesRef = useRef<number[]>([]);
+    const volumeHistoryRef = useRef<number[]>([]);
+    const hasSpokenRef = useRef<boolean>(false);
+    const silenceTicksRef = useRef<number>(0);
     const scrollViewRef = useRef<ScrollView>(null);
 
     const setupAudioPermissions = async () => {
@@ -98,21 +104,101 @@ export default function ChatScreen() {
             setIsRecording(true);
             setRecordingDuration(0);
 
+            // Reset refs
+            isCalibratingRef.current = true;
+            noiseFloorRef.current = -160;
+            calibrationSamplesRef.current = [];
+            volumeHistoryRef.current = [];
+            hasSpokenRef.current = false;
+            silenceTicksRef.current = 0;
+
             await recorder.prepareToRecordAsync();
             recorder.record();
             console.log('✅ Recording started');
 
-            silenceTimerRef.current = 0;
-            // Start timer
-            timerRef.current = setInterval(() => {
-                setRecordingDuration((prev) => prev + 1);
+            let totalTicks = 0;
 
-                silenceTimerRef.current += 1;
-                if (silenceTimerRef.current >= 5) {
-                    console.log('⏱️ 5 seconds of silence/inactivity detected, auto-stopping...');
-                    stopRecording();
+            // Start timer (200ms = 1 tick)
+            timerRef.current = setInterval(() => {
+                try {
+                    totalTicks++;
+                    // Update UI duration every 5 ticks (1 second)
+                    if (totalTicks % 5 === 0) {
+                        setRecordingDuration((prev) => prev + 1);
+                    }
+
+                    const status = recorder.getStatus();
+                    const currentVolume = status?.metering ?? -160;
+
+                    // Phase 1: Calibration (First 1 second / 5 ticks)
+                    if (isCalibratingRef.current) {
+                        calibrationSamplesRef.current.push(currentVolume);
+                        console.log(`[Calibration] Tick ${totalTicks}, Volume: ${currentVolume}dB`);
+
+                        if (totalTicks >= 5) {
+                            const avg = calibrationSamplesRef.current.reduce((a, b) => a + b, 0) / calibrationSamplesRef.current.length;
+                            noiseFloorRef.current = avg;
+                            isCalibratingRef.current = false;
+                            console.log(`[Calibration Complete] Noise Floor set to: ${noiseFloorRef.current}dB`);
+                        }
+                        return;
+                    }
+
+                    // Phase 2: Variance-Based Detection
+                    volumeHistoryRef.current.push(currentVolume);
+                    if (volumeHistoryRef.current.length > 5) {
+                        volumeHistoryRef.current.shift();
+                    }
+
+                    const speechThreshold = noiseFloorRef.current + 12;
+
+                    if (currentVolume > speechThreshold) {
+                        const maxVol = Math.max(...volumeHistoryRef.current);
+                        const minVol = Math.min(...volumeHistoryRef.current);
+                        const variance = maxVol - minVol;
+
+                        if (variance > 5) {
+                            if (!hasSpokenRef.current) {
+                                console.log('🗣️ Speech detected! Started listening.');
+                            }
+                            hasSpokenRef.current = true;
+                            silenceTicksRef.current = 0;
+                            console.log(`[Speech] Vol: ${currentVolume.toFixed(2)}dB, Var: ${variance.toFixed(2)}dB`);
+                        } else {
+                            silenceTicksRef.current++;
+                            console.log(`[Steady Noise] Vol: ${currentVolume.toFixed(2)}dB, Var: ${variance.toFixed(2)}dB -> Silence Tick: ${silenceTicksRef.current}`);
+                        }
+                    } else {
+                        silenceTicksRef.current++;
+                        console.log(`[Silence] Vol: ${currentVolume.toFixed(2)}dB (under threshold ${speechThreshold.toFixed(2)}dB) -> Silence Tick: ${silenceTicksRef.current}`);
+                    }
+
+                    // Phase 3: Auto-Stop Triggers
+
+                    // Scenario 1: Initial Silence (10 seconds = 50 ticks)
+                    if (!hasSpokenRef.current && silenceTicksRef.current >= 50) {
+                        console.log('⏱️ 10 seconds of initial silence detected, stopping and discarding...');
+                        stopRecording(true);
+                        return;
+                    }
+
+                    // Scenario 2: Speech Ended (5 seconds = 25 ticks)
+                    if (hasSpokenRef.current && silenceTicksRef.current >= 25) {
+                        console.log('⏱️ 5 seconds of silence after speech detected, stopping and processing...');
+                        stopRecording(false);
+                        return;
+                    }
+
+                    // Scenario 3: Absolute Max (60 seconds = 300 ticks)
+                    if (totalTicks >= 300) {
+                        console.log('⏱️ Absolute max time reached (60s), stopping and processing...');
+                        stopRecording(false);
+                        return;
+                    }
+                } catch (e) {
+                    console.error("Error in recording interval:", e);
                 }
-            }, 1000);
+            }, 200);
         } catch (err) {
             console.error("Failed to start recording", err);
             setIsRecording(false);
@@ -120,7 +206,7 @@ export default function ChatScreen() {
         }
     };
 
-    const stopRecording = async () => {
+    const stopRecording = async (discard: boolean = false) => {
         try {
             console.log('🛑 Stopping recording...');
 
@@ -136,6 +222,11 @@ export default function ChatScreen() {
 
             if (!uri) {
                 Alert.alert("Error", "Failed to get recording URI");
+                return;
+            }
+
+            if (discard) {
+                console.log('🗑️ Recording discarded (initial silence constraint)');
                 return;
             }
 
@@ -191,7 +282,7 @@ export default function ChatScreen() {
     const isStreaming = messages.length > 0 && messages[messages.length - 1].role === 'assistant' && status === 'connected';
 
     return (
-        <SafeAreaView className="flex-1 bg-background" edges={['top']} onTouchStart={() => { silenceTimerRef.current = 0; }}>
+        <SafeAreaView className="flex-1 bg-background" edges={['top']}>
             {/* Header */}
             <View className="flex-row items-center justify-between px-5 py-3 border-b border-outline-variant/10 bg-background">
                 <View className="flex-row items-center gap-3">
@@ -304,7 +395,6 @@ export default function ChatScreen() {
                                                     if (isRecording) {
                                                         stopRecording();
                                                     } else {
-                                                        silenceTimerRef.current = 0;
                                                         startRecording();
                                                     }
                                                 }}
@@ -339,9 +429,15 @@ export default function ChatScreen() {
                                 <Text className="text-sm text-error font-semibold" style={{ fontFamily: "Inter_600SemiBold" }}>
                                     Recording: {formatDuration(recordingDuration)}
                                 </Text>
-                                <Text className="text-xs text-error/70 ml-auto" style={{ fontFamily: "Inter_400Regular" }}>
-                                    Release to send
-                                </Text>
+                                <TouchableOpacity
+                                    onPress={() => stopRecording()}
+                                    className="ml-auto flex-row items-center gap-1 bg-error/20 px-3 py-1 rounded-full"
+                                >
+                                    <MaterialIcons name="stop" size={16} color="#ef4444" />
+                                    <Text className="text-xs text-error" style={{ fontFamily: "Inter_600SemiBold" }}>
+                                        Stop
+                                    </Text>
+                                </TouchableOpacity>
                             </View>
                         )}
                     </View>
