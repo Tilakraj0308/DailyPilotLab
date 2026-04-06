@@ -67,6 +67,7 @@ export default function ChatScreen() {
     const silenceTicksRef = useRef<number>(0);
     const scrollViewRef = useRef<ScrollView>(null);
     const volumeAnim = useSharedValue(-60);
+    const rawVolumeAnim = useSharedValue(-60); // Always-updated raw metering for equalizer
 
 
 
@@ -140,8 +141,8 @@ export default function ChatScreen() {
                         calibrationSamplesRef.current.push(currentVolume);
                         console.log(`[Calibration] Tick ${totalTicks}, Volume: ${currentVolume}dB`);
 
-                        // Feed volume to equalizer even during calibration so bars react immediately
-                        volumeAnim.value = withTiming(currentVolume, { duration: 100 });
+                        // Always feed raw volume to equalizer
+                        rawVolumeAnim.value = currentVolume;
 
                         if (totalTicks >= 5) {
                             const avg = calibrationSamplesRef.current.reduce((a, b) => a + b, 0) / calibrationSamplesRef.current.length;
@@ -151,6 +152,9 @@ export default function ChatScreen() {
                         }
                         return;
                     }
+
+                    // Always feed raw volume to equalizer
+                    rawVolumeAnim.value = currentVolume;
 
                     // Phase 2: Variance-Based Detection
                     volumeHistoryRef.current.push(currentVolume);
@@ -425,7 +429,7 @@ export default function ChatScreen() {
                                 </View>
                             ) : (
                                 <View className="flex-1 flex-row items-center justify-center rounded-3xl bg-surface-container overflow-hidden h-12 relative border border-outline-variant/20">
-                                    <SoundBarsEqualizer volumeLevel={volumeAnim} />
+                                    <SoundBarsEqualizer volumeLevel={rawVolumeAnim} />
                                     <TouchableOpacity
                                         onPress={() => stopRecording()}
                                         className="absolute right-1 z-10 w-10 h-10 items-center justify-center bg-error rounded-full shadow-sm"
