@@ -17,8 +17,8 @@ import { useNavigation } from '@react-navigation/native';
 import * as FileSystem from 'expo-file-system/legacy';
 import { useChat, ChatMessage } from '../hooks/useChat';
 import { useAudioRecorder, requestRecordingPermissionsAsync, setAudioModeAsync } from 'expo-audio';
-import Animated, { useSharedValue, useAnimatedStyle, withTiming, interpolate, Extrapolation } from 'react-native-reanimated';
-import LottieView from 'lottie-react-native';
+import { useSharedValue, withTiming } from 'react-native-reanimated';
+import SoundBarsEqualizer from '../components/SoundBarsEqualizer';
 
 // Safely imported expo-audio
 const isAudioAvailable = true;
@@ -68,24 +68,7 @@ export default function ChatScreen() {
     const scrollViewRef = useRef<ScrollView>(null);
     const volumeAnim = useSharedValue(-60);
 
-    const animatedWaveStyle = useAnimatedStyle(() => {
-        const scaleY = interpolate(
-            volumeAnim.value,
-            [-60, -10],
-            [0.1, 1.5],
-            Extrapolation.CLAMP
-        );
-        const opacity = interpolate(
-            volumeAnim.value,
-            [-60, -10],
-            [0.6, 1],
-            Extrapolation.CLAMP
-        );
-        return {
-            transform: [{ scaleY }],
-            opacity,
-        };
-    });
+
 
     const setupAudioPermissions = async () => {
         try {
@@ -156,6 +139,9 @@ export default function ChatScreen() {
                     if (isCalibratingRef.current) {
                         calibrationSamplesRef.current.push(currentVolume);
                         console.log(`[Calibration] Tick ${totalTicks}, Volume: ${currentVolume}dB`);
+
+                        // Feed volume to equalizer even during calibration so bars react immediately
+                        volumeAnim.value = withTiming(currentVolume, { duration: 100 });
 
                         if (totalTicks >= 5) {
                             const avg = calibrationSamplesRef.current.reduce((a, b) => a + b, 0) / calibrationSamplesRef.current.length;
@@ -439,15 +425,7 @@ export default function ChatScreen() {
                                 </View>
                             ) : (
                                 <View className="flex-1 flex-row items-center justify-center rounded-3xl bg-surface-container overflow-hidden h-12 relative border border-outline-variant/20">
-                                    <Animated.View style={[{ width: '100%', height: '100%', position: 'absolute' }, animatedWaveStyle]}>
-                                        <LottieView
-                                            source={require('../../assets/voice-wave.json')}
-                                            autoPlay
-                                            loop
-                                            style={{ width: '100%', height: '100%' }}
-                                            resizeMode="cover"
-                                        />
-                                    </Animated.View>
+                                    <SoundBarsEqualizer volumeLevel={volumeAnim} />
                                     <TouchableOpacity
                                         onPress={() => stopRecording()}
                                         className="absolute right-1 z-10 w-10 h-10 items-center justify-center bg-error rounded-full shadow-sm"
