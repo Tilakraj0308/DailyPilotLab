@@ -68,6 +68,7 @@ export default function ChatScreen() {
     const scrollViewRef = useRef<ScrollView>(null);
     const volumeAnim = useSharedValue(-60);
     const rawVolumeAnim = useSharedValue(-60); // Always-updated raw metering for equalizer
+    const noiseFloorAnim = useSharedValue(-60); // Dynamic noise floor for equalizer normalization
 
 
 
@@ -147,6 +148,7 @@ export default function ChatScreen() {
                         if (totalTicks >= 5) {
                             const avg = calibrationSamplesRef.current.reduce((a, b) => a + b, 0) / calibrationSamplesRef.current.length;
                             noiseFloorRef.current = avg;
+                            noiseFloorAnim.value = avg;
                             isCalibratingRef.current = false;
                             console.log(`[Calibration Complete] Noise Floor set to: ${noiseFloorRef.current}dB`);
                         }
@@ -429,7 +431,8 @@ export default function ChatScreen() {
                                 </View>
                             ) : (
                                 <View className="flex-1 flex-row items-center justify-center rounded-3xl bg-surface-container overflow-hidden h-12 relative border border-outline-variant/20">
-                                    <SoundBarsEqualizer volumeLevel={rawVolumeAnim} />
+                                    <SoundBarsEqualizer volumeLevel={rawVolumeAnim} noiseFloorLevel={noiseFloorAnim} />
+                                    {/* <SoundBarsEqualizer volumeLevel={volumeAnim} /> */}
                                     <TouchableOpacity
                                         onPress={() => stopRecording()}
                                         className="absolute right-1 z-10 w-10 h-10 items-center justify-center bg-error rounded-full shadow-sm"
