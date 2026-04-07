@@ -9,7 +9,7 @@ import {
     Platform,
     ActivityIndicator,
     Keyboard,
-    Alert
+    Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -17,7 +17,7 @@ import { useNavigation } from '@react-navigation/native';
 import * as FileSystem from 'expo-file-system/legacy';
 import { useChat, ChatMessage } from '../hooks/useChat';
 import { useAudioRecorder, requestRecordingPermissionsAsync, setAudioModeAsync } from 'expo-audio';
-import { useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, { useSharedValue, withTiming, FadeIn, FadeOut } from 'react-native-reanimated';
 import SoundBarsEqualizer from '../components/SoundBarsEqualizer';
 
 // Safely imported expo-audio
@@ -253,6 +253,12 @@ export default function ChatScreen() {
                 return;
             }
 
+            // If no speech was detected, skip Whisper and preserve existing input text
+            if (!hasSpokenRef.current) {
+                console.log('🔇 No speech detected, skipping transcription');
+                return;
+            }
+
             // Send audio to transcribe and place into input
             try {
                 setIsUploadingAudio(true);
@@ -304,8 +310,23 @@ export default function ChatScreen() {
 
     const isStreaming = messages.length > 0 && messages[messages.length - 1].role === 'assistant' && status === 'connected';
 
+    // Manual keyboard height tracking to avoid residual padding
+    const [keyboardHeight, setKeyboardHeight] = useState(0);
+    useEffect(() => {
+        const showSub = Keyboard.addListener('keyboardDidShow', (e) => {
+            setKeyboardHeight(e.endCoordinates.height);
+        });
+        const hideSub = Keyboard.addListener('keyboardDidHide', () => {
+            setKeyboardHeight(0);
+        });
+        return () => {
+            showSub.remove();
+            hideSub.remove();
+        };
+    }, []);
+
     return (
-        <SafeAreaView className="flex-1 bg-background" edges={['top']}>
+        <SafeAreaView className="flex-1 bg-background" edges={['top', 'bottom']}>
             {/* Header */}
             <View className="flex-row items-center justify-between px-5 py-3 border-b border-outline-variant/10 bg-background">
                 <View className="flex-row items-center gap-3">
@@ -335,12 +356,8 @@ export default function ChatScreen() {
                 </View>
             )}
 
-            {/* Main Content - Using KeyboardAvoidingView + ScrollView for proper Android keyboard handling */}
-            <KeyboardAvoidingView
-                behavior={Platform.OS === "ios" ? "padding" : "height"}
-                style={{ flex: 1 }}
-                keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
-            >
+            {/* Main Content */}
+            <View style={{ flex: 1, paddingBottom: keyboardHeight }}>
                 <View className="flex-1">
                     {/* Chat Messages ScrollView */}
                     <ScrollView
@@ -383,9 +400,9 @@ export default function ChatScreen() {
                         <View className="flex-row items-end gap-3">
                             {/* Main Input Area */}
                             {!isRecording ? (
-                                <View className="flex-1 flex-row items-center rounded-3xl bg-surface-container px-4 py-1 border border-outline-variant/20">
+                                <View className="flex-1 flex-row items-center rounded-3xl bg-surface-container px-4 h-12 border border-outline-variant/20">
                                     <TextInput
-                                        className="flex-1 max-h-32 text-sm text-on-surface py-3"
+                                        className="flex-1 max-h-32 text-sm text-on-surface"
                                         placeholder="Message DailyPilot..."
                                         placeholderTextColor="#586064"
                                         value={inputText}
@@ -397,36 +414,38 @@ export default function ChatScreen() {
                                         editable={status === 'connected'}
                                     />
 
-                                    {/* Send or Mic Button inside the pill */}
-                                    {inputText.trim().length > 0 ? (
-                                        <TouchableOpacity
-                                            onPress={handleSendText}
-                                            className="w-9 h-9 items-center justify-center bg-secondary rounded-full ml-2"
-                                            disabled={status !== 'connected'}
-                                        >
-                                            <MaterialIcons name="arrow-upward" size={20} color="#ffffff" />
-                                        </TouchableOpacity>
-                                    ) : isAudioAvailable ? (
-                                        <View className="ml-2">
-                                            {/* Microphone Recording Button */}
-                                            {isUploadingAudio ? (
-                                                <View className="w-10 h-10 items-center justify-center rounded-full">
-                                                    <ActivityIndicator size={22} color="#4e45e4" />
-                                                </View>
-                                            ) : (
-                                                <TouchableOpacity
-                                                    onPress={() => startRecording()}
-                                                    className="w-10 h-10 items-center justify-center rounded-full bg-surface-variant"
-                                                    disabled={status !== 'connected'}
-                                                >
-                                                    <MaterialIcons name="mic-none" size={22} color="#9CA4AA" />
-                                                </TouchableOpacity>
-                                            )}
-                                        </View>
-                                    ) : (
-                                        <View className="w-10 h-10 items-center justify-center rounded-full bg-gray-400 opacity-50">
-                                            <MaterialIcons name="mic-off" size={22} color="#FFFFFF" />
-                                        </View>
+                                    {/* Mic and Send Buttons */}
+                                    <View className="ml-2">
+                                        {/* Microphone Recording Button */}
+                                        {isUploadingAudio ? (
+                                            <View className="w-10 h-10 items-center justify-center rounded-full">
+                                                <ActivityIndicator size={22} color="#4e45e4" />
+                                            </View>
+                                        ) : !isAudioAvailable ? (
+                                            <View className="w-10 h-10 items-center justify-center rounded-full bg-gray-400 opacity-50">
+                                                <MaterialIcons name="mic-off" size={22} color="#FFFFFF" />
+                                            </View>
+                                        ) : (
+                                            <TouchableOpacity
+                                                onPress={() => startRecording()}
+                                                className="w-10 h-10 items-center justify-center rounded-full bg-surface-variant"
+                                                disabled={status !== 'connected'}
+                                            >
+                                                <MaterialIcons name="mic-none" size={22} color="#9CA4AA" />
+                                            </TouchableOpacity>
+                                        )}
+                                    </View>
+
+                                    {inputText.trim().length > 0 && (
+                                        <Animated.View entering={FadeIn.duration(200)} exiting={FadeOut.duration(150)}>
+                                            <TouchableOpacity
+                                                onPress={handleSendText}
+                                                className="w-10 h-10 items-center justify-center bg-surface-variant rounded-full ml-1"
+                                                disabled={status !== 'connected'}
+                                            >
+                                                <MaterialIcons name="arrow-upward" size={22} color="#9CA4AA" />
+                                            </TouchableOpacity>
+                                        </Animated.View>
                                     )}
                                 </View>
                             ) : (
@@ -435,35 +454,18 @@ export default function ChatScreen() {
                                     {/* <SoundBarsEqualizer volumeLevel={volumeAnim} /> */}
                                     <TouchableOpacity
                                         onPress={() => stopRecording()}
-                                        className="absolute right-1 z-10 w-10 h-10 items-center justify-center bg-error rounded-full shadow-sm"
+                                        className="absolute right-1 z-10 w-10 h-10 items-center justify-center bg-surface-variant rounded-full"
                                     >
-                                        <MaterialIcons name="stop" size={24} color="#FFFFFF" />
+                                        <MaterialIcons name="stop" size={24} color="#9CA4AA" />
                                     </TouchableOpacity>
                                 </View>
                             )}
                         </View>
 
-                        {/* Recording Indicator */}
-                        {isRecording && (
-                            <View className="mt-3 flex-row items-center gap-2 bg-error-container/10 px-4 py-2 rounded-lg border border-error/30">
-                                <View className="w-3 h-3 rounded-full bg-error animate-pulse" />
-                                <Text className="text-sm text-error font-semibold" style={{ fontFamily: "Inter_600SemiBold" }}>
-                                    Recording: {formatDuration(recordingDuration)}
-                                </Text>
-                                <TouchableOpacity
-                                    onPress={() => stopRecording()}
-                                    className="ml-auto flex-row items-center gap-1 bg-error/20 px-3 py-1 rounded-full"
-                                >
-                                    <MaterialIcons name="stop" size={16} color="#ef4444" />
-                                    <Text className="text-xs text-error" style={{ fontFamily: "Inter_600SemiBold" }}>
-                                        Stop
-                                    </Text>
-                                </TouchableOpacity>
-                            </View>
-                        )}
+
                     </View>
                 </View>
-            </KeyboardAvoidingView>
+            </View>
         </SafeAreaView>
     );
 }
