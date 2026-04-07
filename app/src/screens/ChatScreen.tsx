@@ -9,7 +9,7 @@ import {
     Platform,
     ActivityIndicator,
     Keyboard,
-    Alert
+    Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -17,6 +17,8 @@ import { useNavigation } from '@react-navigation/native';
 import * as FileSystem from 'expo-file-system/legacy';
 import { useChat, ChatMessage } from '../hooks/useChat';
 import { useAudioRecorder, requestRecordingPermissionsAsync, setAudioModeAsync } from 'expo-audio';
+import Animated, { useSharedValue, withTiming, FadeIn, FadeOut } from 'react-native-reanimated';
+import SoundBarsEqualizer from '../components/SoundBarsEqualizer';
 
 // Safely imported expo-audio
 const isAudioAvailable = true;
@@ -26,6 +28,7 @@ const HIGH_QUALITY_OPTIONS = {
     sampleRate: 44100,
     numberOfChannels: 2,
     bitRate: 128000,
+    isMeteringEnabled: true,
     android: {
         outputFormat: 'mpeg4',
         audioEncoder: 'aac',
@@ -56,8 +59,18 @@ export default function ChatScreen() {
     const [isUploadingAudio, setIsUploadingAudio] = useState(false);
     const recorder = useAudioRecorder(HIGH_QUALITY_OPTIONS);
     const timerRef = useRef<NodeJS.Timeout | null>(null);
-    const silenceTimerRef = useRef<number>(0);
+    const isCalibratingRef = useRef<boolean>(true);
+    const noiseFloorRef = useRef<number>(-160);
+    const calibrationSamplesRef = useRef<number[]>([]);
+    const volumeHistoryRef = useRef<number[]>([]);
+    const hasSpokenRef = useRef<boolean>(false);
+    const silenceTicksRef = useRef<number>(0);
     const scrollViewRef = useRef<ScrollView>(null);
+    const volumeAnim = useSharedValue(-60);
+    const rawVolumeAnim = useSharedValue(-60); // Always-updated raw metering for equalizer
+    const noiseFloorAnim = useSharedValue(-60); // Dynamic noise floor for equalizer normalization
+
+
 
     const setupAudioPermissions = async () => {
         try {
@@ -98,21 +111,117 @@ export default function ChatScreen() {
             setIsRecording(true);
             setRecordingDuration(0);
 
+            // Reset refs
+            isCalibratingRef.current = true;
+            noiseFloorRef.current = -160;
+            calibrationSamplesRef.current = [];
+            volumeHistoryRef.current = [];
+            hasSpokenRef.current = false;
+            silenceTicksRef.current = 0;
+
             await recorder.prepareToRecordAsync();
             recorder.record();
             console.log('✅ Recording started');
 
-            silenceTimerRef.current = 0;
-            // Start timer
-            timerRef.current = setInterval(() => {
-                setRecordingDuration((prev) => prev + 1);
+            let totalTicks = 0;
 
-                silenceTimerRef.current += 1;
-                if (silenceTimerRef.current >= 5) {
-                    console.log('⏱️ 5 seconds of silence/inactivity detected, auto-stopping...');
-                    stopRecording();
+            // Start timer (200ms = 1 tick)
+            timerRef.current = setInterval(() => {
+                try {
+                    totalTicks++;
+                    // Update UI duration every 5 ticks (1 second)
+                    if (totalTicks % 5 === 0) {
+                        setRecordingDuration((prev) => prev + 1);
+                    }
+
+                    const status = recorder.getStatus();
+                    const currentVolume = status?.metering ?? -160;
+
+                    // Phase 1: Calibration (First 1 second / 5 ticks)
+                    if (isCalibratingRef.current) {
+                        calibrationSamplesRef.current.push(currentVolume);
+                        console.log(`[Calibration] Tick ${totalTicks}, Volume: ${currentVolume}dB`);
+
+                        // Always feed raw volume to equalizer
+                        rawVolumeAnim.value = currentVolume;
+
+                        if (totalTicks >= 5) {
+                            const avg = calibrationSamplesRef.current.reduce((a, b) => a + b, 0) / calibrationSamplesRef.current.length;
+                            noiseFloorRef.current = avg;
+                            noiseFloorAnim.value = avg;
+                            isCalibratingRef.current = false;
+                            console.log(`[Calibration Complete] Noise Floor set to: ${noiseFloorRef.current}dB`);
+                        }
+                        return;
+                    }
+
+                    // Always feed raw volume to equalizer
+                    rawVolumeAnim.value = currentVolume;
+
+                    // Phase 2: Variance-Based Detection
+                    volumeHistoryRef.current.push(currentVolume);
+                    if (volumeHistoryRef.current.length > 5) {
+                        volumeHistoryRef.current.shift();
+                    }
+
+                    const speechThreshold = noiseFloorRef.current + 12;
+
+                    if (currentVolume > speechThreshold) {
+                        const maxVol = Math.max(...volumeHistoryRef.current);
+                        const minVol = Math.min(...volumeHistoryRef.current);
+                        const variance = maxVol - minVol;
+
+                        if (variance > 5) {
+                            if (!hasSpokenRef.current) {
+                                console.log('🗣️ Speech detected! Started listening.');
+                            }
+                            hasSpokenRef.current = true;
+                            silenceTicksRef.current = 0;
+                            console.log(`[Speech] Vol: ${currentVolume.toFixed(2)}dB, Var: ${variance.toFixed(2)}dB`);
+
+                            // Animate wave only for active speech
+                            volumeAnim.value = withTiming(currentVolume, { duration: 100 });
+                        } else {
+                            silenceTicksRef.current++;
+                            console.log(`[Steady Noise] Vol: ${currentVolume.toFixed(2)}dB, Var: ${variance.toFixed(2)}dB -> Silence Tick: ${silenceTicksRef.current}`);
+
+                            // Retract wave when not speaking
+                            volumeAnim.value = withTiming(-60, { duration: 200 });
+                        }
+                    } else {
+                        silenceTicksRef.current++;
+                        console.log(`[Silence] Vol: ${currentVolume.toFixed(2)}dB (under threshold ${speechThreshold.toFixed(2)}dB) -> Silence Tick: ${silenceTicksRef.current}`);
+
+                        // Retract wave on silence
+                        volumeAnim.value = withTiming(-60, { duration: 200 });
+                    }
+
+                    // Phase 3: Auto-Stop Triggers
+
+                    // Scenario 1: Initial Silence (10 seconds = 50 ticks)
+                    if (!hasSpokenRef.current && silenceTicksRef.current >= 50) {
+                        console.log('⏱️ 10 seconds of initial silence detected, stopping and discarding...');
+                        stopRecording(true);
+                        return;
+                    }
+
+                    // Scenario 2: Speech Ended (5 seconds = 25 ticks)
+                    if (hasSpokenRef.current && silenceTicksRef.current >= 25) {
+                        console.log('⏱️ 5 seconds of silence after speech detected, stopping and processing...');
+                        stopRecording(false);
+                        return;
+                    }
+
+                    // Scenario 3: Absolute Max (60 seconds = 300 ticks)
+                    if (totalTicks >= 300) {
+                        console.log('⏱️ Absolute max time reached (60s), stopping and processing...');
+                        stopRecording(false);
+                        return;
+                    }
+                } catch (e) {
+                    console.error("Error in recording interval:", e);
                 }
-            }, 1000);
+            }, 200);
         } catch (err) {
             console.error("Failed to start recording", err);
             setIsRecording(false);
@@ -120,7 +229,7 @@ export default function ChatScreen() {
         }
     };
 
-    const stopRecording = async () => {
+    const stopRecording = async (discard: boolean = false) => {
         try {
             console.log('🛑 Stopping recording...');
 
@@ -136,6 +245,17 @@ export default function ChatScreen() {
 
             if (!uri) {
                 Alert.alert("Error", "Failed to get recording URI");
+                return;
+            }
+
+            if (discard) {
+                console.log('🗑️ Recording discarded (initial silence constraint)');
+                return;
+            }
+
+            // If no speech was detected, skip Whisper and preserve existing input text
+            if (!hasSpokenRef.current) {
+                console.log('🔇 No speech detected, skipping transcription');
                 return;
             }
 
@@ -190,8 +310,23 @@ export default function ChatScreen() {
 
     const isStreaming = messages.length > 0 && messages[messages.length - 1].role === 'assistant' && status === 'connected';
 
+    // Manual keyboard height tracking to avoid residual padding
+    const [keyboardHeight, setKeyboardHeight] = useState(0);
+    useEffect(() => {
+        const showSub = Keyboard.addListener('keyboardDidShow', (e) => {
+            setKeyboardHeight(e.endCoordinates.height);
+        });
+        const hideSub = Keyboard.addListener('keyboardDidHide', () => {
+            setKeyboardHeight(0);
+        });
+        return () => {
+            showSub.remove();
+            hideSub.remove();
+        };
+    }, []);
+
     return (
-        <SafeAreaView className="flex-1 bg-background" edges={['top']} onTouchStart={() => { silenceTimerRef.current = 0; }}>
+        <SafeAreaView className="flex-1 bg-background" edges={['top', 'bottom']}>
             {/* Header */}
             <View className="flex-row items-center justify-between px-5 py-3 border-b border-outline-variant/10 bg-background">
                 <View className="flex-row items-center gap-3">
@@ -221,12 +356,8 @@ export default function ChatScreen() {
                 </View>
             )}
 
-            {/* Main Content - Using KeyboardAvoidingView + ScrollView for proper Android keyboard handling */}
-            <KeyboardAvoidingView
-                behavior={Platform.OS === "ios" ? "padding" : "height"}
-                style={{ flex: 1 }}
-                keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
-            >
+            {/* Main Content */}
+            <View style={{ flex: 1, paddingBottom: keyboardHeight }}>
                 <View className="flex-1">
                     {/* Chat Messages ScrollView */}
                     <ScrollView
@@ -268,85 +399,73 @@ export default function ChatScreen() {
                     <View className="bg-surface border-t border-outline-variant/10 px-4 py-3">
                         <View className="flex-row items-end gap-3">
                             {/* Main Input Area */}
-                            <View className="flex-1 flex-row items-center rounded-3xl bg-surface-container px-4 py-1 border border-outline-variant/20">
-                                <TextInput
-                                    className="flex-1 max-h-32 text-sm text-on-surface py-3"
-                                    placeholder="Message DailyPilot..."
-                                    placeholderTextColor="#586064"
-                                    value={inputText}
-                                    onChangeText={setInputText}
-                                    onSubmitEditing={handleSendText}
-                                    multiline
-                                    style={{ fontFamily: "Inter_400Regular" }}
-                                    returnKeyType="send"
-                                    editable={status === 'connected'}
-                                />
+                            {!isRecording ? (
+                                <View className="flex-1 flex-row items-center rounded-3xl bg-surface-container px-4 h-12 border border-outline-variant/20">
+                                    <TextInput
+                                        className="flex-1 max-h-32 text-sm text-on-surface"
+                                        placeholder="Message DailyPilot..."
+                                        placeholderTextColor="#586064"
+                                        value={inputText}
+                                        onChangeText={setInputText}
+                                        onSubmitEditing={handleSendText}
+                                        multiline
+                                        style={{ fontFamily: "Inter_400Regular" }}
+                                        returnKeyType="send"
+                                        editable={status === 'connected'}
+                                    />
 
-                                {/* Send or Mic Button inside the pill */}
-                                {inputText.trim().length > 0 ? (
-                                    <TouchableOpacity
-                                        onPress={handleSendText}
-                                        className="w-9 h-9 items-center justify-center bg-secondary rounded-full ml-2"
-                                        disabled={status !== 'connected'}
-                                    >
-                                        <MaterialIcons name="arrow-upward" size={20} color="#ffffff" />
-                                    </TouchableOpacity>
-                                ) : isAudioAvailable ? (
+                                    {/* Mic and Send Buttons */}
                                     <View className="ml-2">
                                         {/* Microphone Recording Button */}
                                         {isUploadingAudio ? (
                                             <View className="w-10 h-10 items-center justify-center rounded-full">
                                                 <ActivityIndicator size={22} color="#4e45e4" />
                                             </View>
+                                        ) : !isAudioAvailable ? (
+                                            <View className="w-10 h-10 items-center justify-center rounded-full bg-gray-400 opacity-50">
+                                                <MaterialIcons name="mic-off" size={22} color="#FFFFFF" />
+                                            </View>
                                         ) : (
                                             <TouchableOpacity
-                                                onPress={() => {
-                                                    if (isRecording) {
-                                                        stopRecording();
-                                                    } else {
-                                                        silenceTimerRef.current = 0;
-                                                        startRecording();
-                                                    }
-                                                }}
-                                                className={`w-10 h-10 items-center justify-center rounded-full ${isRecording ? 'bg-secondary' : 'bg-surface-variant'
-                                                    }`}
+                                                onPress={() => startRecording()}
+                                                className="w-10 h-10 items-center justify-center rounded-full bg-surface-variant"
                                                 disabled={status !== 'connected'}
                                             >
-                                                {isRecording ? (
-                                                    <View className="flex-row items-center justify-center gap-[2px]">
-                                                        <View className="w-1.5 h-3 bg-white rounded-full animate-pulse" />
-                                                        <View className="w-1.5 h-4 bg-white rounded-full animate-pulse" />
-                                                        <View className="w-1.5 h-2.5 bg-white rounded-full animate-pulse" />
-                                                    </View>
-                                                ) : (
-                                                    <MaterialIcons name="mic-none" size={22} color="#9CA4AA" />
-                                                )}
+                                                <MaterialIcons name="mic-none" size={22} color="#9CA4AA" />
                                             </TouchableOpacity>
                                         )}
                                     </View>
-                                ) : (
-                                    <View className="w-10 h-10 items-center justify-center rounded-full bg-gray-400 opacity-50">
-                                        <MaterialIcons name="mic-off" size={22} color="#FFFFFF" />
-                                    </View>
-                                )}
-                            </View>
+
+                                    {inputText.trim().length > 0 && (
+                                        <Animated.View entering={FadeIn.duration(200)} exiting={FadeOut.duration(150)}>
+                                            <TouchableOpacity
+                                                onPress={handleSendText}
+                                                className="w-10 h-10 items-center justify-center bg-surface-variant rounded-full ml-1"
+                                                disabled={status !== 'connected'}
+                                            >
+                                                <MaterialIcons name="arrow-upward" size={22} color="#9CA4AA" />
+                                            </TouchableOpacity>
+                                        </Animated.View>
+                                    )}
+                                </View>
+                            ) : (
+                                <View className="flex-1 flex-row items-center justify-center rounded-3xl bg-surface-container overflow-hidden h-12 relative border border-outline-variant/20">
+                                    <SoundBarsEqualizer volumeLevel={rawVolumeAnim} noiseFloorLevel={noiseFloorAnim} />
+                                    {/* <SoundBarsEqualizer volumeLevel={volumeAnim} /> */}
+                                    <TouchableOpacity
+                                        onPress={() => stopRecording()}
+                                        className="absolute right-1 z-10 w-10 h-10 items-center justify-center bg-surface-variant rounded-full"
+                                    >
+                                        <MaterialIcons name="stop" size={24} color="#9CA4AA" />
+                                    </TouchableOpacity>
+                                </View>
+                            )}
                         </View>
 
-                        {/* Recording Indicator */}
-                        {isRecording && (
-                            <View className="mt-3 flex-row items-center gap-2 bg-error-container/10 px-4 py-2 rounded-lg border border-error/30">
-                                <View className="w-3 h-3 rounded-full bg-error animate-pulse" />
-                                <Text className="text-sm text-error font-semibold" style={{ fontFamily: "Inter_600SemiBold" }}>
-                                    Recording: {formatDuration(recordingDuration)}
-                                </Text>
-                                <Text className="text-xs text-error/70 ml-auto" style={{ fontFamily: "Inter_400Regular" }}>
-                                    Release to send
-                                </Text>
-                            </View>
-                        )}
+
                     </View>
                 </View>
-            </KeyboardAvoidingView>
+            </View>
         </SafeAreaView>
     );
 }
