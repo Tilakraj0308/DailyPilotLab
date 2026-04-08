@@ -261,12 +261,15 @@ def list_connectors(user_id: int = Depends(get_current_user_id)):
 
 
 @app.get("/connectors/google/calendar/start")
-def connector_google_calendar_start(user_id: int = Depends(get_current_user_id)):
+def connector_google_calendar_start(
+    user_id: int = Depends(get_current_user_id),
+    deep_link: Optional[str] = Query(None)
+):
     """
     Generate the Google OAuth consent URL for Calendar access.
     The URL contains a signed state parameter binding the session to this user.
     """
-    auth_url = build_google_auth_url(user_id)
+    auth_url = build_google_auth_url(user_id, deep_link)
     return {"auth_url": auth_url}
 
 
@@ -299,9 +302,12 @@ def connector_google_calendar_callback(
             status_code=302,
         )
 
-    # Validate signed state → extract user_id
+    # Validate signed state → extract user_id & deep link
     try:
-        user_id = verify_oauth_state(state)
+        user_id, deep_link = verify_oauth_state(state)
+        # Use provided deep link or fallback to default
+        if deep_link:
+            base_redirect = deep_link
     except ValueError as e:
         print(f"State validation failed: {e}")
         return RedirectResponse(

@@ -23,13 +23,16 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 def _get_encryption_key() -> bytes:
     """Load the 32-byte AES key from environment (base64-encoded)."""
-    key_b64 = os.getenv("CONNECTOR_ENCRYPTION_KEY", "")
+    key_b64 = os.getenv("CONNECTOR_ENCRYPTION_KEY", os.getenv("CONNECTOR_TOKEN_ENCRYPTION_KEY", ""))
     if not key_b64:
-        raise RuntimeError("CONNECTOR_ENCRYPTION_KEY is not set")
+        raise RuntimeError("CONNECTOR_ENCRYPTION_KEY or CONNECTOR_TOKEN_ENCRYPTION_KEY is not set")
+    # Support both standard and urlsafe base64 variations, and fix padding if necessary
+    key_b64 = key_b64.replace("-", "+").replace("_", "/")
+    key_b64 += "=" * ((4 - len(key_b64) % 4) % 4)
     key = base64.b64decode(key_b64)
     if len(key) != 32:
         raise RuntimeError(
-            f"CONNECTOR_ENCRYPTION_KEY must decode to 32 bytes, got {len(key)}"
+            f"CONNECTOR_ENCRYPTION_KEY must decode to 32 bytes, got {len(key)} from raw string {key_b64}"
         )
     return key
 
@@ -102,26 +105,30 @@ def _compute_hmac(message: str) -> str:
     return hmac.new(key, message.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
-def create_oauth_state(user_id: int) -> str:
+def create_oauth_state(user_id: int, deep_link: str = None) -> str:
     """
     Create a signed, time-limited OAuth state parameter.
 
-    Payload: { "user_id": int, "exp": int, "sig": str }
+    Payload: { "user_id": int, "exp": int, "sig": str, "deep_link": ... }
     Encoded as base64url JSON.
     """
     exp = int(time.time()) + _STATE_EXPIRY_SECONDS
     message = f"{user_id}|{exp}"
+    if deep_link:
+        message += f"|{deep_link}"
     sig = _compute_hmac(message)
 
     payload = {"user_id": user_id, "exp": exp, "sig": sig}
+    if deep_link:
+        payload["deep_link"] = deep_link
     payload_json = json.dumps(payload, separators=(",", ":"))
 
     return base64.urlsafe_b64encode(payload_json.encode("utf-8")).decode("ascii")
 
 
-def verify_oauth_state(state: str) -> int:
+def verify_oauth_state(state: str) -> tuple[int, str | None]:
     """
-    Verify an OAuth state parameter and return the user_id.
+    Verify an OAuth state parameter and return the (user_id, deep_link).
 
     Raises:
         ValueError: if the state is invalid, expired, or tampered with.
@@ -135,6 +142,7 @@ def verify_oauth_state(state: str) -> int:
     user_id = payload.get("user_id")
     exp = payload.get("exp")
     sig = payload.get("sig")
+    deep_link = payload.get("deep_link")
 
     if not all([user_id, exp, sig]):
         raise ValueError("Incomplete state payload")
@@ -144,8 +152,11 @@ def verify_oauth_state(state: str) -> int:
         raise ValueError("State has expired")
 
     # Recompute HMAC and compare (constant-time)
-    expected_sig = _compute_hmac(f"{user_id}|{exp}")
+    message = f"{user_id}|{exp}"
+    if deep_link:
+        message += f"|{deep_link}"
+    expected_sig = _compute_hmac(message)
     if not hmac.compare_digest(sig, expected_sig):
         raise ValueError("State signature mismatch")
 
-    return int(user_id)
+    return int(user_id), deep_link

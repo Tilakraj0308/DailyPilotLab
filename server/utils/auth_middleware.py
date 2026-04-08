@@ -12,14 +12,20 @@ Usage in any endpoint:
 
 import os
 import jwt
+import requests
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET", "change-me-in-production")
-JWT_ALGORITHM = "HS256"
+SUPABASE_URL = os.getenv("SUPABASE_URL", "")
+
+# Fallback anon key for online verification if ES256 is used
+SUPABASE_ANON_KEY = os.getenv(
+    "SUPABASE_ANON_KEY", 
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl5ZG5qcXF6dGp6aXluZXJudmVtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNTAzMzQsImV4cCI6MjA5MDcyNjMzNH0.FxGveGFA1bVEQRXac14q0VcnZASme6cbWfr8Eo6Sdho"
+)
 
 security = HTTPBearer()
-
 
 def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
     """
@@ -28,16 +34,45 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
     """
     token = credentials.credentials
     try:
-        # Supabase JWTs use 'authenticated' as an audience
-        payload = jwt.decode(token, SUPABASE_JWT_SECRET, algorithms=[JWT_ALGORITHM], audience="authenticated")
+        header = jwt.get_unverified_header(token)
+        alg = header.get("alg", "HS256")
+        
+        if alg == "HS256":
+            # Verify offline using symmetric secret
+            payload = jwt.decode(
+                token,
+                SUPABASE_JWT_SECRET,
+                algorithms=["HS256", "HS384", "HS512"],
+                options={"verify_aud": False}
+            )
+        else:
+            # Fallback for ES256/RS256 without JWKS: Verify online via Supabase
+            if not SUPABASE_URL:
+                raise ValueError("SUPABASE_URL is required for online ES256 verification")
+                
+            response = requests.get(
+                f"{SUPABASE_URL}/auth/v1/user",
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "apikey": SUPABASE_ANON_KEY
+                },
+                timeout=5
+            )
+            
+            if response.status_code != 200:
+                raise ValueError(f"Online verification failed: {response.text}")
+                
+            # Since Supabase verified it, we can safely decode the payload
+            payload = jwt.decode(token, options={"verify_signature": False, "verify_aud": False})
+            
         return payload
     except jwt.ExpiredSignatureError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token has expired",
         )
-    except (jwt.InvalidTokenError, KeyError, ValueError) as err:
-        print(f"Token error: {err}")
+    except Exception as err:
+        print(f"Token error: {type(err).__name__} - {err}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token",

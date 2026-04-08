@@ -92,10 +92,12 @@ export async function getConnectors(
  * Returns the auth URL to open in the browser.
  */
 export async function startGoogleCalendarConnect(
-    token: string
+    token: string,
+    deepLink?: string
 ): Promise<string> {
+    const qs = deepLink ? `?deep_link=${encodeURIComponent(deepLink)}` : "";
     const data = await apiFetch<{ auth_url: string }>(
-        "/connectors/google/calendar/start",
+        `/connectors/google/calendar/start${qs}`,
         token
     );
     return data.auth_url;

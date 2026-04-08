@@ -116,7 +116,7 @@ export default function ConnectorsScreen() {
         setConnectingProvider("google_calendar");
 
         try {
-            const authUrl = await startGoogleCalendarConnect(token);
+            const authUrl = await startGoogleCalendarConnect(token, CONNECTOR_CALLBACK_REDIRECT);
 
             if (Platform.OS === "web") {
                 window.location.href = authUrl;
@@ -243,8 +243,8 @@ export default function ConnectorsScreen() {
                         loading={false}
                         needsReconnect={false}
                         disabled
-                        onConnect={() => {}}
-                        onDisconnect={() => {}}
+                        onConnect={() => { }}
+                        onDisconnect={() => { }}
                     />
 
                     <ConnectorTile
@@ -254,8 +254,8 @@ export default function ConnectorsScreen() {
                         loading={false}
                         needsReconnect={false}
                         disabled
-                        onConnect={() => {}}
-                        onDisconnect={() => {}}
+                        onConnect={() => { }}
+                        onDisconnect={() => { }}
                     />
 
                     <ConnectorTile
@@ -265,8 +265,8 @@ export default function ConnectorsScreen() {
                         loading={false}
                         needsReconnect={false}
                         disabled
-                        onConnect={() => {}}
-                        onDisconnect={() => {}}
+                        onConnect={() => { }}
+                        onDisconnect={() => { }}
                     />
 
                     {/* Info footer */}

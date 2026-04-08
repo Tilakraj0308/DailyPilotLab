@@ -35,8 +35,8 @@ GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
 GOOGLE_CALENDAR_EVENTS_URL = "https://www.googleapis.com/calendar/v3/calendars/primary/events"
 
-# Read-only calendar scope — matches UX consent modal exactly
-GOOGLE_CALENDAR_SCOPES = "https://www.googleapis.com/auth/calendar.readonly"
+# Read-only calendar scope + user identity scopes
+GOOGLE_CALENDAR_SCOPES = "https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile"
 
 # Refresh proactively if token expires within this window
 TOKEN_REFRESH_BUFFER = timedelta(minutes=5)
@@ -83,12 +83,12 @@ def get_user_id_from_auth(auth_id: str) -> int | None:
 # OAuth URL Generation
 # ---------------------------------------------------------------------------
 
-def build_google_auth_url(user_id: int) -> str:
+def build_google_auth_url(user_id: int, deep_link: str = None) -> str:
     """
     Build the Google OAuth consent URL with a signed state parameter.
-    The state encodes user_id + expiry + HMAC signature.
+    The state encodes user_id + expiry + HMAC signature + optional deep_link.
     """
-    state = create_oauth_state(user_id)
+    state = create_oauth_state(user_id, deep_link)
 
     params = {
         "client_id": GOOGLE_CLIENT_ID,
@@ -100,7 +100,8 @@ def build_google_auth_url(user_id: int) -> str:
         "state": state,
     }
 
-    query = "&".join(f"{k}={http_requests.utils.quote(str(v))}" for k, v in params.items())
+    import urllib.parse
+    query = urllib.parse.urlencode(params)
     return f"{GOOGLE_AUTH_URL}?{query}"
 
 
