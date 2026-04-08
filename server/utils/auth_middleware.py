@@ -42,3 +42,29 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token",
         )
+
+
+def get_current_user_id(payload: dict = Depends(get_current_user)) -> int:
+    """
+    Resolve the JWT payload to the internal users.id.
+
+    Chains: Authorization header → JWT decode → auth_id → users.id
+    Use this as a dependency on any route that needs ownership enforcement.
+    """
+    from services.connectors_service import get_user_id_from_auth
+
+    auth_id = payload.get("sub", "")
+    if not auth_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing user identity in token",
+        )
+
+    user_id = get_user_id_from_auth(auth_id)
+    if user_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found — please sign in again",
+        )
+
+    return user_id

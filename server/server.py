@@ -1,5 +1,5 @@
-from fastapi import FastAPI, Response, UploadFile, File, Depends
-from fastapi.responses import StreamingResponse
+from fastapi import FastAPI, Response, UploadFile, File, Depends, Query
+from fastapi.responses import StreamingResponse, RedirectResponse
 from pydantic import BaseModel
 import json
 import asyncio
@@ -8,10 +8,25 @@ from fastapi.middleware.cors import CORSMiddleware
 from utils.idea_manager import get_ideas, create_idea, create_ideas, update_idea, delete_idea, delete_ideas, delete_all_ideas, raw_to_refined_ideas
 from models.ideas import IdeaCreateInput, IdeaOut, IdeaUpdateInput, IdeaDeleteInput
 from models.users import GoogleAuthRequest, AuthResponse, UserOut
+from models.connectors import ConnectorStatus, ConnectorListResponse, CalendarEventsResponse
 from utils.helpers import assign_idea_to_topic, semantic_search_memories, update_traits
 from services.auth_service import get_or_create_user
-from utils.auth_middleware import get_current_user
-from typing import List 
+from utils.auth_middleware import get_current_user, get_current_user_id
+from utils.crypto import verify_oauth_state
+from services.connectors_service import (
+    build_google_auth_url,
+    exchange_code_for_tokens,
+    fetch_google_identity,
+    upsert_connector,
+    get_connector_status,
+    get_all_connectors,
+    revoke_connector,
+    fetch_calendar_events,
+    ConnectorRevokedException,
+    ConnectorRateLimitException,
+    ConnectorUnavailableException,
+)
+from typing import List, Optional
 from dotenv import load_dotenv
 from utils.topic_manager import update_topic_recency
 from services.chat_service import transcribe_audio, stream_chat
@@ -221,3 +236,193 @@ async def chat_stream(req: ChatStreamRequest):
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
+
+# ─── Connectors ─────────────────────────────────────────────────────────────
+
+@app.get("/connectors", response_model=ConnectorListResponse)
+def list_connectors(user_id: int = Depends(get_current_user_id)):
+    """List all connectors for the authenticated user."""
+    connectors = get_all_connectors(user_id)
+    return ConnectorListResponse(
+        connectors=[
+            ConnectorStatus(
+                provider=c["provider"],
+                connected=c["connected"],
+                provider_account_email=c.get("provider_account_email"),
+                scopes=c.get("scopes", []),
+                expires_at=c.get("expires_at"),
+                connected_at=c.get("connected_at"),
+                last_sync_at=c.get("last_sync_at"),
+                needs_reconnect=c["needs_reconnect"],
+            )
+            for c in connectors
+        ]
+    )
+
+
+@app.get("/connectors/google/calendar/start")
+def connector_google_calendar_start(user_id: int = Depends(get_current_user_id)):
+    """
+    Generate the Google OAuth consent URL for Calendar access.
+    The URL contains a signed state parameter binding the session to this user.
+    """
+    auth_url = build_google_auth_url(user_id)
+    return {"auth_url": auth_url}
+
+
+@app.get("/connectors/google/calendar/callback")
+def connector_google_calendar_callback(
+    code: Optional[str] = Query(None),
+    state: Optional[str] = Query(None),
+    error: Optional[str] = Query(None),
+):
+    """
+    OAuth callback from Google. This endpoint is NOT JWT-protected.
+    Authentication is via the HMAC-signed state parameter.
+
+    On success: redirects to the app via deep link.
+    On failure: redirects to the app with error info.
+    """
+    base_redirect = "dailypilot://connectors/callback"
+
+    # Handle user cancellation / consent denied
+    if error:
+        print(f"OAuth error: {error}")
+        return RedirectResponse(
+            url=f"{base_redirect}?status=error&reason=cancelled",
+            status_code=302,
+        )
+
+    if not code or not state:
+        return RedirectResponse(
+            url=f"{base_redirect}?status=error&reason=missing_params",
+            status_code=302,
+        )
+
+    # Validate signed state → extract user_id
+    try:
+        user_id = verify_oauth_state(state)
+    except ValueError as e:
+        print(f"State validation failed: {e}")
+        return RedirectResponse(
+            url=f"{base_redirect}?status=error&reason=invalid_state",
+            status_code=302,
+        )
+
+    # Exchange code for tokens
+    try:
+        tokens = exchange_code_for_tokens(code)
+    except ValueError as e:
+        print(f"Token exchange failed: {e}")
+        return RedirectResponse(
+            url=f"{base_redirect}?status=error&reason=exchange_failed",
+            status_code=302,
+        )
+
+    # Fetch Google identity
+    try:
+        identity = fetch_google_identity(tokens["access_token"])
+    except ValueError as e:
+        print(f"Identity fetch failed: {e}")
+        return RedirectResponse(
+            url=f"{base_redirect}?status=error&reason=identity_failed",
+            status_code=302,
+        )
+
+    # Persist encrypted tokens
+    try:
+        upsert_connector(
+            user_id=user_id,
+            provider="google_calendar",
+            access_token=tokens["access_token"],
+            refresh_token=tokens["refresh_token"],
+            expires_in=tokens.get("expires_in", 3600),
+            scopes=tokens.get("scope", ""),
+            provider_account_id=identity["id"],
+            provider_account_email=identity["email"],
+        )
+    except Exception as e:
+        print(f"Connector upsert failed: {e}")
+        return RedirectResponse(
+            url=f"{base_redirect}?status=error&reason=save_failed",
+            status_code=302,
+        )
+
+    return RedirectResponse(
+        url=f"{base_redirect}?status=success",
+        status_code=302,
+    )
+
+
+@app.get("/connectors/google/calendar/status", response_model=ConnectorStatus)
+def connector_google_calendar_status(user_id: int = Depends(get_current_user_id)):
+    """Get the connection status of Google Calendar for the authenticated user."""
+    status_data = get_connector_status(user_id, "google_calendar")
+    if not status_data:
+        return ConnectorStatus(
+            provider="google_calendar",
+            connected=False,
+            needs_reconnect=False,
+        )
+    return ConnectorStatus(
+        provider=status_data["provider"],
+        connected=status_data["connected"],
+        provider_account_email=status_data.get("provider_account_email"),
+        scopes=status_data.get("scopes", []),
+        expires_at=status_data.get("expires_at"),
+        connected_at=status_data.get("connected_at"),
+        last_sync_at=status_data.get("last_sync_at"),
+        needs_reconnect=status_data["needs_reconnect"],
+    )
+
+
+@app.post("/connectors/google/calendar/disconnect")
+def connector_google_calendar_disconnect(
+    user_id: int = Depends(get_current_user_id),
+):
+    """Disconnect Google Calendar — revokes locally and clears stored tokens."""
+    revoked = revoke_connector(user_id, "google_calendar")
+    if not revoked:
+        return {"status": "not_connected", "message": "No active connection found"}
+    return {"status": "disconnected", "message": "Google Calendar disconnected"}
+
+
+@app.get("/connectors/google/calendar/events", response_model=CalendarEventsResponse)
+def connector_google_calendar_events(
+    user_id: int = Depends(get_current_user_id),
+    time_min: Optional[str] = Query(None, description="ISO datetime lower bound"),
+    time_max: Optional[str] = Query(None, description="ISO datetime upper bound"),
+):
+    """
+    Fetch upcoming calendar events from Google Calendar.
+    Handles token refresh, revocation detection, and rate limits.
+    """
+    try:
+        events = fetch_calendar_events(
+            user_id=user_id,
+            time_min=time_min,
+            time_max=time_max,
+        )
+        from datetime import datetime, timezone
+        return CalendarEventsResponse(
+            events=events,
+            synced_at=datetime.now(timezone.utc).isoformat(),
+        )
+    except ConnectorRevokedException as e:
+        return Response(
+            content=json.dumps({"error": str(e), "needs_reconnect": True}),
+            status_code=401,
+            media_type="application/json",
+        )
+    except ConnectorRateLimitException as e:
+        return Response(
+            content=json.dumps({"error": str(e)}),
+            status_code=429,
+            media_type="application/json",
+        )
+    except ConnectorUnavailableException as e:
+        return Response(
+            content=json.dumps({"error": str(e)}),
+            status_code=502,
+            media_type="application/json",
+        )

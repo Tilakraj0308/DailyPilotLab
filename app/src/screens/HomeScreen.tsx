@@ -351,6 +351,9 @@ export default function HomeScreen() {
                             if (tab.label === 'Chat') {
                                 navigation.navigate('Chat');
                             }
+                            if (tab.label === 'Me') {
+                                navigation.navigate('Connectors');
+                            }
                         }}
                     >
                         <View

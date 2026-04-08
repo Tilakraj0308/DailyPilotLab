@@ -12,6 +12,7 @@ import { AuthProvider, useAuth } from "./src/context/AuthContext";
 import LoginScreen from "./src/screens/LoginScreen";
 import HomeScreen from "./src/screens/HomeScreen";
 import ChatScreen from "./src/screens/ChatScreen";
+import ConnectorsScreen from "./src/screens/ConnectorsScreen";
 import { supabase } from "./src/lib/supabase";
 import * as Linking from "expo-linking";
 import * as QueryParams from "expo-auth-session/build/QueryParams";
@@ -62,10 +63,34 @@ class ErrorBoundary extends React.Component<
 function AppNavigator() {
   const { session, isLoading } = useAuth();
   const incomingUrl = Linking.useURL();
+  const navigationRef = React.useRef<any>(null);
 
   // Root-level listener specifically meant to catch deep links that WebBrowser drops.
   useEffect(() => {
     if (incomingUrl) {
+      // Handle connector OAuth callbacks (dailypilot://connectors/callback?status=...)
+      try {
+        const url = new URL(incomingUrl);
+        if (
+          url.hostname === "connectors" ||
+          url.pathname?.includes("connectors/callback")
+        ) {
+          const status = url.searchParams?.get("status") || "";
+          const reason = url.searchParams?.get("reason") || "";
+          // Navigate to ConnectorsScreen with callback params
+          if (navigationRef.current) {
+            navigationRef.current.navigate("Connectors", {
+              callbackStatus: status,
+              callbackReason: reason,
+            });
+          }
+          return;
+        }
+      } catch {
+        // Not a valid URL or not a connector callback — fall through
+      }
+
+      // Handle Supabase auth callbacks
       const { params, errorCode } = QueryParams.getQueryParams(incomingUrl);
       if (params?.access_token && params?.refresh_token) {
         supabase.auth.setSession({
@@ -103,12 +128,13 @@ function AppNavigator() {
   }
 
   return (
-    <NavigationContainer>
+    <NavigationContainer ref={navigationRef}>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {session ? (
           <>
             <Stack.Screen name="Home" component={HomeScreen} />
             <Stack.Screen name="Chat" component={ChatScreen} />
+            <Stack.Screen name="Connectors" component={ConnectorsScreen} />
           </>
         ) : (
           <Stack.Screen name="Login" component={LoginScreen} />
