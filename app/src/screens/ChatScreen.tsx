@@ -17,7 +17,7 @@ import { useNavigation } from '@react-navigation/native';
 import * as FileSystem from 'expo-file-system/legacy';
 import { useChat, ChatMessage } from '../hooks/useChat';
 import { useAudioRecorder, requestRecordingPermissionsAsync, setAudioModeAsync } from 'expo-audio';
-import Animated, { useSharedValue, withTiming, FadeIn, FadeOut } from 'react-native-reanimated';
+import Animated, { useSharedValue, withTiming, FadeIn, FadeOut, withRepeat, withSequence, withDelay } from 'react-native-reanimated';
 import SoundBarsEqualizer from '../components/SoundBarsEqualizer';
 
 // Safely imported expo-audio
@@ -47,6 +47,36 @@ const HIGH_QUALITY_OPTIONS = {
 } as any;
 
 const MAX_RECORDING_MS = 60000; // 60s max per voice memo
+
+const TypingWave = () => {
+    const dot1 = useSharedValue(0);
+    const dot2 = useSharedValue(0);
+    const dot3 = useSharedValue(0);
+
+    useEffect(() => {
+        const animateDot = (dot: any, delay: number) => {
+            dot.value = withDelay(delay, withRepeat(
+                withSequence(
+                    withTiming(-5, { duration: 300 }),
+                    withTiming(0, { duration: 300 })
+                ),
+                -1,
+                true
+            ));
+        };
+        animateDot(dot1, 0);
+        animateDot(dot2, 150);
+        animateDot(dot3, 300);
+    }, []);
+
+    return (
+        <View className="flex-row items-center gap-1">
+            <Animated.View style={{ transform: [{ translateY: dot1 }] }} className="w-2 h-2 rounded-full bg-on-surface-variant" />
+            <Animated.View style={{ transform: [{ translateY: dot2 }] }} className="w-2 h-2 rounded-full bg-on-surface-variant" />
+            <Animated.View style={{ transform: [{ translateY: dot3 }] }} className="w-2 h-2 rounded-full bg-on-surface-variant" />
+        </View>
+    );
+};
 
 export default function ChatScreen() {
     const navigation = useNavigation<any>();
@@ -385,12 +415,7 @@ export default function ChatScreen() {
                                 <View className="w-8 h-8 rounded-full items-center justify-center bg-secondary-container">
                                     <MaterialIcons name="smart-toy" size={16} color="#4e45e4" />
                                 </View>
-                                <View className="flex-row items-center gap-1">
-                                    <View className="w-2 h-2 rounded-full bg-on-surface-variant" style={{ opacity: 0.5 }} />
-                                    <View className="w-2 h-2 rounded-full bg-on-surface-variant" style={{ opacity: 0.7 }} />
-                                    <View className="w-2 h-2 rounded-full bg-on-surface-variant" style={{ opacity: 0.9 }} />
-                                </View>
-                                <Text className="text-xs text-on-surface-variant ml-1" style={{ fontFamily: "Inter_400Regular" }}>AI is thinking...</Text>
+                                <TypingWave />
                             </View>
                         )}
                     </ScrollView>
