@@ -131,14 +131,14 @@ def organize_ideas_into_topics(ideas: any, existing_topics: any) -> TopicsList:
     )
     return completion
 
-def assign_idea_to_topic():
+def assign_idea_to_topic(user_id: str):
     '''Assign unassigned ideas to existing topics using a threshold and create a new topic if needed'''
     threshold = float(os.getenv("TOPIC_ASSIGNMENT_THRESHOLD_SIMILARITY", 0.9))
     threshold = 1-threshold
     idea_service = IdeaService()
-    assigned_ideas = idea_service.assign_idea_to_topic(threshold)
-    unassigned_ideas = idea_service.get_unassigned_ideas()
-    existing_topics = get_all_topics()
+    assigned_ideas = idea_service.assign_idea_to_topic(threshold, user_id)
+    unassigned_ideas = idea_service.get_unassigned_ideas(user_id)
+    existing_topics = get_all_topics(user_id)
     if len(unassigned_ideas) == 0:
         return {'status': 200, 'message': 'Assigned ideas successfully'}
     ideas = organize_ideas_into_topics(unassigned_ideas, existing_topics)
@@ -149,17 +149,17 @@ def assign_idea_to_topic():
         else:
             existing_topics.append(TopicUpdateInput.model_validate(topic.model_dump(exclude={"is_new"})))
     if len(existing_topics) > 0:
-        update_topics(existing_topics, append_idea_ids=True)
+        update_topics(existing_topics, user_id, append_idea_ids=True)
     if len(new_topics) > 0:
-        create_topics(new_topics)
+        create_topics(new_topics, user_id)
     return {'status': 200, 'message': 'Assigned ideas successfully'}
 
-def semantic_search_memories(query: str, n_topics: int = 5, k_ideas: int = 3):
+def semantic_search_memories(query: str, user_id: str, n_topics: int = 5, k_ideas: int = 3):
     idea_service = IdeaService()
     query_embedding = openai_client.get_embeddings(query)[0].embedding
     topic_similarity_threshold = float(os.getenv("TOPIC_SIMILARITY_THRESHOLD", 0.7))
     idea_similarity_threshold = float(os.getenv("IDEA_SIMILARITY_THRESHOLD", 0.8))
-    rows = idea_service.search_topics_and_ideas(query_embedding, n_topics, k_ideas, topic_similarity_threshold, idea_similarity_threshold)
+    rows = idea_service.search_topics_and_ideas(query_embedding, user_id, n_topics, k_ideas, topic_similarity_threshold, idea_similarity_threshold)
     topics = defaultdict(lambda: {"title": "", "summary": "", "ideas": []})
     # for topic_id, title, summary, idea_id, content, dist in rows:
     #     topics[topic_id]["title"] = title
@@ -234,7 +234,7 @@ def extract_traits(payload_for_llm: str) -> TraitExtractionResponse:
     return completion
 
 
-def update_traits():
+def update_traits(user_id: str):
     """
     Full pipeline to refresh user traits:
     1. Fetch high-signal topics from the DB.
@@ -259,6 +259,7 @@ def update_traits():
 
     # 1. Fetch high-signal topics
     high_signal_topics = topics_service.get_high_signal_topics(
+        user_id=user_id,
         recency_threshold=recency_threshold,
         dominance_threshold=dominance_threshold,
     )
@@ -271,6 +272,7 @@ def update_traits():
     for topic in high_signal_topics:
         recent_ideas = topics_service.get_recent_ideas_for_topic(
             topic_id=topic["id"],
+            user_id=user_id,
             limit=recent_ideas_per_topic,
         )
         topic_payloads.append({
@@ -292,7 +294,7 @@ def update_traits():
     print(extraction_response)
 
     # 4. Upsert traits
-    traits_service.process_and_upsert_traits(extraction_response.traits)
+    traits_service.process_and_upsert_traits(extraction_response.traits, user_id)
 
     return {
         "status": 200,

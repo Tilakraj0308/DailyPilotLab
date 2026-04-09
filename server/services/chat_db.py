@@ -1,12 +1,12 @@
 import os
 from db.dbConnection import get_dict_cursor
 
-def get_or_create_session(session_id: str) -> str:
+def get_or_create_session(session_id: str, user_id: str) -> str:
     """Ensure the chat session exists in the database."""
     with get_dict_cursor() as cur:
-        cur.execute("SELECT id FROM public.chat_sessions WHERE id = %s", (session_id,))
+        cur.execute("SELECT id FROM public.chat_sessions WHERE id = %s AND user_id = %s", (session_id, user_id))
         if not cur.fetchone():
-            cur.execute("INSERT INTO public.chat_sessions (id) VALUES (%s)", (session_id,))
+            cur.execute("INSERT INTO public.chat_sessions (id, user_id) VALUES (%s, %s)", (session_id, user_id))
     return session_id
 
 def save_message(session_id: str, role: str, content: str):

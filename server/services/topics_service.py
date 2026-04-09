@@ -6,25 +6,26 @@ class TopicsService:
     def __init__(self):
         pass
 
-    def get_all_topics(self):
+    def get_all_topics(self, user_id: str):
         with get_dict_cursor() as cur:
-            cur.execute("SELECT * FROM topic")
+            cur.execute("SELECT * FROM topic WHERE user_id = %s", (user_id,))
             topics = cur.fetchall()
             return topics
 
-    def get_topic(self, topic_id: int):
+    def get_topic(self, topic_id: int, user_id: str):
         with get_dict_cursor() as cur:
-            cur.execute("SELECT * FROM topic WHERE id = %s", (topic_id,))
+            cur.execute("SELECT * FROM topic WHERE id = %s AND user_id = %s", (topic_id, user_id))
             return cur.fetchone()
 
-    def create_topic(self, insert_data: Dict[str, Any]):
+    def create_topic(self, insert_data: Dict[str, Any], user_id: str):
         # idea_ids = insert_data.pop('idea_ids', None)
         with get_dict_cursor() as cur:
             if not insert_data:
-                cur.execute("INSERT INTO topic DEFAULT VALUES RETURNING id")
+                cur.execute("INSERT INTO topic (user_id) VALUES (%s) RETURNING id", (user_id,))
                 res = cur.fetchone()
                 topic_id = res['id'] if res else None
             else:
+                insert_data['user_id'] = user_id
                 columns = list(insert_data.keys())
                 values = list(insert_data.values())
                 placeholders = ["%s"] * len(values)
@@ -43,24 +44,12 @@ class TopicsService:
                 
             return topic_id
 
-    def bulk_create_topics(self, data_list: List[Dict[str, Any]]):
+    def bulk_create_topics(self, data_list: List[Dict[str, Any]], user_id: str):
         if not data_list or len(data_list) == 0:
             return
 
-        # cleaned_list = []
-        # for d in data_list:
-        #     d_copy = d.copy()
-        #     # d_copy.pop('idea_ids', None)
-        #     cleaned_list.append(d_copy)
-
-        # if not cleaned_list:
-        #     return
-
-        # Use sorted keys for a stable, deterministic column order
-        # all_columns = set()
-        # for d in data_list:
-        #     all_columns.update(d.keys())
-        # columns = sorted(list(all_columns))
+        for d in data_list:
+            d['user_id'] = user_id
 
         all_columns = data_list[0].keys()
         columns = list(all_columns)
@@ -73,7 +62,7 @@ class TopicsService:
             results = cur.fetchall()
             return [row['id'] for row in results]
 
-    def update_topic(self, update_data: Dict[str, Any]):
+    def update_topic(self, update_data: Dict[str, Any], user_id: str):
         if not update_data:
             return
         
@@ -87,16 +76,19 @@ class TopicsService:
 
         set_clauses = [f"{key} = %s" for key in update_data.keys()]
         values = list(update_data.values())
-        values.append(topic_id)
+        values.extend([topic_id, user_id])
 
-        query = f"UPDATE topic SET {', '.join(set_clauses)} WHERE id = %s"
+        query = f"UPDATE topic SET {', '.join(set_clauses)} WHERE id = %s AND user_id = %s"
 
         with get_dict_cursor() as cur:
             cur.execute(query, tuple(values))
 
-    def bulk_update_topics(self, data_list: List[Dict[str, Any]]):
+    def bulk_update_topics(self, data_list: List[Dict[str, Any]], user_id: str):
         if not data_list:
             return
+
+        for d in data_list:
+            d['user_id'] = user_id
 
         # Assume all items have the same format; derive keys from the first item
         first_item = data_list[0].copy()
@@ -124,7 +116,7 @@ class TopicsService:
             UPDATE topic AS t
             SET {', '.join(set_clauses)}
             FROM (VALUES %s) AS c({', '.join(columns)})
-            WHERE t.id = c.id::int
+            WHERE t.id = c.id::int AND t.user_id = c.user_id
         """
 
         with get_dict_cursor() as cur:
@@ -157,29 +149,29 @@ class TopicsService:
         with get_dict_cursor() as cur:
             execute_values(cur, query, rows)
 
-    def delete_topic(self, topic_id: int):
+    def delete_topic(self, topic_id: int, user_id: str):
         with get_dict_cursor() as cur:
-            cur.execute("DELETE FROM topic WHERE id = %s", (topic_id,))
+            cur.execute("DELETE FROM topic WHERE id = %s AND user_id = %s", (topic_id, user_id))
 
-    def bulk_delete_topics(self, topic_ids: List[int]):
+    def bulk_delete_topics(self, topic_ids: List[int], user_id: str):
         with get_dict_cursor() as cur:
-            cur.execute("DELETE FROM topic WHERE id = ANY(%s)", (topic_ids,))
+            cur.execute("DELETE FROM topic WHERE id = ANY(%s) AND user_id = %s", (topic_ids, user_id))
 
-    def delete_all_topics(self):
+    def delete_all_topics(self, user_id: str):
         with get_dict_cursor() as cur:
-            cur.execute("DELETE FROM topic")
+            cur.execute("DELETE FROM topic WHERE user_id = %s", (user_id,))
 
-    def refresh_topic_recency(self):
+    def refresh_topic_recency(self, user_id: str):
         """
         Calls the Supabase internal function to update activity_7d, 
         activity_30d, and lifetime_size.
         """
         with get_dict_cursor() as cur:
-            cur.execute("SELECT update_topic_recency_metrics();")
+            cur.execute("SELECT update_topic_recency_metrics(%s);", (user_id,))
 
     # In services/topics_service.py
 
-    def get_high_signal_topics(self, recency_threshold: int = 5, dominance_threshold: int = 15):
+    def get_high_signal_topics(self, user_id: str, recency_threshold: int = 5, dominance_threshold: int = 15):
         """
         Fetches topics that meet either the recency or dominance threshold.
         Returns only the human-readable data needed for LLM trait generation.
@@ -190,21 +182,21 @@ class TopicsService:
                 t.title, 
                 t.summary
             FROM topic t
-            WHERE t.recency_strength >= %s 
-            OR t.dominance >= %s
+            WHERE (t.recency_strength >= %s 
+            OR t.dominance >= %s) AND t.user_id = %s
             ORDER BY t.recency_strength DESC, t.dominance DESC;
         """
         
         with get_dict_cursor() as cur:
             # Pass the thresholds into the query safely
-            cur.execute(query, (recency_threshold, dominance_threshold))
+            cur.execute(query, (recency_threshold, dominance_threshold, user_id))
             high_signal_topics = cur.fetchall()
             
             return high_signal_topics
 
     # In services/ideas_service.py
 
-    def get_recent_ideas_for_topic(self, topic_id: int, limit: int = 3):
+    def get_recent_ideas_for_topic(self, topic_id: int, user_id: str, limit: int = 3):
         """
         Fetches the most recent raw ideas linked to a specific topic
         to use as memory snippets for trait generation.
@@ -213,10 +205,10 @@ class TopicsService:
             SELECT ri.id, ri.content, ri.created_at
             FROM raw_idea ri
             JOIN idea_topics it ON ri.id = it.idea_id
-            WHERE it.topic_id = %s
+            WHERE it.topic_id = %s AND ri.user_id = %s
             ORDER BY ri.created_at DESC
             LIMIT %s
         """
         with get_dict_cursor() as cur:
-            cur.execute(query, (topic_id, limit))
+            cur.execute(query, (topic_id, user_id, limit))
             return cur.fetchall()
