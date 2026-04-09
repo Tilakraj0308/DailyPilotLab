@@ -400,22 +400,22 @@ export default function ChatScreen() {
                         <View className="flex-row items-end gap-3">
                             {/* Main Input Area */}
                             {!isRecording ? (
-                                <View className="flex-1 flex-row items-center rounded-3xl bg-surface-container px-4 h-12 border border-outline-variant/20">
+                                <View className="flex-1 flex-row items-end rounded-3xl bg-surface-container px-4 min-h-[48px] py-1 border border-outline-variant/20">
                                     <TextInput
-                                        className="flex-1 max-h-32 text-sm text-on-surface"
+                                        className="flex-1 max-h-[120px] text-sm text-on-surface"
                                         placeholder="Message DailyPilot..."
                                         placeholderTextColor="#586064"
                                         value={inputText}
                                         onChangeText={setInputText}
                                         onSubmitEditing={handleSendText}
                                         multiline
-                                        style={{ fontFamily: "Inter_400Regular" }}
+                                        style={{ fontFamily: "Inter_400Regular", minHeight: 40, paddingTop: 10, paddingBottom: 10, textAlignVertical: 'top' }}
                                         returnKeyType="send"
                                         editable={status === 'connected'}
                                     />
 
                                     {/* Mic and Send Buttons */}
-                                    <View className="ml-2">
+                                    <View className="ml-2 flex-row items-center">
                                         {/* Microphone Recording Button */}
                                         {isUploadingAudio ? (
                                             <View className="w-10 h-10 items-center justify-center rounded-full">
@@ -434,19 +434,19 @@ export default function ChatScreen() {
                                                 <MaterialIcons name="mic-none" size={22} color="#9CA4AA" />
                                             </TouchableOpacity>
                                         )}
-                                    </View>
 
-                                    {inputText.trim().length > 0 && (
-                                        <Animated.View entering={FadeIn.duration(200)} exiting={FadeOut.duration(150)}>
-                                            <TouchableOpacity
-                                                onPress={handleSendText}
-                                                className="w-10 h-10 items-center justify-center bg-surface-variant rounded-full ml-1"
-                                                disabled={status !== 'connected'}
-                                            >
-                                                <MaterialIcons name="arrow-upward" size={22} color="#9CA4AA" />
-                                            </TouchableOpacity>
-                                        </Animated.View>
-                                    )}
+                                        {inputText.trim().length > 0 && (
+                                            <Animated.View entering={FadeIn.duration(200)} exiting={FadeOut.duration(150)}>
+                                                <TouchableOpacity
+                                                    onPress={handleSendText}
+                                                    className="w-10 h-10 items-center justify-center bg-surface-variant rounded-full ml-1"
+                                                    disabled={status !== 'connected'}
+                                                >
+                                                    <MaterialIcons name="arrow-upward" size={22} color="#9CA4AA" />
+                                                </TouchableOpacity>
+                                            </Animated.View>
+                                        )}
+                                    </View>
                                 </View>
                             ) : (
                                 <View className="flex-1 flex-row items-center justify-center rounded-3xl bg-surface-container overflow-hidden h-12 relative border border-outline-variant/20">
