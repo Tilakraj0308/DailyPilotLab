@@ -6,7 +6,7 @@ class TraitsService:
     def __init__(self, openai_client):
         self.openai_client = openai_client
 
-    def process_and_upsert_traits(self, new_traits: List[TraitCandidate]):
+    def process_and_upsert_traits(self, new_traits: List[TraitCandidate], user_id: str):
         """
         Embeds new traits, checks for semantic duplicates, and applies EMA smoothing.
         """
@@ -19,13 +19,13 @@ class TraitsService:
             search_query = """
                 SELECT id, confidence 
                 FROM trait
-                WHERE (embedding <=> %s::vector) <= 0.12
+                WHERE (embedding <=> %s::vector) <= 0.12 AND user_id = %s
                 ORDER BY embedding <=> %s::vector
                 LIMIT 1
             """
             
             with get_dict_cursor() as cur:
-                cur.execute(search_query, (vector, vector))
+                cur.execute(search_query, (vector, user_id, vector))
                 match = cur.fetchone()
                 
                 if match:
@@ -46,22 +46,23 @@ class TraitsService:
                     update_query = """
                         UPDATE trait 
                         SET confidence = %s, last_evidenced_at = NOW()
-                        WHERE id = %s
+                        WHERE id = %s AND user_id = %s
                     """
-                    cur.execute(update_query, (final_conf, existing_id))
+                    cur.execute(update_query, (final_conf, existing_id, user_id))
                     print(f"Updated trait ID {existing_id}: Confidence shifted to {final_conf:.2f}")
                     
                 else:
                     initial_conf = min(trait.confidence_suggestion, 0.5)
                     
                     insert_query = """
-                        INSERT INTO trait (trait_text, trait_type, confidence, embedding)
-                        VALUES (%s, %s, %s, %s)
+                        INSERT INTO trait (trait_text, trait_type, confidence, embedding, user_id)
+                        VALUES (%s, %s, %s, %s, %s)
                     """
                     cur.execute(insert_query, (
                         trait.trait_text, 
                         trait.trait_type, 
                         initial_conf, 
-                        vector
+                        vector,
+                        user_id
                     ))
                     print(f"Inserted new trait: '{trait.trait_text}'")

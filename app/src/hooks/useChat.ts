@@ -5,6 +5,7 @@ import { Platform } from 'react-native';
 import EventSource from 'react-native-sse';
 import * as FileSystem from 'expo-file-system/legacy';
 import { FileSystemUploadType } from 'expo-file-system/legacy';
+import { supabase } from '../lib/supabase';
 
 export type ChatMessage = {
     id: string;
@@ -74,8 +75,15 @@ export function useChat() {
             // Add placeholder message
             setMessages(prev => [...prev, { id: assistantMessageId, role: 'assistant', content: '' }]);
 
+            // Get Supabase token
+            const { data } = await supabase.auth.getSession();
+            const token = data?.session?.access_token;
+
             const es = new EventSource(`${apiUrl}/chat/stream`, {
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+                },
                 method: 'POST',
                 body: JSON.stringify({ session_id: sessionId, content: text })
             });
@@ -126,9 +134,14 @@ export function useChat() {
             const fileUri = Platform.OS === 'android' && !uri.startsWith('file://') ? `file://${uri}` : uri;
             const apiUrl = getApiUrl();
 
+            // Get Supabase token
+            const { data: authData } = await supabase.auth.getSession();
+            const token = authData?.session?.access_token;
+
             // Use FileSystem.uploadAsync instead of fetch + FormData for reliable file uploads
             const response = await FileSystem.uploadAsync(`${apiUrl}/transcribe`, fileUri, {
                 httpMethod: 'POST',
+                headers: token ? { 'Authorization': `Bearer ${token}` } : {},
                 uploadType: FileSystemUploadType.MULTIPART,
                 fieldName: 'file',
                 mimeType: 'audio/m4a',

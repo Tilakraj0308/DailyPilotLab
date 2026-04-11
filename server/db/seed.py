@@ -41,9 +41,17 @@ SEED_IDEAS = [
     "A mirror that shows you what you looked like exactly ten years ago today.",
 ]
 
+DEFAULT_USER_ID = "00000000-0000-0000-0000-000000000000"
+
+INSERT_USER = """
+INSERT INTO public.users (auth_id, email)
+VALUES (%s, 'seed@dailypilot.dev')
+ON CONFLICT (auth_id) DO NOTHING;
+"""
+
 INSERT_IDEA = """
-INSERT INTO public.raw_idea (content, raw)
-VALUES (%s, TRUE)
+INSERT INTO public.raw_idea (user_id, content, raw)
+VALUES (%s, %s, TRUE)
 RETURNING id;
 """
 
@@ -59,10 +67,13 @@ def run():
     try:
         with conn:
             with conn.cursor() as cur:
+                print("Ensuring seed user exists ...")
+                cur.execute(INSERT_USER, (DEFAULT_USER_ID,))
+                
                 print("Inserting seed ideas …")
                 inserted_ids = []
                 for idea_text in SEED_IDEAS:
-                    cur.execute(INSERT_IDEA, (idea_text,))
+                    cur.execute(INSERT_IDEA, (DEFAULT_USER_ID, idea_text,))
                     row = cur.fetchone()
                     inserted_ids.append(row[0])
 
