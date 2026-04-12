@@ -13,6 +13,14 @@ export type ChatMessage = {
     content: string;
 };
 
+export type ChatSessionSummary = {
+    id: string;
+    updated_at: string;
+    created_at: string;
+    title: string | null;
+};
+
+
 const STORE_KEY = '@chat_session_id';
 
 /**
@@ -46,11 +54,40 @@ export function useChat() {
     const [sessionId, setSessionId] = useState<string | null>(null);
     const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
 
+    const fetchHistory = async (id: string) => {
+        try {
+            const apiUrl = getApiUrl();
+            const { data } = await supabase.auth.getSession();
+            const token = data?.session?.access_token;
+            const res = await fetch(`${apiUrl}/chat/sessions/${id}/history`, {
+                headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+            });
+            if (res.ok) {
+                const json = await res.json();
+                if (json.history) {
+                    setMessages(json.history.map((m: any) => ({
+                        id: Crypto.randomUUID(),
+                        role: m.role,
+                        content: m.content
+                    })));
+                } else {
+                    setMessages([]);
+                }
+            } else {
+                setMessages([]);
+            }
+        } catch (e) {
+            console.error("Failed to fetch history:", e);
+            setMessages([]);
+        }
+    };
+
     useEffect(() => {
         const initSession = async () => {
             const saved = await AsyncStorage.getItem(STORE_KEY);
             if (saved) {
                 setSessionId(saved);
+                await fetchHistory(saved);
             } else {
                 const newId = Crypto.randomUUID();
                 await AsyncStorage.setItem(STORE_KEY, newId);
@@ -174,5 +211,29 @@ export function useChat() {
         setSessionId(newId);
     };
 
-    return { messages, status, sendText, sendAudio, clearSession, isWaitingForResponse };
+    const getSessions = async (): Promise<ChatSessionSummary[]> => {
+        try {
+            const apiUrl = getApiUrl();
+            const { data } = await supabase.auth.getSession();
+            const token = data?.session?.access_token;
+            const res = await fetch(`${apiUrl}/chat/sessions`, {
+                headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+            });
+            if (res.ok) {
+                return await res.json();
+            }
+        } catch (e) {
+            console.error("Failed to fetch sessions:", e);
+        }
+        return [];
+    };
+
+    const loadSession = async (id: string) => {
+        await AsyncStorage.setItem(STORE_KEY, id);
+        setSessionId(id);
+        setMessages([]);
+        await fetchHistory(id);
+    };
+
+    return { messages, status, sendText, sendAudio, clearSession, isWaitingForResponse, getSessions, loadSession };
 }

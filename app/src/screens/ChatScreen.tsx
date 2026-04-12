@@ -10,12 +10,13 @@ import {
     ActivityIndicator,
     Keyboard,
     Alert,
+    Switch,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import * as FileSystem from 'expo-file-system/legacy';
-import { useChat, ChatMessage } from '../hooks/useChat';
+import { useChat, ChatMessage, ChatSessionSummary } from '../hooks/useChat';
 import { useAudioRecorder, requestRecordingPermissionsAsync, setAudioModeAsync } from 'expo-audio';
 import Animated, { useSharedValue, withTiming, FadeIn, FadeOut, withRepeat, withSequence, withDelay } from 'react-native-reanimated';
 import SoundBarsEqualizer from '../components/SoundBarsEqualizer';
@@ -80,8 +81,56 @@ const TypingWave = () => {
 
 export default function ChatScreen() {
     const navigation = useNavigation<any>();
-    const { messages, status, sendText, sendAudio, clearSession, isWaitingForResponse } = useChat();
+    const { messages, status, sendText, sendAudio, clearSession, isWaitingForResponse, getSessions, loadSession } = useChat();
     const [inputText, setInputText] = useState('');
+    const [trainMemories, setTrainMemories] = useState(true);
+
+    const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+    const sidebarX = useSharedValue(-300);
+    const [sessionsGrouped, setSessionsGrouped] = useState<{title: string, data: ChatSessionSummary[]}[]>([]);
+
+    const fetchAndGroupSessions = async () => {
+        const sessions = await getSessions();
+        const now = new Date();
+        const today: ChatSessionSummary[] = [];
+        const yesterday: ChatSessionSummary[] = [];
+        const previous7Days: ChatSessionSummary[] = [];
+        const older: ChatSessionSummary[] = [];
+
+        sessions.forEach(s => {
+            const date = new Date(s.updated_at);
+            const diffTime = Math.abs(now.getTime() - date.getTime());
+            const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+            
+            if (diffDays === 0 && now.getDate() === date.getDate()) {
+                today.push(s);
+            } else if (diffDays === 1 || (diffDays === 0 && now.getDate() !== date.getDate())) {
+                yesterday.push(s);
+            } else if (diffDays <= 7) {
+                previous7Days.push(s);
+            } else {
+                older.push(s);
+            }
+        });
+
+        const groups = [];
+        if (today.length) groups.push({ title: 'Today', data: today });
+        if (yesterday.length) groups.push({ title: 'Yesterday', data: yesterday });
+        if (previous7Days.length) groups.push({ title: 'Previous 7 Days', data: previous7Days });
+        if (older.length) groups.push({ title: 'Older', data: older });
+
+        setSessionsGrouped(groups);
+    };
+
+    const toggleSidebar = () => {
+        const nextState = !isSidebarOpen;
+        setIsSidebarOpen(nextState);
+        sidebarX.value = withTiming(nextState ? 0 : -300, { duration: 250 });
+        if (nextState) {
+            fetchAndGroupSessions();
+        }
+    };
+
 
     // Audio recording state
     const [isRecording, setIsRecording] = useState(false);
@@ -357,11 +406,59 @@ export default function ChatScreen() {
 
     return (
         <SafeAreaView className="flex-1 bg-background" edges={['top', 'bottom']}>
+            {/* Sidebar Overlay */}
+            {isSidebarOpen && (
+                <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 40, backgroundColor: 'rgba(0,0,0,0.5)' }}>
+                    <TouchableOpacity
+                        style={{ flex: 1 }}
+                        activeOpacity={1}
+                        onPress={toggleSidebar}
+                    />
+                </View>
+            )}
+
+            {/* Sidebar animated view */}
+            <Animated.View style={{ transform: [{ translateX: sidebarX }], position: 'absolute', top: 0, left: 0, bottom: 0, width: 300, zIndex: 50, backgroundColor: '#ffffff', shadowColor: '#000', shadowOffset: { width: 4, height: 0 }, shadowOpacity: 0.1, shadowRadius: 10, elevation: 10 }}>
+                <SafeAreaView className="flex-1" edges={['top', 'bottom']}>
+                    <View className="flex-row items-center justify-between p-4 border-b border-outline-variant/10">
+                        <Text className="text-lg font-bold text-on-surface" style={{ fontFamily: "Manrope_700Bold" }}>Chat History</Text>
+                        <TouchableOpacity onPress={toggleSidebar} className="p-1">
+                            <MaterialIcons name="close" size={24} color="#586064" />
+                        </TouchableOpacity>
+                    </View>
+                    <ScrollView className="flex-1 p-2" showsVerticalScrollIndicator={false}>
+                        {sessionsGrouped.map(group => (
+                            <View key={group.title} className="mb-4">
+                                <Text className="text-xs font-bold text-on-surface-variant mb-2 px-2" style={{ fontFamily: "Inter_500Medium" }}>{group.title}</Text>
+                                {group.data.map(session => (
+                                    <TouchableOpacity 
+                                        key={session.id} 
+                                        className="px-3 py-3 rounded-lg flex-row items-center gap-3 mb-1 bg-surface-container/30"
+                                        onPress={() => { toggleSidebar(); loadSession(session.id); }}
+                                    >
+                                        <MaterialIcons name="chat-bubble-outline" size={18} color="#586064" />
+                                        <Text className="text-sm text-on-surface flex-1" numberOfLines={1} style={{ fontFamily: "Inter_400Regular" }}>
+                                            {session.title || "New Chat"}
+                                        </Text>
+                                    </TouchableOpacity>
+                                ))}
+                            </View>
+                        ))}
+                        {sessionsGrouped.length === 0 && (
+                             <Text className="text-sm text-on-surface-variant p-4 text-center" style={{ fontFamily: "Inter_400Regular" }}>No history found.</Text>
+                        )}
+                    </ScrollView>
+                </SafeAreaView>
+            </Animated.View>
+
             {/* Header */}
             <View className="flex-row items-center justify-between px-5 py-3 border-b border-outline-variant/10 bg-background">
                 <View className="flex-row items-center gap-3">
                     <TouchableOpacity onPress={() => navigation.goBack()} className="p-1">
                         <MaterialIcons name="arrow-back" size={24} color="#2b3437" />
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={toggleSidebar} className="p-1 ml-1">
+                        <MaterialIcons name="menu" size={24} color="#2b3437" />
                     </TouchableOpacity>
                     <Text className="text-lg font-bold text-on-surface" style={{ fontFamily: "Manrope_700Bold" }}>
                         DailyPilot Chat
@@ -370,6 +467,20 @@ export default function ChatScreen() {
                 <TouchableOpacity onPress={clearSession} className="p-2 ml-auto" accessibilityLabel="New Chat">
                     <MaterialIcons name="add-comment" size={22} color="#4e45e4" />
                 </TouchableOpacity>
+            </View>
+
+            {/* Train Memories Toggle */}
+            <View className="flex-row items-center justify-between px-5 py-2 border-b border-outline-variant/10 bg-surface">
+                <View className="flex-row items-center gap-2">
+                    <MaterialIcons name="psychology" size={20} color="#4e45e4" />
+                    <Text className="text-sm font-medium text-on-surface" style={{ fontFamily: "Inter_500Medium" }}>Use chat to train memories</Text>
+                </View>
+                <Switch 
+                    value={trainMemories} 
+                    onValueChange={setTrainMemories} 
+                    trackColor={{ false: '#e2e8f0', true: '#4e45e4' }}
+                    thumbColor={'#ffffff'}
+                />
             </View>
 
             {/* Connection Status Banner (if not connected) */}
