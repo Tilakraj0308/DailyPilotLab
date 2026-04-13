@@ -6,11 +6,11 @@ from utils.openAi import openai_client
 import os
 
 
-def get_all_topics():
+def get_all_topics(user_id: str):
     topic_service = TopicsService()
-    return topic_service.get_all_topics()
+    return topic_service.get_all_topics(user_id)
 
-def create_topic(topic: TopicCreateInput):
+def create_topic(topic: TopicCreateInput, user_id: str):
     if topic.summary != "":
         embeddings = openai_client.get_embeddings(topic.summary)
         insert_data = topic.model_dump(exclude_unset=True)
@@ -21,7 +21,7 @@ def create_topic(topic: TopicCreateInput):
         topic_service = TopicsService()
         idea_service = IdeaService()
         
-        new_topic_id = topic_service.create_topic(insert_data)
+        new_topic_id = topic_service.create_topic(insert_data, user_id)
         
         if new_topic_id and idea_ids:
             idea_service.remove_idea_topic_relation(topic_id=new_topic_id)
@@ -30,7 +30,7 @@ def create_topic(topic: TopicCreateInput):
         return {'status': 200, 'message': f'Added topic ID - {new_topic_id} successfully'}
     return {'status': 200, 'message': 'No text to add'}
 
-def create_topics(topics: List[TopicCreateInput]):
+def create_topics(topics: List[TopicCreateInput], user_id: str):
     if not topics:
         return
     texts_to_embed = []
@@ -55,7 +55,7 @@ def create_topics(topics: List[TopicCreateInput]):
 
     topic_service = TopicsService()
     idea_service = IdeaService()
-    new_topic_ids = topic_service.bulk_create_topics(data_list)
+    new_topic_ids = topic_service.bulk_create_topics(data_list, user_id)
 
     # Use the returned IDs to update the idea_topic relation table
     if new_topic_ids:
@@ -68,19 +68,19 @@ def create_topics(topics: List[TopicCreateInput]):
 
     return {'status': 200, 'message': 'Created topics successfully'}
 
-def update_topic(topic: TopicUpdateInput, append_idea_ids: bool = False):
+def update_topic(topic: TopicUpdateInput, user_id: str, append_idea_ids: bool = False):
     topic_service = TopicsService()
     idea_service = IdeaService()
     update_data = topic.model_dump(exclude_unset=True)
     idea_ids = update_data.pop('idea_ids', [])
-    topic_service.update_topic(update_data)
+    topic_service.update_topic(update_data, user_id)
     if not append_idea_ids:
         idea_service.remove_idea_topic_relation(update_data["id"])
     for idea_id in idea_ids:
         idea_service.add_idea_topic_relation(idea_id=idea_id, topic_id=update_data["id"])
     return {'status': 200, 'message': 'Updated topic successfully'}
 
-def update_topics(topics: List[TopicUpdateInput], append_idea_ids: bool = False):
+def update_topics(topics: List[TopicUpdateInput], user_id: str, append_idea_ids: bool = False):
     topic_service = TopicsService()
     idea_service = IdeaService()
     topics_to_add = []
@@ -92,17 +92,17 @@ def update_topics(topics: List[TopicUpdateInput], append_idea_ids: bool = False)
             idea_service.remove_idea_topic_relation(update_data["id"])
         for idea_id in idea_ids:
             idea_service.add_idea_topic_relation(idea_id=idea_id, topic_id=update_data["id"])
-    topic_service.bulk_update_topics(topics_to_add)
+    topic_service.bulk_update_topics(topics_to_add, user_id)
     return {'status': 200, 'message': 'Updated topics successfully'}
 
-def update_topic_recency():
+def update_topic_recency(user_id: str):
     topic_service = TopicsService()
-    topic_service.refresh_topic_recency()
+    topic_service.refresh_topic_recency(user_id)
     return {'status': 200, 'message': 'Updated topic recency successfully'}
 
-def get_high_signal_topics():
-    dominance_threshold = os.getenv("DOMINANCE_THRESHOLD")
-    recency_threshold = os.getenv("RECENCY_THRESHOLD")
+def get_high_signal_topics(user_id: str):
+    dominance_threshold = os.getenv("DOMINANCE_THRESHOLD", 15)
+    recency_threshold = os.getenv("RECENCY_THRESHOLD", 5)
     topic_service = TopicsService()
-    return topic_service._get_high_signal_topics(recency_threshold, dominance_threshold)       
+    return topic_service.get_high_signal_topics(user_id, recency_threshold, dominance_threshold)       
 

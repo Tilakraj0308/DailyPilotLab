@@ -143,67 +143,74 @@ def sync_profile(payload: dict = Depends(get_current_user)):
 # ─── Ideas ───────────────────────────────────────────────────────────────────
     
 @app.get("/ideas", response_model=List[IdeaOut])
-# @app.get("/ideas")
-def getIdeas():
-    return get_ideas()
+def getIdeas(payload: dict = Depends(get_current_user)):
+    user_id = payload.get("sub", "")
+    return get_ideas(user_id)
 
 @app.post("/ideas")
-def createIdea(idea: IdeaCreateInput, response: Response):
-    creation_response = create_idea(idea)
+def createIdea(idea: IdeaCreateInput, response: Response, payload: dict = Depends(get_current_user)):
+    user_id = payload.get("sub", "")
+    creation_response = create_idea(idea, user_id)
     response.status_code = creation_response['status']
     return {'message': creation_response['message']}
 
 @app.post("/ideas/bulk")
-def createIdeas(ideas: List[IdeaCreateInput], response: Response):
-    creation_response = create_ideas(ideas)
+def createIdeas(ideas: List[IdeaCreateInput], response: Response, payload: dict = Depends(get_current_user)):
+    user_id = payload.get("sub", "")
+    creation_response = create_ideas(ideas, user_id)
     response.status_code = creation_response['status']
     return {'message': creation_response['message']}
 
 @app.post("/ideas/update")
-def updateIdea(idea: IdeaUpdateInput):
-    return update_idea(idea)
-
-# @app.post("/ideas/update/bulk")
-# def updateIdeas(ideas: List[IdeaUpdateInput]):
-#     return update_ideas(ideas)
+def updateIdea(idea: IdeaUpdateInput, payload: dict = Depends(get_current_user)):
+    user_id = payload.get("sub", "")
+    return update_idea(idea, user_id)
 
 @app.post("/ideas/delete")
-def deleteIdea(idea: IdeaDeleteInput):
-    return delete_idea(idea)
+def deleteIdea(idea: IdeaDeleteInput, payload: dict = Depends(get_current_user)):
+    user_id = payload.get("sub", "")
+    return delete_idea(idea, user_id)
 
 @app.post("/ideas/delete/bulk")
-def deleteIdeas(idea_ids: List[int]):
-    return delete_ideas(idea_ids)
+def deleteIdeas(idea_ids: List[int], payload: dict = Depends(get_current_user)):
+    user_id = payload.get("sub", "")
+    return delete_ideas(idea_ids, user_id)
 
 @app.post("/ideas/delete/all")
-def deleteAllIdeas():
-    return delete_all_ideas()
+def deleteAllIdeas(payload: dict = Depends(get_current_user)):
+    user_id = payload.get("sub", "")
+    return delete_all_ideas(user_id)
 
 @app.get("/topics/assign")
-def assignTopics(response: Response):
-    creation_response = assign_idea_to_topic()
+def assignTopics(response: Response, payload: dict = Depends(get_current_user)):
+    user_id = payload.get("sub", "")
+    creation_response = assign_idea_to_topic(user_id)
     response.status_code = creation_response['status']
     return {'message': creation_response['message']}
 
 @app.get("/semantic-search")
-def semanticSearch(query: str):
-    return semantic_search_memories(query)
+def semanticSearch(query: str, payload: dict = Depends(get_current_user)):
+    user_id = payload.get("sub", "")
+    return semantic_search_memories(query, user_id=user_id)
 
 @app.get("/refine-ideas")
-def refineIdeas(response: Response):
-    refine_response = raw_to_refined_ideas()
+def refineIdeas(response: Response, payload: dict = Depends(get_current_user)):
+    user_id = payload.get("sub", "")
+    refine_response = raw_to_refined_ideas(user_id=user_id)
     response.status_code = refine_response['status']
     return {'message': refine_response['message']}
 
 @app.get("/update-topic-recency")
-def updateTopicRecency(response: Response):
-    update_response = update_topic_recency()
+def updateTopicRecency(response: Response, payload: dict = Depends(get_current_user)):
+    user_id = payload.get("sub", "")
+    update_response = update_topic_recency(user_id)
     response.status_code = update_response['status']
     return {'message': update_response['message']}
 
 @app.get("/update-traits")  
-def updateTraits(response: Response):
-    update_response = update_traits()
+def updateTraits(response: Response, payload: dict = Depends(get_current_user)):
+    user_id = payload.get("sub", "")
+    update_response = update_traits(user_id)
     response.status_code = update_response['status']
     return {'message': update_response['message']}
 
@@ -215,11 +222,12 @@ class ChatStreamRequest(BaseModel):
     content: str
 
 @app.post("/chat/stream")
-async def chat_stream(req: ChatStreamRequest):
+async def chat_stream(req: ChatStreamRequest, payload: dict = Depends(get_current_user)):
     session_id = req.session_id
     user_text = req.content
+    user_id = payload.get("sub", "")
 
-    await asyncio.to_thread(get_or_create_session, session_id)
+    await asyncio.to_thread(get_or_create_session, session_id, user_id)
     await asyncio.to_thread(save_message, session_id, "user", user_text)
 
     history_rows = await asyncio.to_thread(load_history, session_id)

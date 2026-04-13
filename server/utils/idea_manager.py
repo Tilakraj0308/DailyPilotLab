@@ -7,24 +7,24 @@ from typing import List, Any
 from utils.helpers import classify_ideas, update_personal_state, refine_raw_ideas
 import os
 
-def get_ideas():
+def get_ideas(user_id: str):
     service = IdeaService()
-    all_ideas = service.get_all_ideas()
+    all_ideas = service.get_all_ideas(user_id)
     return all_ideas
 
-def get_idea(idea_id: int): 
+def get_idea(idea_id: int, user_id: str): 
     service = IdeaService()
-    return service.get_idea(idea_id)
+    return service.get_idea(idea_id, user_id)
 
-def get_raw_ideas():
+def get_raw_ideas(user_id: str):
     service = IdeaService()
-    return service.get_ideas_with_filter('raw', True)
+    return service.get_ideas_with_filter('raw', True, user_id)
 
-def get_idea_count(filter_column: str = None, filter_value: Any = None):
+def get_idea_count(user_id: str, filter_column: str = None, filter_value: Any = None):
     service = IdeaService()
-    return service.get_ideas_count(filter_column, filter_value)
+    return service.get_ideas_count(user_id, filter_column, filter_value)
 
-def create_idea(idea: IdeaCreateInput):
+def create_idea(idea: IdeaCreateInput, user_id: str):
     if idea.content != "":
         classification = classify_ideas([("1", idea.content)])
         classification = classification.classification_results[0]
@@ -36,24 +36,24 @@ def create_idea(idea: IdeaCreateInput):
         elif category == 'secrets':
             return {'status': 200, 'message': 'Can\'t save sensitive data'}
         elif category == 'personal_information':
-            update_personal_state([idea.content])
+            update_personal_state([idea.content], user_id)
             return {'status': 200, 'message': 'Updated personal state successfully'}
         insert_data = idea.model_dump(exclude_unset=True)   
         
         # topic_ids = insert_data.pop('topic_ids', [])
         
         service = IdeaService()
-        new_idea_id = service.create_idea(insert_data)
+        new_idea_id = service.create_idea(insert_data, user_id)
         raw_idea_refinement_threshold = int(os.getenv("TOPIC_AUTO_REFINEMENT_THRESHOLD", 10))
-        raw_ideas_count = service.get_ideas_count('raw', 'TRUE')
+        raw_ideas_count = service.get_ideas_count(user_id, 'raw', 'TRUE')
         if raw_ideas_count > raw_idea_refinement_threshold:
-            return raw_to_refined_ideas()
+            return raw_to_refined_ideas(user_id=user_id)
                 
         return {'status': 200, 'message': f'Added idea ID - {new_idea_id} successfully'}
     return {'status': 200, 'message': 'No text to add'}
 
 
-def create_ideas(ideas_input: List[IdeaCreateInput]):
+def create_ideas(ideas_input: List[IdeaCreateInput], user_id: str):
     if not ideas_input:
         return
     ideas_len_limit = int(os.getenv("BULK_IDEA_INSERTION_THRESHOLD", 10))
@@ -69,7 +69,7 @@ def create_ideas(ideas_input: List[IdeaCreateInput]):
     
     if len(ideas_filtered) == 1:
         extra_mess = 'Only one idea with content found!! \n'
-        create_res = create_idea(ideas_filtered[0])
+        create_res = create_idea(ideas_filtered[0], user_id)
         return {'status': 200, 'message': extra_mess + create_res['message']}
 
     
@@ -90,13 +90,13 @@ def create_ideas(ideas_input: List[IdeaCreateInput]):
     
 
     if len(personal_info) > 0:
-        update_personal_state(personal_info)
+        update_personal_state(personal_info, user_id)
     if len(ideas) > 0:
         service = IdeaService()
-        service.bulk_create_ideas(ideas)
-        raw_ideas_count = service.get_ideas_count('raw', 'TRUE')
+        service.bulk_create_ideas(ideas, user_id)
+        raw_ideas_count = service.get_ideas_count(user_id, 'raw', 'TRUE')
         if raw_ideas_count > raw_idea_refinement_threshold:
-            return raw_to_refined_ideas()
+            return raw_to_refined_ideas(user_id=user_id)
 
     
     return {'status': 200, 'message': f'Added {len(ideas)} ideas and updated {len(personal_info)} personal information'}
@@ -123,14 +123,14 @@ def create_ideas(ideas_input: List[IdeaCreateInput]):
 #     service = IdeaService()
 #     return service.bulk_create_ideas(data_list)
 
-def update_idea(idea: IdeaUpdateInput, override_topic_ids: bool = False):
+def update_idea(idea: IdeaUpdateInput, user_id: str, override_topic_ids: bool = False):
     service = IdeaService()
     if idea.content and idea.content != "":
         embeddings = openai_client.get_embeddings(idea.content)
         idea.embeddings = embeddings[0].embedding
     update_data = idea.model_dump(exclude_unset=True)
     topic_ids = update_data.pop('topic_ids', None)
-    service.update_idea(update_data)
+    service.update_idea(update_data, user_id)
     if topic_ids is not None:
         if override_topic_ids:
             # service.clear_idea_topics(idea.id)
@@ -175,34 +175,34 @@ def update_idea(idea: IdeaUpdateInput, override_topic_ids: bool = False):
 
 #     return {'status': 200, 'message': 'Updated ideas successfully'}
 
-def delete_idea(idea: IdeaDeleteInput):
+def delete_idea(idea: IdeaDeleteInput, user_id: str):
     service = IdeaService()
-    return service.delete_idea(idea.id)
+    return service.delete_idea(idea.id, user_id)
 
-def delete_ideas(idea_ids: List[int]):
+def delete_ideas(idea_ids: List[int], user_id: str):
     if not idea_ids:
         return
     service = IdeaService()
-    return service.bulk_delete_ideas(idea_ids)
+    return service.bulk_delete_ideas(idea_ids, user_id)
 
-def delete_raw_ideas():
+def delete_raw_ideas(user_id: str):
     service = IdeaService()
-    return service.delete_raw_ideas()
+    return service.delete_raw_ideas(user_id)
 
-def delete_all_ideas():
+def delete_all_ideas(user_id: str):
     service = IdeaService()
-    return service.delete_all_ideas()
+    return service.delete_all_ideas(user_id)
 
-def raw_to_refined_ideas(raw_ideas: list[RealDictRow] = None):
+def raw_to_refined_ideas(raw_ideas: list[RealDictRow] = None, user_id: str = None):
     try:
         if not raw_ideas or len(raw_ideas) == 0:
-            raw_ideas = get_raw_ideas()
+            raw_ideas = get_raw_ideas(user_id)
         if raw_ideas is None:
             return {'status': 200, 'message': 'No raw ideas to refine'}
         raw_ideas = [raw_idea['content'] for raw_idea in raw_ideas]
         refined_atomic_ideas = refine_raw_ideas(raw_ideas)
         refined_atomic_ideas = refined_atomic_ideas.refined_ideas
-        delete_raw_ideas()
+        delete_raw_ideas(user_id)
         texts_to_embed = [refined_idea.refined_statement for refined_idea in refined_atomic_ideas]
         final_refined_ideas = []
         if texts_to_embed:
@@ -213,7 +213,7 @@ def raw_to_refined_ideas(raw_ideas: list[RealDictRow] = None):
                 final_refined_ideas.append(final_refined_idea)
         if len(final_refined_ideas) > 0:
             service = IdeaService()
-            service.bulk_create_ideas(final_refined_ideas)
+            service.bulk_create_ideas(final_refined_ideas, user_id)
         return {'status': 200, 'message': 'Sucessfully refined the raw ideas'}
     except Exception as e:
         print(e)
