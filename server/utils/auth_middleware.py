@@ -22,8 +22,7 @@ SUPABASE_URL = os.getenv("SUPABASE_URL", "")
 # Fallback anon key for online verification if ES256 is used
 SUPABASE_ANON_KEY = os.getenv(
     "SUPABASE_ANON_KEY", 
-    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl5ZG5qcXF6dGp6aXluZXJudmVtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNTAzMzQsImV4cCI6MjA5MDcyNjMzNH0.FxGveGFA1bVEQRXac14q0VcnZASme6cbWfr8Eo6Sdho"
-)
+    "")
 
 security = HTTPBearer()
 

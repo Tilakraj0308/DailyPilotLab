@@ -7,3 +7,5 @@ server/.env.local
 supabase/.temp/
 # Agent config
 .agents/
+server/server.log
+app/app.log
