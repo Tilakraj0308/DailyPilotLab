@@ -58,6 +58,7 @@ A FastAPI service that captures raw ideas, groups them into topics using semanti
    | `port`     | **Port** — use **5432** (Session mode) | `5432`                                     |
    | `dbname`   | **Database name**                             | `postgres`                                 |
 4. **Get your OpenAI API key** from [platform.openai.com/api-keys](https://platform.openai.com/api-keys).
+5. **Get your Supabase Anon Key** from **Project Settings → API**.
 
 ---
 
@@ -80,6 +81,17 @@ OPENAPI=sk-...
 
 # ── Supabase Auth ────────────────────────────────────────────────────────────
 SUPABASE_JWT_SECRET=your-supabase-jwt-secret
+SUPABASE_ANON_KEY=your-supabase-anon-key
+
+# ── Google Connectors ────────────────────────────────────────────────────────
+# See setup.md for instructions on creating these credentials
+GOOGLE_CLIENT_ID=your-google-client-id
+GOOGLE_CLIENT_SECRET=your-google-client-secret
+GOOGLE_REDIRECT_URI=http://localhost:8000/connectors/google/calendar/callback
+
+# Token Encryption Key
+# Generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+CONNECTOR_TOKEN_ENCRYPTION_KEY=your-generated-key
 
 # ── Tuning knobs (leave defaults unless you know what you're changing) ────────
 TOPIC_ASSIGNMENT_THRESHOLD_SIMILARITY=0.48
@@ -162,6 +174,21 @@ Seed complete.
 
 The API is then available at `http://127.0.0.1:8000`.
 Interactive docs: `http://127.0.0.1:8000/docs`
+
+
+---
+
+## Connector Setup
+
+The application supports external connectors (e.g., Google Calendar). To set up a connector:
+
+1. **Create a Google Web Client ID** in the Google Cloud Console.
+2. **Enable required APIs** (Calendar, Tasks, Gmail) in the [Google API Library](https://console.cloud.google.com/apis/library).
+3. **Add Test Users** to your OAuth consent screen.
+4. **Configure the Redirect URI** to `http://localhost:8000/connectors/google/calendar/callback`.
+5. **Update your `.env`** with the Client ID, Secret, and an encryption key.
+
+For detailed, step-by-step instructions, see [setup.md](setup.md).
 
 ---
 

@@ -110,37 +110,51 @@ export default function ConnectorsScreen() {
     };
 
     const handleConsentConfirm = async () => {
-        if (!token) return;
+        console.log("[Calendar] User confirmed consent");
+        if (!token) {
+            console.error("[Calendar] No auth token available");
+            return;
+        }
+        console.log("[Calendar] Auth token available:", token.substring(0, 20) + "...");
 
         setConsentVisible(false);
         setConnectingProvider("google_calendar");
+        console.log("[Calendar] Set connecting provider state");
 
         try {
+            console.log("[Calendar] Starting Google Calendar connect with deep_link:", CONNECTOR_CALLBACK_REDIRECT);
             const authUrl = await startGoogleCalendarConnect(token, CONNECTOR_CALLBACK_REDIRECT);
+            console.log("[Calendar] Received auth URL:", authUrl.substring(0, 100) + "...");
 
             if (Platform.OS === "web") {
+                console.log("[Calendar] Web platform detected, redirecting to:", authUrl);
                 window.location.href = authUrl;
                 return;
             }
 
+            console.log("[Calendar] Opening WebBrowser with auth URL");
             const result = await WebBrowser.openAuthSessionAsync(
                 authUrl,
                 CONNECTOR_CALLBACK_REDIRECT
             );
+            console.log("[Calendar] WebBrowser result:", result);
 
             if (result.type === "success") {
+                console.log("[Calendar] OAuth success, refreshing connectors");
                 // The backend already handled the callback and stored tokens.
                 // The redirect triggered the deep-link handler which navigated here with params.
                 // We just need to refresh.
                 await fetchConnectors();
             } else {
-                console.log("Browser session result:", result.type);
+                console.log("[Calendar] Browser session result:", result.type, result);
             }
         } catch (e: any) {
-            console.error("Connect error:", e);
+            console.error("[Calendar] Connect error:", e);
+            console.error("[Calendar] Error details:", e.message, e.stack);
             showToast("Connection Error", e.message || "Failed to start connection.");
         } finally {
             setConnectingProvider(null);
+            console.log("[Calendar] Connection attempt complete");
         }
     };
 

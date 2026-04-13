@@ -9,6 +9,16 @@ This guide walks you through creating the Google OAuth credentials required for 
 3. Name it `DailyPilot` and click **Create**.
 4. Make sure your newly created project is selected in the top-left dropdown.
 
+## 1.1 Enable Required APIs
+
+Before the app can access Google data, you must enable the specific APIs:
+
+1. In the Google Cloud Console, go to **APIs & Services > Library**.
+2. Search for and **Enable** the following:
+   * **Google Calendar API**
+   * **Google Tasks API**
+   * **Gmail API**
+
 ## 2. Configure the OAuth Consent Screen
 
 Before creating credentials, you must set up the consent screen (the screen users see when they click "Continue with Google").
@@ -21,7 +31,8 @@ Before creating credentials, you must set up the consent screen (the screen user
    * **Developer contact info**: *Your email*
 4. Click **Save and Continue**.
 5. On the **Scopes** step, just click **Save and Continue** (the default basic profile/email scopes are enough).
-6. On the **Test users** step, click **Add Users** and add your own Google email address so you can test it while the app is unpublished. Click **Save and Continue**.
+6. On the **Test users** step (or via the **OAuth consent screen** menu later), click **Add Users** and add any Google email addresses you will use for testing. 
+   * **Note**: While the app is in "Testing" mode, only these specific users can connect their accounts.
 
 ## 3. Create the Web Client ID (Crucial for Expo AuthSession & Backend)
 
@@ -34,7 +45,8 @@ We will create a **Web application** Client ID. Even though we are building a mo
 5. Under **Authorized JavaScript origins**, click **ADD URI**:
    * Add: `https://auth.expo.io`
 6. Under **Authorized redirect URIs**, click **ADD URI**:
-   * Add: `https://auth.expo.io/@your_expo_username/frontend` *(Replace `@your_expo_username` with your actual Expo account username if you have one linked, otherwise leave it as `https://auth.expo.io`)*.
+   * **For Frontend (Expo)**: Add `https://auth.expo.io/@your_expo_username/frontend` *(Replace `@your_expo_username` with your actual Expo account username)*.
+   * **For Connectors (Backend)**: Add `http://localhost:8000/connectors/google/calendar/callback`.
 7. Click **Create**.
 8. A modal will pop up with your **Client ID** and **Client Secret**.
 
@@ -42,13 +54,19 @@ We will create a **Web application** Client ID. Even though we are building a mo
 
 1. Copy the **Client ID** from the previous step.
 2. Open your VSCode and create a new file at `backend/.env`.
-3. Paste the following into the file:
+3. Paste (or update) the following into the file:
 
 ```env
-SUPABASE_JWT_SECRET=generate_a_random_long_string_here_like_dj73nd8q3id91k
+# Frontend Authentication
+GOOGLE_CLIENT_ID=your-google-client-id
+
+# Connectors (Google Calendar)
+GOOGLE_CLIENT_SECRET=your-google-client-secret
+GOOGLE_REDIRECT_URI=http://localhost:8000/connectors/google/calendar/callback
+CONNECTOR_TOKEN_ENCRYPTION_KEY=your-generated-key
 ```
 
-> **Note:** The backend only needs the Client ID, not the Secret, because it only verifies incoming ID tokens.
+> **Note:** The frontend only needs the Client ID, but the **Connectors** (e.g., Google Calendar) require the **Client Secret**, **Redirect URI**, and an **Encryption Key** to securely manage OAuth tokens.
 
 ## 5. Next Steps
 

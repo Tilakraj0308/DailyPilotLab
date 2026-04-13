@@ -53,6 +53,10 @@ async function apiFetch<T>(
     options: RequestInit = {}
 ): Promise<T> {
     const url = `${getApiUrl()}${path}`;
+    console.log(`[API] Fetching ${url}`);
+    console.log(`[API] Method: ${options.method || 'GET'}`);
+    console.log(`[API] Token: ${token.substring(0, 20)}...`);
+    
     const response = await fetch(url, {
         ...options,
         headers: {
@@ -62,12 +66,17 @@ async function apiFetch<T>(
         },
     });
 
+    console.log(`[API] Response status: ${response.status}`);
+    
     if (!response.ok) {
         const body = await response.text();
+        console.error(`[API] Error response body:`, body);
         throw new Error(`API ${response.status}: ${body}`);
     }
 
-    return response.json();
+    const data = await response.json();
+    console.log(`[API] Response data:`, data);
+    return data;
 }
 
 // ---------------------------------------------------------------------------
@@ -95,7 +104,10 @@ export async function startGoogleCalendarConnect(
     token: string,
     deepLink?: string
 ): Promise<string> {
+    console.log("[ConnectorAPI] startGoogleCalendarConnect called");
+    console.log("[ConnectorAPI] deepLink:", deepLink);
     const qs = deepLink ? `?deep_link=${encodeURIComponent(deepLink)}` : "";
+    console.log("[ConnectorAPI] Query string:", qs);
     const data = await apiFetch<{ auth_url: string }>(
         `/connectors/google/calendar/start${qs}`,
         token

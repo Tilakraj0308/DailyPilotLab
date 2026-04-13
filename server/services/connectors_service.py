@@ -88,7 +88,17 @@ def build_google_auth_url(user_id: int, deep_link: str = None) -> str:
     Build the Google OAuth consent URL with a signed state parameter.
     The state encodes user_id + expiry + HMAC signature + optional deep_link.
     """
-    state = create_oauth_state(user_id, deep_link)
+    print(f"[ConnectorService] build_google_auth_url called with user_id={user_id}, deep_link={deep_link}")
+    print(f"[ConnectorService] GOOGLE_CLIENT_ID: {GOOGLE_CLIENT_ID}")
+    print(f"[ConnectorService] GOOGLE_REDIRECT_URI: {GOOGLE_REDIRECT_URI}")
+    print(f"[ConnectorService] GOOGLE_CALENDAR_SCOPES: {GOOGLE_CALENDAR_SCOPES}")
+    
+    try:
+        state = create_oauth_state(user_id, deep_link)
+        print(f"[ConnectorService] Generated state: {state[:50]}...")
+    except Exception as e:
+        print(f"[ConnectorService] ERROR creating state: {str(e)}")
+        raise
 
     params = {
         "client_id": GOOGLE_CLIENT_ID,
@@ -102,7 +112,9 @@ def build_google_auth_url(user_id: int, deep_link: str = None) -> str:
 
     import urllib.parse
     query = urllib.parse.urlencode(params)
-    return f"{GOOGLE_AUTH_URL}?{query}"
+    auth_url = f"{GOOGLE_AUTH_URL}?{query}"
+    print(f"[ConnectorService] Final auth URL: {auth_url[:150]}...")
+    return auth_url
 
 
 # ---------------------------------------------------------------------------

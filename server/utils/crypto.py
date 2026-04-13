@@ -112,18 +112,24 @@ def create_oauth_state(user_id: int, deep_link: str = None) -> str:
     Payload: { "user_id": int, "exp": int, "sig": str, "deep_link": ... }
     Encoded as base64url JSON.
     """
+    print(f"[Crypto] create_oauth_state: user_id={user_id}, deep_link={deep_link}")
     exp = int(time.time()) + _STATE_EXPIRY_SECONDS
     message = f"{user_id}|{exp}"
     if deep_link:
         message += f"|{deep_link}"
+    print(f"[Crypto] Message to sign: {message}")
     sig = _compute_hmac(message)
+    print(f"[Crypto] HMAC signature: {sig}")
 
     payload = {"user_id": user_id, "exp": exp, "sig": sig}
     if deep_link:
         payload["deep_link"] = deep_link
     payload_json = json.dumps(payload, separators=(",", ":"))
+    print(f"[Crypto] Payload JSON: {payload_json}")
 
-    return base64.urlsafe_b64encode(payload_json.encode("utf-8")).decode("ascii")
+    state = base64.urlsafe_b64encode(payload_json.encode("utf-8")).decode("ascii")
+    print(f"[Crypto] Final state: {state}")
+    return state
 
 
 def verify_oauth_state(state: str) -> tuple[int, str | None]:
@@ -133,30 +139,41 @@ def verify_oauth_state(state: str) -> tuple[int, str | None]:
     Raises:
         ValueError: if the state is invalid, expired, or tampered with.
     """
+    print(f"[Crypto] verify_oauth_state: state={state[:50]}...")
     try:
         payload_json = base64.urlsafe_b64decode(state.encode("ascii"))
         payload = json.loads(payload_json)
+        print(f"[Crypto] Decoded payload: {payload}")
     except Exception as e:
+        print(f"[Crypto] ERROR decoding state: {e}")
         raise ValueError(f"Malformed state parameter: {e}")
 
     user_id = payload.get("user_id")
     exp = payload.get("exp")
     sig = payload.get("sig")
     deep_link = payload.get("deep_link")
+    
+    print(f"[Crypto] user_id={user_id}, exp={exp}, sig={sig}, deep_link={deep_link}")
 
     if not all([user_id, exp, sig]):
+        print(f"[Crypto] ERROR: Incomplete state payload")
         raise ValueError("Incomplete state payload")
 
     # Check expiry
     if time.time() > exp:
+        print(f"[Crypto] ERROR: State has expired. Current time: {time.time()}, exp: {exp}")
         raise ValueError("State has expired")
 
     # Recompute HMAC and compare (constant-time)
     message = f"{user_id}|{exp}"
     if deep_link:
         message += f"|{deep_link}"
+    print(f"[Crypto] Message to verify: {message}")
     expected_sig = _compute_hmac(message)
+    print(f"[Crypto] Expected sig: {expected_sig}, got: {sig}")
     if not hmac.compare_digest(sig, expected_sig):
+        print(f"[Crypto] ERROR: State signature mismatch")
         raise ValueError("State signature mismatch")
 
+    print(f"[Crypto] State verified successfully. user_id={user_id}, deep_link={deep_link}")
     return int(user_id), deep_link

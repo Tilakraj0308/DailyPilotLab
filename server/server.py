@@ -277,8 +277,19 @@ def connector_google_calendar_start(
     Generate the Google OAuth consent URL for Calendar access.
     The URL contains a signed state parameter binding the session to this user.
     """
-    auth_url = build_google_auth_url(user_id, deep_link)
-    return {"auth_url": auth_url}
+    print(f"[Server] /connectors/google/calendar/start called")
+    print(f"[Server] user_id: {user_id}")
+    print(f"[Server] deep_link: {deep_link}")
+    
+    try:
+        auth_url = build_google_auth_url(user_id, deep_link)
+        print(f"[Server] Generated auth_url: {auth_url[:100]}...")
+        return {"auth_url": auth_url}
+    except Exception as e:
+        print(f"[Server] ERROR in /connectors/google/calendar/start: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise
 
 
 @app.get("/connectors/google/calendar/callback")
