@@ -170,11 +170,17 @@ def connector_start(
     payload: dict = Depends(get_current_user),
 ):
     user_id = payload.get("sub", "")
+    raw_email = payload.get("email")
+    login_hint = raw_email.strip() if isinstance(raw_email, str) and raw_email.strip() else None
     try:
         if provider == "google_calendar":
-            url, state = gcal_connector.build_start_authorization_url(user_id, body.return_to)
+            url, state = gcal_connector.build_start_authorization_url(
+                user_id, body.return_to, login_hint=login_hint
+            )
         elif provider == "google_tasks":
-            url, state = gtasks_connector.build_start_authorization_url(user_id, body.return_to)
+            url, state = gtasks_connector.build_start_authorization_url(
+                user_id, body.return_to, login_hint=login_hint
+            )
         else:
             raise HTTPException(status_code=404, detail="Unknown connector provider")
     except RuntimeError as e:

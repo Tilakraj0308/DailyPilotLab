@@ -177,6 +177,10 @@ Seed complete.
 The API is then available at `http://127.0.0.1:8000`.
 Interactive docs: `http://127.0.0.1:8000/docs`
 
+### Connectors and Google consent
+
+Calendar and Tasks use separate provider keys but the **same** `GOOGLE_CONNECTOR_CLIENT_ID`. Authorization URLs omit `prompt=consent` by default so Google can offer **incremental** consent for the second product; `prompt=consent` is added only when the connector row is `reauth_required` or `error` (see `should_force_google_oauth_consent_prompt` in [`services/connector_service.py`](services/connector_service.py)). When the Supabase JWT includes `email`, it is sent as Google’s **`login_hint`** so Google can prefill / skip the account chooser when that matches the user’s Google session (not guaranteed if multiple accounts or policies require a picker).
+
 ---
 
 ## API Endpoints

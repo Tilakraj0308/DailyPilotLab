@@ -129,7 +129,14 @@ def fetch_user_email(access_token: str) -> tuple[str | None, str | None]:
         return None, None
 
 
-def build_start_authorization_url(user_id: str, return_to: str | None) -> tuple[str, str]:
+def build_start_authorization_url(
+    user_id: str,
+    return_to: str | None,
+    login_hint: str | None = None,
+) -> tuple[str, str]:
+    """
+    login_hint: Supabase JWT email for Google's login_hint (prefers that account, fewer chooser screens).
+    """
     _client_credentials()
     oauth_redirect = _redirect_uri()
     verifier, challenge = _pkce_pair()
@@ -149,7 +156,7 @@ def build_start_authorization_url(user_id: str, return_to: str | None) -> tuple[
 
     cid, _ = _client_credentials()
     logger.info("Google Tasks OAuth using redirect_uri=%s (must match Cloud Console + token exchange)", oauth_redirect)
-    params = {
+    params: dict[str, str] = {
         "client_id": cid,
         "redirect_uri": oauth_redirect,
         "response_type": "code",
@@ -158,9 +165,12 @@ def build_start_authorization_url(user_id: str, return_to: str | None) -> tuple[
         "code_challenge": challenge,
         "code_challenge_method": "S256",
         "access_type": "offline",
-        "prompt": "consent",
         "include_granted_scopes": "true",
     }
+    if base.should_force_google_oauth_consent_prompt(user_id, PROVIDER_KEY):
+        params["prompt"] = "consent"
+    if login_hint:
+        params["login_hint"] = login_hint
     url = f"{GOOGLE_AUTH_URL}?{urllib.parse.urlencode(params)}"
     return url, state
 

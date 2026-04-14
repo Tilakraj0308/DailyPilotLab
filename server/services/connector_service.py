@@ -270,6 +270,29 @@ def get_user_connector_id(user_id: str, provider_key: str) -> int | None:
         return int(row["id"]) if row else None
 
 
+def should_force_google_oauth_consent_prompt(user_id: str, provider_key: str) -> bool:
+    """
+    When True, add prompt=consent to the Google authorization URL.
+
+    Omitting prompt lets Google use incremental authorization for the same OAuth client
+    (e.g. Tasks after Calendar), which is usually a shorter consent step. We only force
+    full consent when the connector is already in a bad auth state.
+    """
+    with get_dict_cursor() as cur:
+        cur.execute(
+            """
+            SELECT uc.status::text AS status
+            FROM public.user_connectors uc
+            WHERE uc.user_id = %s AND uc.provider_key = %s
+            """,
+            (user_id, provider_key),
+        )
+        row = cur.fetchone()
+    if not row:
+        return False
+    return row["status"] in ("reauth_required", "error")
+
+
 def delete_tokens_and_disconnect(user_id: str, provider_key: str) -> dict[str, Any] | None:
     """Returns decrypted refresh_token if present (for provider revoke)."""
     from utils.crypto_tokens import decrypt_token

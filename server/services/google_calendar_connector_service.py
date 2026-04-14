@@ -75,9 +75,13 @@ def _default_return_to() -> str | None:
 def build_start_authorization_url(
     user_id: str,
     return_to: str | None,
+    login_hint: str | None = None,
 ) -> tuple[str, str]:
     """
     Returns (authorization_url, state).
+
+    login_hint: Supabase user email passed to Google so the account picker can be skipped when
+    it matches the Google session (OAuth 2.0 login_hint parameter).
     """
     _client_credentials()
     oauth_redirect = _redirect_uri()
@@ -98,7 +102,7 @@ def build_start_authorization_url(
     base.upsert_user_connector_connecting(user_id, PROVIDER_KEY)
 
     cid, _ = _client_credentials()
-    params = {
+    params: dict[str, str] = {
         "client_id": cid,
         "redirect_uri": oauth_redirect,
         "response_type": "code",
@@ -107,9 +111,12 @@ def build_start_authorization_url(
         "code_challenge": challenge,
         "code_challenge_method": "S256",
         "access_type": "offline",
-        "prompt": "consent",
         "include_granted_scopes": "true",
     }
+    if base.should_force_google_oauth_consent_prompt(user_id, PROVIDER_KEY):
+        params["prompt"] = "consent"
+    if login_hint:
+        params["login_hint"] = login_hint
     url = f"{GOOGLE_AUTH_URL}?{urllib.parse.urlencode(params)}"
     return url, state
 
