@@ -53,6 +53,7 @@ export function useChat() {
     const [status, setStatus] = useState<'connecting' | 'connected' | 'reconnecting' | 'error'>('connecting');
     const [sessionId, setSessionId] = useState<string | null>(null);
     const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
+    const [isLoadingHistory, setIsLoadingHistory] = useState(false);
 
     const fetchHistory = async (id: string) => {
         try {
@@ -239,11 +240,13 @@ export function useChat() {
     };
 
     const loadSession = async (id: string) => {
+        setIsLoadingHistory(true);
         await AsyncStorage.setItem(STORE_KEY, id);
         setSessionId(id);
         setMessages([]);
         await fetchHistory(id);
+        setIsLoadingHistory(false);
     };
 
-    return { messages, status, sendText, sendAudio, clearSession, isWaitingForResponse, getSessions, loadSession };
+    return { messages, status, sendText, sendAudio, clearSession, isWaitingForResponse, isLoadingHistory, getSessions, loadSession };
 }

@@ -181,7 +181,7 @@ const SESSIONS_PAGE_SIZE = 15;
 
 export default function ChatScreen() {
     const navigation = useNavigation<any>();
-    const { messages, status, sendText, sendAudio, clearSession, isWaitingForResponse, getSessions, loadSession } = useChat();
+    const { messages, status, sendText, sendAudio, clearSession, isWaitingForResponse, isLoadingHistory, getSessions, loadSession } = useChat();
     const [inputText, setInputText] = useState('');
 
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -690,7 +690,12 @@ export default function ChatScreen() {
                 behavior="padding"
             >
                 <View className="flex-1">
-                    {/* Chat Messages ScrollView */}
+                    {isLoadingHistory ? (
+                        <View className="flex-1 justify-center items-center bg-background">
+                            <ActivityIndicator size="large" color="#4e45e4" />
+                            <Text className="text-sm mt-3 text-on-surface-variant" style={{ fontFamily: "Inter_400Regular" }}>Loading conversation...</Text>
+                        </View>
+                    ) : (
                     <ScrollView
                         ref={scrollViewRef}
                         className="flex-1 bg-background"
@@ -721,6 +726,7 @@ export default function ChatScreen() {
                             </View>
                         )}
                     </ScrollView>
+                    )}
 
                     {/* Input Bar - Fixed at bottom, NOT inside scroll view */}
                     <View className="bg-surface border-t border-outline-variant/10 px-4 py-3">
