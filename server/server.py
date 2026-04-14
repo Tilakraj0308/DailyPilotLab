@@ -1,5 +1,5 @@
-from fastapi import FastAPI, Response, UploadFile, File, Depends
-from fastapi.responses import StreamingResponse
+from fastapi import FastAPI, Response, UploadFile, File, Depends, HTTPException, Request
+from fastapi.responses import StreamingResponse, RedirectResponse
 from pydantic import BaseModel
 import json
 import asyncio
@@ -16,6 +16,20 @@ from dotenv import load_dotenv
 from utils.topic_manager import update_topic_recency
 from services.chat_service import transcribe_audio, stream_chat
 from services.chat_db import get_or_create_session, save_message, load_history
+from models.connectors import (
+    ConnectorDisconnectResponse,
+    ConnectorListResponse,
+    ConnectorStartRequest,
+    ConnectorStartResponse,
+    ConnectorStatusItem,
+)
+from services import connector_service as connector_svc
+from services.google_calendar_connector_service import (
+    build_start_authorization_url,
+    complete_oauth_callback,
+    oauth_error_callback,
+    revoke_and_disconnect,
+)
 
 load_dotenv()
 app = FastAPI()
@@ -124,6 +138,75 @@ def sync_profile(payload: dict = Depends(get_current_user)):
     
     user = get_or_create_user(auth_id, email, name, avatar_url)
     return {"status": "success", "user": user}
+
+# ─── Connectors (OAuth — separate client from Supabase login) ─────────────────
+
+@app.get("/connectors", response_model=ConnectorListResponse)
+def list_connectors(payload: dict = Depends(get_current_user)):
+    user_id = payload.get("sub", "")
+    rows = connector_svc.list_connectors_status(user_id)
+    items = [
+        ConnectorStatusItem(
+            provider_key=r["provider_key"],
+            display_name=r["display_name"],
+            status=r["status"],
+            scopes=list(r["scopes"] or []),
+            connected_at=r["connected_at"],
+            provider_email=r.get("provider_email"),
+            error_message=r.get("error_message"),
+        )
+        for r in rows
+    ]
+    return ConnectorListResponse(connectors=items)
+
+
+@app.post("/connectors/{provider}/start", response_model=ConnectorStartResponse)
+def connector_start(
+    provider: str,
+    body: ConnectorStartRequest,
+    payload: dict = Depends(get_current_user),
+):
+    user_id = payload.get("sub", "")
+    if provider != "google_calendar":
+        raise HTTPException(status_code=404, detail="Unknown connector provider")
+    try:
+        url, state = build_start_authorization_url(user_id, body.return_to)
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+    return ConnectorStartResponse(authorization_url=url, state=state)
+
+
+@app.get("/connectors/{provider}/callback")
+def connector_oauth_callback(provider: str, request: Request):
+    """Public OAuth redirect target (Google). Validates state and exchanges the code."""
+    if provider != "google_calendar":
+        raise HTTPException(status_code=404, detail="Unknown connector provider")
+    q = request.query_params
+    err = q.get("error")
+    state = q.get("state")
+    code = q.get("code")
+    if err:
+        url = oauth_error_callback(state, err)
+        return RedirectResponse(url=url, status_code=302)
+    if not code or not state:
+        raise HTTPException(status_code=400, detail="Missing code or state")
+    try:
+        redirect_url, _, _ = complete_oauth_callback(code, state)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+    return RedirectResponse(url=redirect_url, status_code=302)
+
+
+@app.post("/connectors/{provider}/disconnect", response_model=ConnectorDisconnectResponse)
+def connector_disconnect(provider: str, payload: dict = Depends(get_current_user)):
+    user_id = payload.get("sub", "")
+    if provider != "google_calendar":
+        raise HTTPException(status_code=404, detail="Unknown connector provider")
+    try:
+        revoke_and_disconnect(user_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+    return ConnectorDisconnectResponse(ok=True, provider_key=provider)
 
 # ─── Ideas ───────────────────────────────────────────────────────────────────
     

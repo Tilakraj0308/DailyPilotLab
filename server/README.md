@@ -79,7 +79,11 @@ dbname=postgres
 OPENAPI=sk-...
 
 # ── Supabase Auth ────────────────────────────────────────────────────────────
+# JWT Secret from Supabase → Project Settings → API (label: JWT Secret). Not the anon key.
 SUPABASE_JWT_SECRET=your-supabase-jwt-secret
+
+# ── Connectors (Google Calendar OAuth) ─────────────────────────────────────────
+# See `.env.example` for GOOGLE_CONNECTOR_* and CONNECTOR_ENCRYPTION_SECRET.
 
 # ── Tuning knobs (leave defaults unless you know what you're changing) ────────
 TOPIC_ASSIGNMENT_THRESHOLD_SIMILARITY=0.48
@@ -90,6 +94,13 @@ BULK_IDEA_INSERTION_THRESHOLD=4
 ```
 
 > **Never commit `.env`** — it is already listed in `.gitignore`.
+
+If the app shows `{"detail":"Invalid token"}` when calling authenticated routes (for example **Connectors → Connect Google Calendar**), the server cannot verify the Supabase session JWT. This is **not** caused by the Google connector redirect URI.
+
+- **HS256 (legacy JWT secret):** set **`SUPABASE_JWT_SECRET`** to the exact **JWT Secret** from Supabase → **Project Settings → API**.
+- **ES256 / JWT Signing Keys (common on newer projects):** HS256 verification will always fail. Set **`SUPABASE_URL`** in `server/.env` to the same value as **`EXPO_PUBLIC_SUPABASE_URL`** in the app (for example `https://<ref>.supabase.co`). The API verifies tokens using **`/auth/v1/.well-known/jwks.json`**.
+
+Restart the API after changing `.env`.
 
 ---
 
@@ -114,6 +125,7 @@ The database schema is managed via **Supabase migration files** in `supabase/mig
 | `20260309_create_core_tables.sql`      | pgvector extension, enums, tables (`raw_idea`, `topic`, `idea_topics`, `trait`, `users`), indexes & triggers |
 | `20260310_create_stored_functions.sql` | `assign_and_return_matches`, `update_topic_recency_metrics`                                                        |
 | `20260327_create_chat_tables.sql`      | `chat_sessions`, `chat_messages`                                                                                   |
+| `20260415_connectors_foundation.sql`   | Connector providers, `user_connectors`, encrypted tokens, OAuth state sessions                                    |
 
 **1. Install the Supabase CLI(if you don't already have)** by following the [official install guide](https://supabase.com/docs/guides/cli/getting-started).
 
@@ -179,3 +191,9 @@ Interactive docs: `http://127.0.0.1:8000/docs`
 | `GET`  | `/topics/assign`            | Run topic assignment for unprocessed ideas |
 | `GET`  | `/semantic-search?query=…` | Semantic search across ideas               |
 | `GET`  | `/refine-ideas`             | Refine raw ideas using AI                  |
+| `GET`  | `/auth/profile`             | Sync Supabase user into `public.users`     |
+| `GET`  | `/connectors`               | List connector status per provider (auth)   |
+| `POST` | `/connectors/{provider}/start` | Start OAuth (Google Calendar) — returns `authorization_url` (auth) |
+| `GET`  | `/connectors/{provider}/callback` | OAuth redirect — **public** (Google)   |
+| `POST` | `/connectors/{provider}/disconnect` | Revoke tokens and disconnect (auth)   |
+| `POST` | `/chat/stream`              | SSE chat (auth)                            |

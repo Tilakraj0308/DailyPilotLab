@@ -16,6 +16,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { MaterialIcons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { useAuth } from "../context/AuthContext";
+import MainBottomNav from "../components/MainBottomNav";
 
 export default function HomeScreen() {
     const [chatInput, setChatInput] = useState("");
@@ -72,7 +73,27 @@ export default function HomeScreen() {
                     <TouchableWithoutFeedback onPress={() => setIsProfileMenuVisible(false)}>
                         <View className="flex-1 bg-black/20 justify-start items-end pt-16 pr-5">
                             <TouchableWithoutFeedback>
-                                <View className="bg-surface-container-lowest rounded-xl py-2 px-4 shadow-sm border border-outline-variant/15 min-w-[150px]">
+                                <View className="bg-surface-container-lowest rounded-xl py-2 px-4 shadow-sm border border-outline-variant/15 min-w-[200px]">
+                                    <TouchableOpacity
+                                        onPress={() => {
+                                            setIsProfileMenuVisible(false);
+                                            navigation.navigate("Profile");
+                                        }}
+                                        className="py-2 flex-row items-center justify-between border-b border-outline-variant/10"
+                                    >
+                                        <Text className="text-sm font-semibold text-on-surface" style={{ fontFamily: "Inter_500Medium" }}>Profile</Text>
+                                        <MaterialIcons name="person" size={18} color="#586064" />
+                                    </TouchableOpacity>
+                                    <TouchableOpacity
+                                        onPress={() => {
+                                            setIsProfileMenuVisible(false);
+                                            navigation.navigate("Settings");
+                                        }}
+                                        className="py-2 flex-row items-center justify-between border-b border-outline-variant/10"
+                                    >
+                                        <Text className="text-sm font-semibold text-on-surface" style={{ fontFamily: "Inter_500Medium" }}>Settings</Text>
+                                        <MaterialIcons name="settings" size={18} color="#586064" />
+                                    </TouchableOpacity>
                                     <TouchableOpacity
                                         onPress={() => {
                                             setIsProfileMenuVisible(false);
@@ -329,46 +350,7 @@ export default function HomeScreen() {
                 </View>
             </KeyboardAvoidingView>
 
-            {/* 8. Fixed Bottom Nav Bar (Visual only inside HomeScreen for demo) */}
-            <View className="absolute bottom-0 w-full flex-row justify-between bg-surface-container-lowest px-2 py-2 pb-6 border-t border-outline-variant/10 px-5">
-                {[
-                    { label: "Home", icon: "home", active: true },
-                    { label: "Tasks", icon: "check-circle", active: false },
-                    { label: "Chat", icon: "chat-bubble", active: false },
-                    { label: "Library", icon: "auto-stories", active: false },
-                    { label: "Me", icon: "person", active: false },
-                ].map((tab, idx) => (
-                    <TouchableOpacity
-                        key={idx}
-                        className="items-center justify-center flex-1"
-                        onPress={() => {
-                            if (tab.label === 'Chat') {
-                                navigation.navigate('Chat');
-                            }
-                        }}
-                    >
-                        <View
-                            className={`px-4 py-1 rounded-xl mb-1 ${tab.active ? "opacity-100" : "opacity-100"
-                                }`}
-                        >
-                            <MaterialIcons
-                                name={tab.icon as any}
-                                size={24}
-                                color={tab.active ? "#4e45e4" : "#586064"}
-                            />
-                        </View>
-                        <Text
-                            className="text-[10px]"
-                            style={{
-                                fontFamily: "Inter_500Medium",
-                                color: tab.active ? "#4e45e4" : "#586064",
-                            }}
-                        >
-                            {tab.label}
-                        </Text>
-                    </TouchableOpacity>
-                ))}
-            </View>
+            <MainBottomNav active="home" />
         </SafeAreaView>
     );
 }

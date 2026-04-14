@@ -163,27 +163,47 @@ All auth state is managed by Supabase. The backend only verifies the JWT and mai
 
 ---
 
+## Connectors (Google Calendar)
+
+Sign-in uses **Supabase + Google**. Calendar access uses a **separate Google OAuth client** on the backend (`GOOGLE_CONNECTOR_*` in server `.env`). Flow:
+
+1. User opens **Profile** (Me tab or avatar menu) and taps **Connect Google Calendar** under Integrations.
+2. App calls `POST /connectors/google_calendar/start` with the Supabase JWT and a `return_to` URL (where the backend redirects after OAuth).
+3. User completes Google consent; Google hits the **server** callback `GET /connectors/google_calendar/callback`.
+4. Server exchanges the code (PKCE), encrypts tokens, stores them, then redirects the browser/app to `return_to?connector_status=success|error`.
+
+Configure in Google Cloud: add the **authorized redirect URI** that matches `GOOGLE_CONNECTOR_REDIRECT_URI` (e.g. `http://127.0.0.1:8000/connectors/google_calendar/callback`). Ensure `EXPO_PUBLIC_API_URL` points at your API for device testing.
+
+If you see **`Invalid token`** when connecting, the backend cannot verify your Supabase session JWT (this happens **before** any Google redirect). Add **`SUPABASE_URL`** to `server/.env` (same as `EXPO_PUBLIC_SUPABASE_URL`) if your project uses **JWT Signing Keys / ES256**; otherwise set **`SUPABASE_JWT_SECRET`** to the **JWT Secret** from Supabase → Project Settings → API. Restart the API.
+
+---
+
 ## Project Structure
 
 ```
 app/
-├── App.tsx                         # Root — AuthProvider + responsive web layout wrapper
+├── App.tsx                         # Root — AuthProvider, NavigationContainer ref, OAuth → Profile on web
 ├── src/
 │   ├── context/
 │   │   └── AuthContext.tsx         # Auth state provider (session, signOut)
 │   ├── lib/
+│   │   ├── api.ts                  # getApiUrl() — backend base URL (LAN / emulator rules)
 │   │   ├── supabase.ts             # Supabase client (detectSessionInUrl: true on web)
 │   │   ├── alerts.ts               # Cross-platform alert helper (window.alert on web)
-│   │   └── connectors.ts           # API helpers for connector management
+│   │   ├── connectors.ts         # GET /connectors, start, disconnect (Bearer JWT)
+│   │   └── oauthConnectorFlow.ts # Web vs native browser flow for connector OAuth
 │   ├── hooks/
 │   │   └── useChat.ts              # Chat state, SSE streaming, web-compatible audio upload
 │   ├── components/
+│   │   ├── ConnectorsSection.tsx   # Integrations card (Google Calendar) — embedded in Profile
+│   │   ├── MainBottomNav.tsx       # Shared bottom bar (Home / Chat / Me → Profile)
 │   │   └── SoundBarsEqualizer.tsx  # Reanimated audio visualizer (native only)
 │   └── screens/
 │       ├── LoginScreen.tsx         # Google OAuth (web redirect vs native in-app browser)
 │       ├── HomeScreen.tsx          # Main dashboard
 │       ├── ChatScreen.tsx          # Chat UI with voice recording (web + native)
-│       └── ConnectorsScreen.tsx    # OAuth connector management
+│       ├── ProfileScreen.tsx       # Account, integrations, sign out (Me tab)
+│       └── SettingsScreen.tsx      # App preferences placeholder; connectors live on Profile
 ├── app.json                        # Expo config (scheme: dailypilot, web: favicon)
 └── .env                            # Environment variables (gitignored)
 ```
