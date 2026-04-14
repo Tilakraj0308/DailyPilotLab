@@ -163,16 +163,23 @@ All auth state is managed by Supabase. The backend only verifies the JWT and mai
 
 ---
 
-## Connectors (Google Calendar)
+## Connectors (Google Calendar & Google Tasks)
 
-Sign-in uses **Supabase + Google**. Calendar access uses a **separate Google OAuth client** on the backend (`GOOGLE_CONNECTOR_*` in server `.env`). Flow:
+Sign-in uses **Supabase + Google**. Calendar and Tasks use a **separate Google OAuth Web client** on the backend (`GOOGLE_CONNECTOR_*` in server `.env`). Flow:
 
-1. User opens **Profile** (Me tab or avatar menu) and taps **Connect Google Calendar** under Integrations.
-2. App calls `POST /connectors/google_calendar/start` with the Supabase JWT and a `return_to` URL (where the backend redirects after OAuth).
-3. User completes Google consent; Google hits the **server** callback `GET /connectors/google_calendar/callback`.
-4. Server exchanges the code (PKCE), encrypts tokens, stores them, then redirects the browser/app to `return_to?connector_status=success|error`.
+1. User opens **Profile** (Me tab or avatar menu) and taps **Connect Google Calendar** or **Connect Google Tasks** under Integrations.
+2. App calls `POST /connectors/{provider}/start` (`google_calendar` or `google_tasks`) with the Supabase JWT and a `return_to` URL (where the backend redirects after OAuth).
+3. User completes Google consent; Google hits the **server** callback `GET /connectors/{provider}/callback`.
+4. Server exchanges the code (PKCE), encrypts tokens, stores them, then redirects the browser/app to `return_to?connector_status=success|error&provider=...`.
 
-Configure in Google Cloud: add the **authorized redirect URI** that matches `GOOGLE_CONNECTOR_REDIRECT_URI` (e.g. `http://127.0.0.1:8000/connectors/google_calendar/callback`). Ensure `EXPO_PUBLIC_API_URL` points at your API for device testing.
+**Google Cloud:** Enable **Google Calendar API** and **Google Tasks API** for the project. Under the OAuth client’s **Authorized redirect URIs**, add every URI you use:
+
+- `GOOGLE_CONNECTOR_REDIRECT_URI` — e.g. `http://127.0.0.1:8000/connectors/google_calendar/callback`
+- `GOOGLE_TASKS_CONNECTOR_REDIRECT_URI` — required; e.g. `http://127.0.0.1:8000/connectors/google_tasks/callback` (must not reuse the Calendar callback path — Google hits that exact URL and the server routes by path)
+
+Ensure `EXPO_PUBLIC_API_URL` points at your API for device testing.
+
+**Google Tasks (v1):** After connecting, choose **one** task list; the app stores it server-side (`user_connector_resources`). Profile shows a short preview and quick-add for that list.
 
 If you see **`Invalid token`** when connecting, the backend cannot verify your Supabase session JWT (this happens **before** any Google redirect). Add **`SUPABASE_URL`** to `server/.env` (same as `EXPO_PUBLIC_SUPABASE_URL`) if your project uses **JWT Signing Keys / ES256**; otherwise set **`SUPABASE_JWT_SECRET`** to the **JWT Secret** from Supabase → Project Settings → API. Restart the API.
 
@@ -195,7 +202,7 @@ app/
 │   ├── hooks/
 │   │   └── useChat.ts              # Chat state, SSE streaming, web-compatible audio upload
 │   ├── components/
-│   │   ├── ConnectorsSection.tsx   # Integrations card (Google Calendar) — embedded in Profile
+│   │   ├── ConnectorsSection.tsx   # Integrations — Calendar + Tasks — embedded in Profile
 │   │   ├── MainBottomNav.tsx       # Shared bottom bar (Home / Chat / Me → Profile)
 │   │   └── SoundBarsEqualizer.tsx  # Reanimated audio visualizer (native only)
 │   └── screens/

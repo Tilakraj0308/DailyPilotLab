@@ -162,16 +162,102 @@ def list_connectors_status(user_id: str) -> list[dict[str, Any]]:
                 COALESCE(uc.scopes, '{}') AS scopes,
                 uc.connected_at,
                 uc.provider_email,
-                uc.error_message
+                uc.error_message,
+                ucr.resource_id AS selected_resource_id,
+                ucr.resource_name AS selected_resource_name
             FROM public.connector_providers cp
             LEFT JOIN public.user_connectors uc
                 ON uc.provider_key = cp.provider_key AND uc.user_id = %s
+            LEFT JOIN public.user_connector_resources ucr
+                ON ucr.user_connector_id = uc.id
+                AND ucr.resource_type = 'task_list'
             ORDER BY cp.provider_key
             """,
             (user_id,),
         )
         rows = cur.fetchall()
         return [dict(r) for r in rows]
+
+
+def get_connector_token_bundle(user_id: str, provider_key: str) -> dict[str, Any] | None:
+    """Decrypt tokens for an active connector row (any status with token row)."""
+    from utils.crypto_tokens import decrypt_token
+
+    with get_dict_cursor() as cur:
+        cur.execute(
+            """
+            SELECT
+                uct.encrypted_access_token,
+                uct.encrypted_refresh_token,
+                uct.token_expires_at,
+                uc.id AS user_connector_id
+            FROM public.user_connectors uc
+            JOIN public.user_connector_tokens uct ON uct.user_connector_id = uc.id
+            WHERE uc.user_id = %s AND uc.provider_key = %s
+            """,
+            (user_id, provider_key),
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        access = decrypt_token(bytes(row["encrypted_access_token"]))
+        refresh = None
+        if row.get("encrypted_refresh_token"):
+            refresh = decrypt_token(bytes(row["encrypted_refresh_token"]))
+        return {
+            "user_connector_id": int(row["user_connector_id"]),
+            "access_token": access,
+            "refresh_token": refresh,
+            "token_expires_at": row["token_expires_at"],
+        }
+
+
+def get_connector_resource(
+    user_id: str,
+    provider_key: str,
+    resource_type: str,
+) -> tuple[str | None, str | None]:
+    """Returns (resource_id, resource_name) if present."""
+    with get_dict_cursor() as cur:
+        cur.execute(
+            """
+            SELECT ucr.resource_id, ucr.resource_name
+            FROM public.user_connector_resources ucr
+            JOIN public.user_connectors uc ON uc.id = ucr.user_connector_id
+            WHERE uc.user_id = %s AND uc.provider_key = %s AND ucr.resource_type = %s
+            """,
+            (user_id, provider_key, resource_type),
+        )
+        row = cur.fetchone()
+        if not row:
+            return None, None
+        return row.get("resource_id"), row.get("resource_name")
+
+
+def upsert_selected_task_list(
+    user_id: str,
+    provider_key: str,
+    task_list_id: str,
+    task_list_title: str | None,
+) -> None:
+    uc_id = get_user_connector_id(user_id, provider_key)
+    if not uc_id:
+        raise ValueError("Connector row not found")
+    with get_dict_cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO public.user_connector_resources
+                (user_connector_id, resource_type, resource_id, resource_name, is_selected)
+            VALUES (%s, 'task_list', %s, %s, TRUE)
+            ON CONFLICT (user_connector_id, resource_type)
+            DO UPDATE SET
+                resource_id = EXCLUDED.resource_id,
+                resource_name = EXCLUDED.resource_name,
+                is_selected = TRUE,
+                updated_at = now()
+            """,
+            (uc_id, task_list_id, task_list_title),
+        )
 
 
 def get_user_connector_id(user_id: str, provider_key: str) -> int | None:
@@ -205,6 +291,13 @@ def delete_tokens_and_disconnect(user_id: str, provider_key: str) -> dict[str, A
         if row.get("encrypted_refresh_token"):
             refresh_plain = decrypt_token(bytes(row["encrypted_refresh_token"]))
 
+        cur.execute(
+            """
+            DELETE FROM public.user_connector_resources
+            WHERE user_connector_id = %s
+            """,
+            (row["cid"],),
+        )
         cur.execute(
             """
             DELETE FROM public.user_connector_tokens

@@ -28,6 +28,8 @@ class ConnectorStatusItem(BaseModel):
     connected_at: datetime | None = None
     provider_email: str | None = None
     error_message: str | None = None
+    selected_resource_id: str | None = None
+    selected_resource_name: str | None = None
 
 
 class ConnectorListResponse(BaseModel):
@@ -37,3 +39,29 @@ class ConnectorListResponse(BaseModel):
 class ConnectorDisconnectResponse(BaseModel):
     ok: bool
     provider_key: str
+
+
+class SelectTaskListRequest(BaseModel):
+    task_list_id: str
+    task_list_title: str | None = None
+
+
+class TaskListItemOut(BaseModel):
+    id: str
+    title: str
+
+
+class TaskListsResponse(BaseModel):
+    items: list[TaskListItemOut]
+
+
+class CreateGoogleTaskRequest(BaseModel):
+    title: str
+    notes: str | None = None
+
+
+class UpdateGoogleTaskRequest(BaseModel):
+    title: str | None = None
+    notes: str | None = None
+    status: str | None = None
+    completed: bool | None = None
