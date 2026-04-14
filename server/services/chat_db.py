@@ -30,8 +30,8 @@ def load_history(session_id: str) -> list[dict]:
         )
         return cur.fetchall()
 
-def get_user_sessions(user_id: str) -> list[dict]:
-    """Fetch all chat sessions for a user, including the first message as title."""
+def get_user_sessions(user_id: str, limit: int = 15, offset: int = 0) -> list[dict]:
+    """Fetch paginated chat sessions for a user, including the first message as title."""
     with get_dict_cursor() as cur:
         cur.execute(
             '''
@@ -49,8 +49,9 @@ def get_user_sessions(user_id: str) -> list[dict]:
             FROM public.chat_sessions s
             WHERE s.user_id = %s
             ORDER BY s.updated_at DESC
+            LIMIT %s OFFSET %s
             ''',
-            (user_id,)
+            (user_id, limit, offset)
         )
         return cur.fetchall()
 

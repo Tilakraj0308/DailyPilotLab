@@ -83,16 +83,12 @@ export function useChat() {
     };
 
     useEffect(() => {
+        // Always start with a fresh new chat session
         const initSession = async () => {
-            const saved = await AsyncStorage.getItem(STORE_KEY);
-            if (saved) {
-                setSessionId(saved);
-                await fetchHistory(saved);
-            } else {
-                const newId = Crypto.randomUUID();
-                await AsyncStorage.setItem(STORE_KEY, newId);
-                setSessionId(newId);
-            }
+            const newId = Crypto.randomUUID();
+            await AsyncStorage.setItem(STORE_KEY, newId);
+            setSessionId(newId);
+            setMessages([]);
             setStatus('connected');
         };
         initSession();
@@ -225,12 +221,12 @@ export function useChat() {
         setSessionId(newId);
     };
 
-    const getSessions = async (): Promise<ChatSessionSummary[]> => {
+    const getSessions = async (limit: number = 15, offset: number = 0): Promise<ChatSessionSummary[]> => {
         try {
             const apiUrl = getApiUrl();
             const { data } = await supabase.auth.getSession();
             const token = data?.session?.access_token;
-            const res = await fetch(`${apiUrl}/chat/sessions`, {
+            const res = await fetch(`${apiUrl}/chat/sessions?limit=${limit}&offset=${offset}`, {
                 headers: token ? { 'Authorization': `Bearer ${token}` } : {}
             });
             if (res.ok) {

@@ -130,10 +130,13 @@ export default function App() {
               width: '100%', 
               marginHorizontal: 'auto', 
               backgroundColor: '#f8f9fa',
-              boxShadow: '0 25px 50px -12px rgb(0 0 0 / 0.25)', // Tailwind shadow-2xl equivalent loosely
+              boxShadow: '0 25px 50px -12px rgb(0 0 0 / 0.25)',
               borderLeftWidth: 1,
               borderRightWidth: 1,
-              borderColor: 'rgba(171, 179, 183, 0.2)' // outline-variant/20 loosely
+              borderColor: 'rgba(171, 179, 183, 0.2)',
+              // Clip the sliding sidebar so it doesn't escape into the gray background
+              overflow: 'hidden',
+              position: 'relative',
             }
           ]}>
             <AppNavigator />

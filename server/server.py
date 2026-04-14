@@ -205,9 +205,9 @@ async def chat_stream(req: ChatStreamRequest, payload: dict = Depends(get_curren
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 @app.get("/chat/sessions", response_model=List[ChatSessionSummary])
-def get_chat_sessions(payload: dict = Depends(get_current_user)):
+def get_chat_sessions(limit: int = 15, offset: int = 0, payload: dict = Depends(get_current_user)):
     user_id = payload.get("sub", "")
-    sessions = get_user_sessions(user_id)
+    sessions = get_user_sessions(user_id, limit=limit, offset=offset)
     return [
         ChatSessionSummary(
             id=str(s["id"]),
