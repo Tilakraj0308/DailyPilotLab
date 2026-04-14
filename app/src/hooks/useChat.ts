@@ -163,37 +163,51 @@ export function useChat() {
         if (status !== 'connected' || !sessionId) return null;
 
         try {
-            // Wait briefly on retry to ensure disk flushing
             if (retryCount > 0) {
                 await new Promise(resolve => setTimeout(resolve, 500));
             }
 
-            const fileUri = Platform.OS === 'android' && !uri.startsWith('file://') ? `file://${uri}` : uri;
             const apiUrl = getApiUrl();
-
-            // Get Supabase token
             const { data: authData } = await supabase.auth.getSession();
             const token = authData?.session?.access_token;
+            const authHeaders: Record<string, string> = token ? { 'Authorization': `Bearer ${token}` } : {};
 
-            // Use FileSystem.uploadAsync instead of fetch + FormData for reliable file uploads
-            const response = await FileSystem.uploadAsync(`${apiUrl}/transcribe`, fileUri, {
-                httpMethod: 'POST',
-                headers: token ? { 'Authorization': `Bearer ${token}` } : {},
-                uploadType: FileSystemUploadType.MULTIPART,
-                fieldName: 'file',
-                mimeType: 'audio/m4a',
-            });
+            let responseJson: any;
 
-            const data = JSON.parse(response.body);
-            if (data.success && data.text) {
-                return data.text.trim();
+            if (Platform.OS === 'web') {
+                // On web, the uri is a blob:// URL — use fetch + FormData directly
+                const blobResponse = await fetch(uri);
+                const audioBlob = await blobResponse.blob();
+                const formData = new FormData();
+                formData.append('file', audioBlob, 'recording.webm');
+
+                const uploadResponse = await fetch(`${apiUrl}/transcribe`, {
+                    method: 'POST',
+                    headers: authHeaders,
+                    body: formData,
+                });
+                responseJson = await uploadResponse.json();
             } else {
-                throw new Error(data.error || 'Failed to transcribe audio');
+                // On native, use expo-file-system for reliable multipart upload
+                const fileUri = Platform.OS === 'android' && !uri.startsWith('file://') ? `file://${uri}` : uri;
+                const response = await FileSystem.uploadAsync(`${apiUrl}/transcribe`, fileUri, {
+                    httpMethod: 'POST',
+                    headers: authHeaders,
+                    uploadType: FileSystemUploadType.MULTIPART,
+                    fieldName: 'file',
+                    mimeType: 'audio/m4a',
+                });
+                responseJson = JSON.parse(response.body);
+            }
+
+            if (responseJson.success && responseJson.text) {
+                return responseJson.text.trim();
+            } else {
+                throw new Error(responseJson.error || 'Failed to transcribe audio');
             }
         } catch (error: any) {
             console.error(`Audio Transcription Error (Attempt ${retryCount + 1}):`, error);
 
-            // Retry logic
             const errorMessage = error?.message || String(error);
             if (retryCount < 2 && (errorMessage.includes('Network request failed') || errorMessage.includes('Socket closed'))) {
                 console.log(`Retrying audio upload... (${retryCount + 1}/2)`);

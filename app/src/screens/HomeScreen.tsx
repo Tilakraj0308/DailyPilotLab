@@ -8,10 +8,10 @@ import {
     TextInput,
     KeyboardAvoidingView,
     Platform,
-    Alert,
     Modal,
     TouchableWithoutFeedback,
 } from "react-native";
+import { universalAlert } from "../lib/alerts";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MaterialIcons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
@@ -24,13 +24,7 @@ export default function HomeScreen() {
     const navigation = useNavigation<any>();
 
     const handleSignOut = () => {
-        if (Platform.OS === "web") {
-            if (window.confirm("Are you sure you want to sign out?")) {
-                signOut();
-            }
-            return;
-        }
-        Alert.alert("Sign Out", "Are you sure you want to sign out?", [
+        universalAlert("Sign Out", "Are you sure you want to sign out?", [
             { text: "Cancel", style: "cancel" },
             {
                 text: "Sign Out",
