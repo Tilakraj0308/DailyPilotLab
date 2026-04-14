@@ -49,16 +49,35 @@ def _oauth_ttl_seconds() -> int:
     return int(_env("CONNECTOR_OAUTH_STATE_TTL_SECONDS", "600") or "600")
 
 
+def _normalize_redirect_uri(raw: str) -> str:
+    """Strip whitespace and accidental quotes from .env copy-paste."""
+    u = raw.strip()
+    if len(u) >= 2 and ((u[0] == u[-1] == '"') or (u[0] == u[-1] == "'")):
+        u = u[1:-1].strip()
+    return u.rstrip("/")
+
+
 def _redirect_uri() -> str:
-    # Must be the Tasks callback URL path — do not fall back to Calendar; Google redirects to the
-    # exact URI registered in Cloud Console, and the path selects which provider completes OAuth.
-    uri = _env("GOOGLE_TASKS_CONNECTOR_REDIRECT_URI")
-    if not uri:
-        raise RuntimeError(
-            "GOOGLE_TASKS_CONNECTOR_REDIRECT_URI is required (e.g. "
-            "http://127.0.0.1:8000/connectors/google_tasks/callback) — add it in Google Cloud OAuth client"
-        )
-    return uri
+    """
+    Same host/port/path pattern as Calendar: …/connectors/google_tasks/callback
+
+    1) GOOGLE_TASKS_CONNECTOR_REDIRECT_URI if set (must match Google Cloud "Authorized redirect URIs" exactly).
+    2) Else derive from GOOGLE_CONNECTOR_REDIRECT_URI by swapping google_calendar → google_tasks so one
+       working Calendar redirect is enough to infer the Tasks URL (still register both URIs in Cloud Console).
+    """
+    explicit = _normalize_redirect_uri(_env("GOOGLE_TASKS_CONNECTOR_REDIRECT_URI"))
+    if explicit:
+        return explicit
+
+    cal = _normalize_redirect_uri(_env("GOOGLE_CONNECTOR_REDIRECT_URI"))
+    if cal and "google_calendar" in cal:
+        return cal.replace("google_calendar", "google_tasks", 1)
+
+    raise RuntimeError(
+        "Set GOOGLE_TASKS_CONNECTOR_REDIRECT_URI (e.g. http://127.0.0.1:8000/connectors/google_tasks/callback) "
+        "or set GOOGLE_CONNECTOR_REDIRECT_URI with …/google_calendar/… so Tasks URL can be derived. "
+        "Register the exact Tasks callback URL on the same OAuth Web client as Calendar."
+    )
 
 
 def _client_credentials() -> tuple[str, str]:
@@ -129,6 +148,7 @@ def build_start_authorization_url(user_id: str, return_to: str | None) -> tuple[
     base.upsert_user_connector_connecting(user_id, PROVIDER_KEY)
 
     cid, _ = _client_credentials()
+    logger.info("Google Tasks OAuth using redirect_uri=%s (must match Cloud Console + token exchange)", oauth_redirect)
     params = {
         "client_id": cid,
         "redirect_uri": oauth_redirect,
