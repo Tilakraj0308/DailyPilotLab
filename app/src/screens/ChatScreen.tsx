@@ -186,7 +186,7 @@ export default function ChatScreen() {
 
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const sidebarX = useSharedValue(-300);
-    const [sessionsGrouped, setSessionsGrouped] = useState<{title: string, data: ChatSessionSummary[]}[]>([]);
+    const [sessionsGrouped, setSessionsGrouped] = useState<{ title: string, data: ChatSessionSummary[] }[]>([]);
     const [isLoadingSessions, setIsLoadingSessions] = useState(false);
     const [sessionOffset, setSessionOffset] = useState(0);
     const [hasMoreSessions, setHasMoreSessions] = useState(true);
@@ -204,7 +204,7 @@ export default function ChatScreen() {
             const date = new Date(s.updated_at);
             const diffTime = Math.abs(now.getTime() - date.getTime());
             const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-            
+
             if (diffDays === 0 && now.getDate() === date.getDate()) {
                 today.push(s);
             } else if (diffDays === 1 || (diffDays === 0 && now.getDate() !== date.getDate())) {
@@ -517,12 +517,15 @@ export default function ChatScreen() {
 
     // Manual keyboard height tracking to avoid residual padding
     const [keyboardHeight, setKeyboardHeight] = useState(0);
+    const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
     useEffect(() => {
         const showSub = Keyboard.addListener('keyboardDidShow', (e) => {
             setKeyboardHeight(e.endCoordinates.height);
+            setIsKeyboardVisible(true);
         });
         const hideSub = Keyboard.addListener('keyboardDidHide', () => {
             setKeyboardHeight(0);
+            setIsKeyboardVisible(false);
         });
         return () => {
             showSub.remove();
@@ -558,11 +561,18 @@ export default function ChatScreen() {
                 >
                     <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
                         <View className="flex-row items-center justify-between p-4 border-b border-outline-variant/10">
-                            <Text className="text-lg font-bold text-on-surface" style={{ fontFamily: "Manrope_700Bold" }}>Chat History</Text>
+                            <Text className="text-lg font-bold text-on-surface" style={{ fontFamily: "Manrope_700Bold" }}>Recents</Text>
                             <TouchableOpacity onPress={toggleSidebar} className="p-1">
                                 <MaterialIcons name="close" size={24} color="#586064" />
                             </TouchableOpacity>
                         </View>
+                        <TouchableOpacity
+                            onPress={() => { toggleSidebar(); clearSession(); }}
+                            className="flex-row items-center gap-3 mx-2 mt-3 mb-1 px-3 py-3 rounded-lg bg-secondary/10 border border-secondary/20"
+                        >
+                            <MaterialIcons name="add-comment" size={20} color="#4e45e4" />
+                            <Text className="text-sm font-medium text-secondary" style={{ fontFamily: "Inter_500Medium" }}>New Chat</Text>
+                        </TouchableOpacity>
                         {isLoadingSessions && sessionsGrouped.length === 0 ? (
                             <HistorySkeleton />
                         ) : (
@@ -607,11 +617,18 @@ export default function ChatScreen() {
                 <Animated.View style={{ transform: [{ translateX: sidebarX }], position: 'absolute', top: 0, left: 0, bottom: 0, width: 300, zIndex: 50, backgroundColor: '#ffffff', shadowColor: '#000', shadowOffset: { width: 4, height: 0 }, shadowOpacity: 0.1, shadowRadius: 10, elevation: 10 }}>
                     <SafeAreaView className="flex-1" edges={['top', 'bottom']}>
                         <View className="flex-row items-center justify-between p-4 border-b border-outline-variant/10">
-                            <Text className="text-lg font-bold text-on-surface" style={{ fontFamily: "Manrope_700Bold" }}>Chat History</Text>
+                            <Text className="text-lg font-bold text-on-surface" style={{ fontFamily: "Manrope_700Bold" }}>Recents</Text>
                             <TouchableOpacity onPress={toggleSidebar} className="p-1">
                                 <MaterialIcons name="close" size={24} color="#586064" />
                             </TouchableOpacity>
                         </View>
+                        <TouchableOpacity
+                            onPress={() => { toggleSidebar(); clearSession(); }}
+                            className="flex-row items-center gap-3 mx-2 mt-3 mb-1 px-3 py-3 rounded-lg bg-secondary/10 border border-secondary/20"
+                        >
+                            <MaterialIcons name="add-comment" size={20} color="#4e45e4" />
+                            <Text className="text-sm font-medium text-secondary" style={{ fontFamily: "Inter_500Medium" }}>New Chat</Text>
+                        </TouchableOpacity>
                         {isLoadingSessions && sessionsGrouped.length === 0 ? (
                             <HistorySkeleton />
                         ) : (
@@ -656,25 +673,22 @@ export default function ChatScreen() {
             {/* Header */}
             <View className="flex-row items-center justify-between px-5 py-3 border-b border-outline-variant/10 bg-background">
                 <View className="flex-row items-center gap-3">
-                    <TouchableOpacity onPress={() => navigation.goBack()} className="p-1">
-                        <MaterialIcons name="arrow-back" size={24} color="#2b3437" />
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={toggleSidebar} className="p-1 ml-1">
+                    <TouchableOpacity onPress={toggleSidebar} className="p-1">
                         <MaterialIcons name={isSidebarOpen ? "close" : "menu"} size={24} color="#2b3437" />
                     </TouchableOpacity>
                     <Text className="text-lg font-bold text-on-surface" style={{ fontFamily: "Manrope_700Bold" }}>
                         DailyPilot Chat
                     </Text>
                 </View>
-                <TouchableOpacity onPress={clearSession} className="p-2 ml-auto" accessibilityLabel="New Chat">
-                    <MaterialIcons name="add-comment" size={22} color="#4e45e4" />
-                </TouchableOpacity>
             </View>
 
 
 
             {/* Main Content */}
-            <View style={{ flex: 1, paddingBottom: keyboardHeight }}>
+            <KeyboardAvoidingView
+                style={{ flex: 1 }}
+                behavior="padding"
+            >
                 <View className="flex-1">
                     {/* Chat Messages ScrollView */}
                     <ScrollView
@@ -683,6 +697,7 @@ export default function ChatScreen() {
                         contentContainerStyle={{ paddingVertical: 16, paddingHorizontal: 16 }}
                         onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
                         showsVerticalScrollIndicator={false}
+                        keyboardShouldPersistTaps="handled"
                     >
                         {messages.length === 0 ? (
                             <View className="flex-1 justify-center items-center py-32 opacity-50">
@@ -777,7 +792,47 @@ export default function ChatScreen() {
 
                     </View>
                 </View>
+            </KeyboardAvoidingView>
+
+            {/* Bottom Navigation Bar — hidden when keyboard is open */}
+            {!isKeyboardVisible && (
+            <View className="w-full flex-row justify-between bg-surface-container-lowest px-5 py-2 border-t border-outline-variant/10" style={{ paddingBottom: Platform.OS === 'ios' ? 24 : 8 }}>
+                {[
+                    { label: "Home", icon: "home", active: false },
+                    { label: "Tasks", icon: "check-circle", active: false },
+                    { label: "Chat", icon: "chat-bubble", active: true },
+                    { label: "Library", icon: "auto-stories", active: false },
+                    { label: "Me", icon: "person", active: false },
+                ].map((tab, idx) => (
+                    <TouchableOpacity
+                        key={idx}
+                        className="items-center justify-center flex-1"
+                        onPress={() => {
+                            if (tab.label === 'Home') {
+                                navigation.navigate('Home');
+                            }
+                        }}
+                    >
+                        <View className={`px-4 py-1 rounded-xl mb-1`}>
+                            <MaterialIcons
+                                name={tab.icon as any}
+                                size={24}
+                                color={tab.active ? "#4e45e4" : "#586064"}
+                            />
+                        </View>
+                        <Text
+                            className="text-[10px]"
+                            style={{
+                                fontFamily: "Inter_500Medium",
+                                color: tab.active ? "#4e45e4" : "#586064",
+                            }}
+                        >
+                            {tab.label}
+                        </Text>
+                    </TouchableOpacity>
+                ))}
             </View>
+            )}
         </SafeAreaView>
     );
 }
