@@ -534,7 +534,7 @@ export default function ChatScreen() {
     }, []);
 
     return (
-        <SafeAreaView className="flex-1 bg-background" edges={['top', 'bottom']}>
+        <SafeAreaView className="flex-1 bg-background" edges={['top']}>
             {/* Sidebar Overlay */}
             {isSidebarOpen && (
                 <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 40, backgroundColor: 'rgba(0,0,0,0.5)' }}>
@@ -799,46 +799,6 @@ export default function ChatScreen() {
                     </View>
                 </View>
             </KeyboardAvoidingView>
-
-            {/* Bottom Navigation Bar — hidden when keyboard is open */}
-            {!isKeyboardVisible && (
-            <View className="w-full flex-row justify-between bg-surface-container-lowest px-5 py-2 border-t border-outline-variant/10" style={{ paddingBottom: Platform.OS === 'ios' ? 24 : 8 }}>
-                {[
-                    { label: "Home", icon: "home", active: false },
-                    { label: "Tasks", icon: "check-circle", active: false },
-                    { label: "Chat", icon: "chat-bubble", active: true },
-                    { label: "Library", icon: "auto-stories", active: false },
-                    { label: "Me", icon: "person", active: false },
-                ].map((tab, idx) => (
-                    <TouchableOpacity
-                        key={idx}
-                        className="items-center justify-center flex-1"
-                        onPress={() => {
-                            if (tab.label === 'Home') {
-                                navigation.navigate('Home');
-                            }
-                        }}
-                    >
-                        <View className={`px-4 py-1 rounded-xl mb-1`}>
-                            <MaterialIcons
-                                name={tab.icon as any}
-                                size={24}
-                                color={tab.active ? "#4e45e4" : "#586064"}
-                            />
-                        </View>
-                        <Text
-                            className="text-[10px]"
-                            style={{
-                                fontFamily: "Inter_500Medium",
-                                color: tab.active ? "#4e45e4" : "#586064",
-                            }}
-                        >
-                            {tab.label}
-                        </Text>
-                    </TouchableOpacity>
-                ))}
-            </View>
-            )}
         </SafeAreaView>
     );
 }
