@@ -11,6 +11,7 @@ import {
     Keyboard,
     Alert,
 } from 'react-native';
+import { universalAlert } from '../lib/alerts';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -48,7 +49,42 @@ const HIGH_QUALITY_OPTIONS = {
 
 const MAX_RECORDING_MS = 60000; // 60s max per voice memo
 
+// Platform-aware TypingWave:
+// On web, Reanimated shared value worklets don't execute, so we inject a CSS @keyframe animation.
+// On native, we use Reanimated as before.
 const TypingWave = () => {
+    if (Platform.OS === 'web') {
+        // Inject CSS once
+        if (typeof document !== 'undefined' && !document.getElementById('typing-wave-style')) {
+            const style = document.createElement('style');
+            style.id = 'typing-wave-style';
+            style.textContent = `
+                @keyframes typingBounce {
+                    0%, 100% { transform: translateY(0px); }
+                    50% { transform: translateY(-5px); }
+                }
+                .typing-dot {
+                    width: 8px; height: 8px; border-radius: 50%;
+                    background-color: #586064;
+                    display: inline-block;
+                    animation: typingBounce 0.6s ease-in-out infinite;
+                }
+                .typing-dot:nth-child(2) { animation-delay: 0.15s; }
+                .typing-dot:nth-child(3) { animation-delay: 0.30s; }
+            `;
+            document.head.appendChild(style);
+        }
+        return (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                {/* @ts-ignore – web-only className on View is fine via react-native-web */}
+                <div className="typing-dot" />
+                <div className="typing-dot" />
+                <div className="typing-dot" />
+            </View>
+        );
+    }
+
+    // Native: Reanimated path
     const dot1 = useSharedValue(0);
     const dot2 = useSharedValue(0);
     const dot3 = useSharedValue(0);
@@ -133,7 +169,7 @@ export default function ChatScreen() {
         try {
             const hasPermission = await setupAudioPermissions();
             if (!hasPermission) {
-                Alert.alert("Permission Required", "Please grant audio recording permissions to use voice chat.");
+                universalAlert("Permission Required", "Please grant audio recording permissions to use voice chat.");
                 return;
             }
 
@@ -255,7 +291,7 @@ export default function ChatScreen() {
         } catch (err) {
             console.error("Failed to start recording", err);
             setIsRecording(false);
-            Alert.alert("Recording Error", "Failed to start audio recording");
+            universalAlert("Recording Error", "Failed to start audio recording");
         }
     };
 
@@ -274,7 +310,7 @@ export default function ChatScreen() {
             console.log('✅ Recording stopped, URI:', uri);
 
             if (!uri) {
-                Alert.alert("Error", "Failed to get recording URI");
+                universalAlert("Error", "Failed to get recording URI");
                 return;
             }
 
@@ -300,13 +336,13 @@ export default function ChatScreen() {
                 }
             } catch (uploadErr) {
                 console.error('❌ Failed to transcribe audio:', uploadErr);
-                Alert.alert("Error", "Failed to transcribe audio: " + String(uploadErr));
+                universalAlert("Error", "Failed to transcribe audio: " + String(uploadErr));
             } finally {
                 setIsUploadingAudio(false);
             }
         } catch (err) {
             console.error("Failed to stop recording", err);
-            Alert.alert("Error", "Failed to stop recording");
+            universalAlert("Error", "Failed to stop recording");
         }
     };
 
@@ -315,20 +351,19 @@ export default function ChatScreen() {
         const s = Math.floor(seconds % 60);
         return `${m}:${s.toString().padStart(2, '0')}`;
     };
-
     const renderMessage = ({ item, index }: { item: ChatMessage, index: number }) => {
         if (!item.content && item.role === 'assistant') return null;
         const isUser = item.role === 'user';
         return (
             <View key={item.id || index} className={`w-full flex-col mb-4 ${isUser ? 'items-end' : 'items-start'}`}>
-                <View className={`flex-row gap-2 items-end max-w-[85%] ${isUser ? 'flex-row-reverse' : ''}`}>
-                    <View className={`w-8 h-8 rounded-full items-center justify-center -mb-2 ${isUser ? 'bg-surface-variant' : 'bg-secondary-container'}`}>
+                <View className={`flex-row gap-2 items-end max-w-[85%] ${isUser ? 'flex-row-reverse' : ''}`} style={{ flexShrink: 1 }}>
+                    <View className={`w-8 h-8 rounded-full items-center justify-center -mb-2 flex-shrink-0 ${isUser ? 'bg-surface-variant' : 'bg-secondary-container'}`}>
                         <MaterialIcons name={isUser ? "person" : "smart-toy"} size={18} color={isUser ? "#586064" : "#4e45e4"} />
                     </View>
-                    <View className={`p-4 rounded-2xl ${isUser ? 'bg-secondary rounded-br-sm' : 'bg-surface-container rounded-bl-sm'}`}>
+                    <View className={`p-4 rounded-2xl ${isUser ? 'bg-secondary rounded-br-sm' : 'bg-surface-container rounded-bl-sm'}`} style={{ flexShrink: 1 }}>
                         <Text
                             className={`text-sm leading-relaxed ${isUser ? 'text-white' : 'text-on-surface'}`}
-                            style={{ fontFamily: isUser ? "Inter_500Medium" : "Inter_400Regular" }}
+                            style={{ fontFamily: isUser ? "Inter_500Medium" : "Inter_400Regular", flexWrap: 'wrap' }}
                         >
                             {item.content}
                         </Text>

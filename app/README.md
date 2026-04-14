@@ -1,6 +1,6 @@
-# DailyPilot — Mobile App
+# DailyPilot — App (Mobile + Web)
 
-Expo React Native client for DailyPilot. Uses **Supabase Auth** for authentication with an auth-agnostic backend design.
+Expo React Native client for DailyPilot. Runs as a **native mobile app** (iOS/Android) and as a **Progressive Web App (PWA)** in the browser — all from the same codebase. Uses **Supabase Auth** for authentication with an auth-agnostic backend design.
 
 ---
 
@@ -10,7 +10,8 @@ Expo React Native client for DailyPilot. Uses **Supabase Auth** for authenticati
 |------|---------|
 | Node.js | ≥ 18 |
 | npm | ≥ 9 |
-| [Expo Go](https://expo.dev/go) | Install on your Android/iOS device |
+| [Expo Go](https://expo.dev/go) | Install on your Android/iOS device (for native dev) |
+| A modern browser | Chrome, Firefox, Edge (for web dev) |
 | A Supabase project | free tier is fine |
 
 ---
@@ -46,15 +47,22 @@ npm install
 4. Copy the **Callback URL** shown — this is what you added to Google Console in step (a)
 5. Save
 
-#### c) Add Redirect URLs (recommended for production)
+#### c) Configure Redirect URLs in Supabase
 
-> By default Supabase allows **all** redirect URLs. Once you add your first entry, it enforces an allowlist. Skip this for local dev; add them before going to production.
+Go to **Supabase Dashboard → Authentication → URL Configuration**.
 
-1. Go to **Supabase Dashboard → Authentication → URL Configuration**
-2. Under **Redirect URLs**, add exactly the following (the wildcards `*` are strictly required to survive dynamic IP changes):
-   - `dailypilot://*` (for production builds and intent fallbacks)
-   - `exp://*` (for development with Expo Go)
-   - `https://auth.expo.io/*` (for Expo auth proxies)
+**Redirect URLs** — Add **all** of the following entries. Wildcards (`*`) survive dynamic IP changes.
+
+For **Mobile / Expo Go**:
+- `dailypilot://*`
+- `exp://*`
+- `https://auth.expo.io/*`
+
+For **Web browser (local development)**:
+- `http://localhost:8081/*`
+- `http://<your-machine-ip>:8081/*` — replace with your LAN IP (find it: `hostname -I`)
+
+> ⚠️ **Important:** Once you add your first Redirect URL entry, Supabase enforces a strict allowlist. If your web login gets stuck or tries to open `xdg-open`, the URL your browser is running on is not in the list. Add it and retry.
 
 ### 3. Environment Variables
 
@@ -64,18 +72,18 @@ Create your `.env` from the example:
 cp .env.example .env
 ```
 
-Then fill in the values:
+Fill in the values:
 
 | Variable | Where to find it |
-|----------|-----------------|
-| `EXPO_PUBLIC_API_URL` | Your machine's LAN IP + port 8000 (see note below) |
+|----------|--------------------|
+| `EXPO_PUBLIC_API_URL` | Your machine's LAN IP + port 8000 |
 | `EXPO_PUBLIC_SUPABASE_URL` | Supabase Dashboard → Settings → API → Project URL |
 | `EXPO_PUBLIC_SUPABASE_ANON_KEY` | Supabase Dashboard → Settings → API → anon public key |
 
 ```ini
-# Backend API — must be your machine's local network IP when testing on a physical device
-# Find it with: hostname -I | awk '{print $1}'
-# Use "localhost" only when testing on web or Android emulator (10.0.2.2)
+# Backend API — use your machine's LAN IP so that native devices AND
+# the web browser (on the same machine) can both reach the backend.
+# Find your IP with: hostname -I | awk '{print $1}'
 EXPO_PUBLIC_API_URL=http://<your-machine-ip>:8000
 
 # Supabase (from Dashboard → Settings → API)
@@ -83,37 +91,72 @@ EXPO_PUBLIC_SUPABASE_URL=https://<your-project-ref>.supabase.co
 EXPO_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-key
 ```
 
-> ⚠️ **`EXPO_PUBLIC_API_URL` must be your machine's LAN IP** (e.g. `http://192.168.1.6:8000`), not `localhost`. On a physical phone, `localhost` refers to the phone itself, not your computer. Run `hostname -I` to find your IP.
+> ⚠️ **Use your LAN IP, not `localhost`**, for `EXPO_PUBLIC_API_URL`. A LAN IP works for browsers, simulators, and physical devices simultaneously. `localhost` only works for the current machine.
 
-> **Never commit `.env`** — it is already listed in `.gitignore`.
+> **Never commit `.env`** — it is already in `.gitignore`.
 
 ---
 
 ## Run
 
-Make sure the [backend server](../server/README.md) is running first, then:
+Start the [backend server](../server/README.md) first, then:
+
+### Mobile (Expo Go / Simulator)
 
 ```bash
 npx expo start
 ```
 
-- Press **a** to open on a connected Android device
-- Press **w** to open in the web browser
-- Or scan the QR code with Expo Go on your phone
+- Press **a** → Android device/emulator
+- Press **i** → iOS simulator
+- Scan the QR code with **Expo Go** on your phone
+
+### Web Browser (PWA)
+
+```bash
+# Option 1: Start all platforms, then press W in the terminal
+npx expo start
+
+# Option 2: Launch web directly
+npx expo start --web
+
+# Option 3: npm script shortcut
+npm run web
+```
+
+The app will open at **`http://localhost:8081`**.
+
+> 💡 **Web-specific notes:**
+> - The app is centered at a max-width of **480px** on desktop — preserving the mobile-first design.
+> - Voice recording via the mic button uses the browser's native `MediaRecorder` API. **Chrome** is recommended for the best audio support.
+> - The browser will request microphone permission on first use of voice chat.
+> - On Google login, you will be redirected to `http://localhost:8081` after authentication — make sure this URL is in your Supabase Redirect URLs list (see Setup § c above).
 
 ---
 
 ## Auth Flow
 
+### Mobile (Native Deep Link)
 ```
 User taps "Continue with Google"
-  → Supabase OAuth URL opens in browser
+  → Supabase OAuth URL opens in in-app browser
     → Google authenticates user
       → Google redirects to Supabase callback
-        → Supabase redirects back to app via deep link
-          → App receives session tokens
+        → Supabase redirects back to app via deep link (exp:// or dailypilot://)
+          → App parses tokens from URL and sets session
             → AuthContext calls GET /auth/profile on backend
-              → Backend auto-creates user in public.users
+```
+
+### Web Browser
+```
+User clicks "Continue with Google"
+  → Browser navigates to Supabase OAuth URL
+    → Google authenticates user
+      → Google redirects to Supabase callback
+        → Supabase redirects back to http://localhost:8081
+          → Supabase JS SDK auto-detects token in URL hash (detectSessionInUrl: true)
+            → onAuthStateChange fires → session is set
+              → AuthContext calls GET /auth/profile on backend
 ```
 
 All auth state is managed by Supabase. The backend only verifies the JWT and maintains its own `public.users` table via `external_auth_id` (auth-agnostic — no vendor lock-in).
@@ -124,16 +167,23 @@ All auth state is managed by Supabase. The backend only verifies the JWT and mai
 
 ```
 app/
-├── App.tsx                      # Root — wraps app in AuthProvider
+├── App.tsx                         # Root — AuthProvider + responsive web layout wrapper
 ├── src/
 │   ├── context/
-│   │   └── AuthContext.tsx       # Auth state provider (session, signOut)
+│   │   └── AuthContext.tsx         # Auth state provider (session, signOut)
 │   ├── lib/
-│   │   ├── supabase.ts          # Supabase client init
-│   │   └── api.ts               # Dynamic API URL resolver
+│   │   ├── supabase.ts             # Supabase client (detectSessionInUrl: true on web)
+│   │   ├── alerts.ts               # Cross-platform alert helper (window.alert on web)
+│   │   └── connectors.ts           # API helpers for connector management
+│   ├── hooks/
+│   │   └── useChat.ts              # Chat state, SSE streaming, web-compatible audio upload
+│   ├── components/
+│   │   └── SoundBarsEqualizer.tsx  # Reanimated audio visualizer (native only)
 │   └── screens/
-│       ├── LoginScreen.tsx      # Google OAuth via Supabase
-│       └── HomeScreen.tsx       # Main app screen
-├── app.json                     # Expo config (scheme: dailypilot)
-└── .env                         # Environment variables (gitignored)
+│       ├── LoginScreen.tsx         # Google OAuth (web redirect vs native in-app browser)
+│       ├── HomeScreen.tsx          # Main dashboard
+│       ├── ChatScreen.tsx          # Chat UI with voice recording (web + native)
+│       └── ConnectorsScreen.tsx    # OAuth connector management
+├── app.json                        # Expo config (scheme: dailypilot, web: favicon)
+└── .env                            # Environment variables (gitignored)
 ```

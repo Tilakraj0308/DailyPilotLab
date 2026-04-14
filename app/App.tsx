@@ -1,6 +1,6 @@
 import "./global.css";
 import React, { useEffect } from "react";
-import { View, ActivityIndicator, Text, ScrollView } from "react-native";
+import { View, ActivityIndicator, Text, ScrollView, Platform } from "react-native";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { useFonts } from "expo-font";
@@ -65,7 +65,7 @@ function AppNavigator() {
 
   // Root-level listener specifically meant to catch deep links that WebBrowser drops.
   useEffect(() => {
-    if (incomingUrl) {
+    if (incomingUrl && Platform.OS !== 'web') {
       const { params, errorCode } = QueryParams.getQueryParams(incomingUrl);
       if (params?.access_token && params?.refresh_token) {
         supabase.auth.setSession({
@@ -122,7 +122,23 @@ export default function App() {
   return (
     <ErrorBoundary>
       <AuthProvider>
-        <AppNavigator />
+        <View style={{ flex: 1, backgroundColor: Platform.OS === 'web' ? '#e2e9ec' : 'transparent' }}>
+          <View style={[
+            { flex: 1 }, 
+            Platform.OS === 'web' && { 
+              maxWidth: 480, 
+              width: '100%', 
+              marginHorizontal: 'auto', 
+              backgroundColor: '#f8f9fa',
+              boxShadow: '0 25px 50px -12px rgb(0 0 0 / 0.25)', // Tailwind shadow-2xl equivalent loosely
+              borderLeftWidth: 1,
+              borderRightWidth: 1,
+              borderColor: 'rgba(171, 179, 183, 0.2)' // outline-variant/20 loosely
+            }
+          ]}>
+            <AppNavigator />
+          </View>
+        </View>
       </AuthProvider>
     </ErrorBoundary>
   );

@@ -49,6 +49,9 @@ Before submitting a Pull Request, please make sure the following checks are comp
 - [ ] I have commented my code and updated docs (if applicable).
 - [ ] My branch follows the `prefix/branch-name` naming convention.
 - [ ] My commit messages follow the Conventional Commits format.
+- [ ] I have checked the chat response.
+- [ ] I have checked the audio response.
+- [ ] I have added checklist for any major feature.
 
 ---
 
