@@ -65,7 +65,7 @@ function AppNavigator() {
 
   // Root-level listener specifically meant to catch deep links that WebBrowser drops.
   useEffect(() => {
-    if (incomingUrl) {
+    if (incomingUrl && Platform.OS !== 'web') {
       const { params, errorCode } = QueryParams.getQueryParams(incomingUrl);
       if (params?.access_token && params?.refresh_token) {
         supabase.auth.setSession({
