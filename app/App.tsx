@@ -89,7 +89,6 @@ function MainTabs() {
           borderTopWidth: 1,
           borderTopColor: 'rgba(171, 179, 183, 0.1)',
           paddingBottom: Platform.OS === 'ios' ? 24 : 24,
-          paddingTop: -6,
           height: Platform.OS === 'ios' ? 80 : 64,
         },
       })}
