@@ -11,6 +11,7 @@ import {
     Keyboard,
     Alert,
 } from 'react-native';
+import { universalAlert } from '../lib/alerts';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -133,7 +134,7 @@ export default function ChatScreen() {
         try {
             const hasPermission = await setupAudioPermissions();
             if (!hasPermission) {
-                Alert.alert("Permission Required", "Please grant audio recording permissions to use voice chat.");
+                universalAlert("Permission Required", "Please grant audio recording permissions to use voice chat.");
                 return;
             }
 
@@ -255,7 +256,7 @@ export default function ChatScreen() {
         } catch (err) {
             console.error("Failed to start recording", err);
             setIsRecording(false);
-            Alert.alert("Recording Error", "Failed to start audio recording");
+            universalAlert("Recording Error", "Failed to start audio recording");
         }
     };
 
@@ -274,7 +275,7 @@ export default function ChatScreen() {
             console.log('✅ Recording stopped, URI:', uri);
 
             if (!uri) {
-                Alert.alert("Error", "Failed to get recording URI");
+                universalAlert("Error", "Failed to get recording URI");
                 return;
             }
 
@@ -300,13 +301,13 @@ export default function ChatScreen() {
                 }
             } catch (uploadErr) {
                 console.error('❌ Failed to transcribe audio:', uploadErr);
-                Alert.alert("Error", "Failed to transcribe audio: " + String(uploadErr));
+                universalAlert("Error", "Failed to transcribe audio: " + String(uploadErr));
             } finally {
                 setIsUploadingAudio(false);
             }
         } catch (err) {
             console.error("Failed to stop recording", err);
-            Alert.alert("Error", "Failed to stop recording");
+            universalAlert("Error", "Failed to stop recording");
         }
     };
 
