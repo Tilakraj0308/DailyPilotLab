@@ -4,9 +4,10 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { MaterialIcons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { useAuth } from "../context/AuthContext";
-import { universalAlert } from "../lib/alerts";
-import ConnectorsSection from "../components/ConnectorsSection";
+import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
+import ConnectorsSection from "../connectors/ConnectorsSection";
 import MainBottomNav from "../components/MainBottomNav";
+import { universalAlert } from "../lib/alerts";
 
 export default function ProfileScreen() {
   const navigation = useNavigation<any>();

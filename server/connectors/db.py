@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from db.dbConnection import get_dict_cursor
+from connectors.token_manager import encrypt_token, decrypt_token
 
 logger = logging.getLogger(__name__)
 
@@ -79,8 +80,6 @@ def save_tokens_for_connector(
     refresh_token: str | None,
     expires_at: datetime | None,
 ) -> None:
-    from utils.crypto_tokens import encrypt_token
-
     enc_a = encrypt_token(access_token)
     enc_r = encrypt_token(refresh_token) if refresh_token else None
 
@@ -181,8 +180,6 @@ def list_connectors_status(user_id: str) -> list[dict[str, Any]]:
 
 def get_connector_token_bundle(user_id: str, provider_key: str) -> dict[str, Any] | None:
     """Decrypt tokens for an active connector row (any status with token row)."""
-    from utils.crypto_tokens import decrypt_token
-
     with get_dict_cursor() as cur:
         cur.execute(
             """
@@ -295,8 +292,6 @@ def should_force_google_oauth_consent_prompt(user_id: str, provider_key: str) ->
 
 def delete_tokens_and_disconnect(user_id: str, provider_key: str) -> dict[str, Any] | None:
     """Returns decrypted refresh_token if present (for provider revoke)."""
-    from utils.crypto_tokens import decrypt_token
-
     with get_dict_cursor() as cur:
         cur.execute(
             """
@@ -344,3 +339,81 @@ def delete_tokens_and_disconnect(user_id: str, provider_key: str) -> dict[str, A
             (user_id, provider_key),
         )
         return {"refresh_token": refresh_plain or None}
+
+
+# ─── Tool Permission Helpers ────────────────────────────────────────────────
+
+
+def list_connected_providers(user_id: str) -> list[str]:
+    """Return provider_keys where the user's status is 'connected'."""
+    with get_dict_cursor() as cur:
+        cur.execute(
+            """
+            SELECT provider_key
+            FROM public.user_connectors
+            WHERE user_id = %s AND status = 'connected'
+            ORDER BY provider_key
+            """,
+            (user_id,),
+        )
+        return [row["provider_key"] for row in cur.fetchall()]
+
+
+def get_tool_permissions(user_id: str, provider_key: str) -> dict[str, bool]:
+    """
+    Return CRUD permission toggles, e.g. {"create": True, "read": True, "update": True, "delete": False}.
+    Defaults to all-enabled if no rows exist yet.
+    """
+    with get_dict_cursor() as cur:
+        cur.execute(
+            """
+            SELECT crud_type, enabled
+            FROM public.connector_tool_permissions
+            WHERE user_id = %s AND provider_key = %s
+            """,
+            (user_id, provider_key),
+        )
+        rows = cur.fetchall()
+
+    if not rows:
+        return {"create": True, "read": True, "update": True, "delete": True}
+
+    return {row["crud_type"]: bool(row["enabled"]) for row in rows}
+
+
+def update_tool_permission(
+    user_id: str, provider_key: str, crud_type: str, enabled: bool
+) -> None:
+    """Upsert a single CRUD permission toggle."""
+    with get_dict_cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO public.connector_tool_permissions
+                (user_id, provider_key, crud_type, enabled)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (user_id, provider_key, crud_type)
+            DO UPDATE SET enabled = EXCLUDED.enabled, updated_at = now()
+            """,
+            (user_id, provider_key, crud_type, enabled),
+        )
+
+
+def init_default_permissions(user_id: str, provider_key: str) -> None:
+    """Seed default CRUD permissions after a successful OAuth connection."""
+    defaults = [
+        ("read", True),
+        ("create", True),
+        ("update", True),
+        ("delete", False),  # Delete disabled by default for safety
+    ]
+    with get_dict_cursor() as cur:
+        for crud_type, enabled in defaults:
+            cur.execute(
+                """
+                INSERT INTO public.connector_tool_permissions
+                    (user_id, provider_key, crud_type, enabled)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (user_id, provider_key, crud_type) DO NOTHING
+                """,
+                (user_id, provider_key, crud_type, enabled),
+            )

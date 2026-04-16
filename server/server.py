@@ -16,21 +16,7 @@ from dotenv import load_dotenv
 from utils.topic_manager import update_topic_recency
 from services.chat_service import transcribe_audio, stream_chat
 from services.chat_db import get_or_create_session, save_message, load_history
-from models.connectors import (
-    ConnectorDisconnectResponse,
-    ConnectorListResponse,
-    ConnectorStartRequest,
-    ConnectorStartResponse,
-    ConnectorStatusItem,
-    CreateGoogleTaskRequest,
-    SelectTaskListRequest,
-    TaskListsResponse,
-    TaskListItemOut,
-    UpdateGoogleTaskRequest,
-)
-from services import connector_service as connector_svc
-import services.google_calendar_connector_service as gcal_connector
-import services.google_tasks_connector_service as gtasks_connector
+from connectors import router as connectors_router
 
 load_dotenv()
 app = FastAPI()
@@ -42,6 +28,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(connectors_router, prefix="/connectors", tags=["connectors"])
 
 # ─── Health Check Endpoint ──────────────────────────────────────────────────
 
@@ -140,210 +128,7 @@ def sync_profile(payload: dict = Depends(get_current_user)):
     user = get_or_create_user(auth_id, email, name, avatar_url)
     return {"status": "success", "user": user}
 
-# ─── Connectors (OAuth — separate client from Supabase login) ─────────────────
 
-@app.get("/connectors", response_model=ConnectorListResponse)
-def list_connectors(payload: dict = Depends(get_current_user)):
-    user_id = payload.get("sub", "")
-    rows = connector_svc.list_connectors_status(user_id)
-    items = [
-        ConnectorStatusItem(
-            provider_key=r["provider_key"],
-            display_name=r["display_name"],
-            status=r["status"],
-            scopes=list(r["scopes"] or []),
-            connected_at=r["connected_at"],
-            provider_email=r.get("provider_email"),
-            error_message=r.get("error_message"),
-            selected_resource_id=r.get("selected_resource_id"),
-            selected_resource_name=r.get("selected_resource_name"),
-        )
-        for r in rows
-    ]
-    return ConnectorListResponse(connectors=items)
-
-
-@app.post("/connectors/{provider}/start", response_model=ConnectorStartResponse)
-def connector_start(
-    provider: str,
-    body: ConnectorStartRequest,
-    payload: dict = Depends(get_current_user),
-):
-    user_id = payload.get("sub", "")
-    raw_email = payload.get("email")
-    login_hint = raw_email.strip() if isinstance(raw_email, str) and raw_email.strip() else None
-    try:
-        if provider == "google_calendar":
-            url, state = gcal_connector.build_start_authorization_url(
-                user_id, body.return_to, login_hint=login_hint
-            )
-        elif provider == "google_tasks":
-            url, state = gtasks_connector.build_start_authorization_url(
-                user_id, body.return_to, login_hint=login_hint
-            )
-        else:
-            raise HTTPException(status_code=404, detail="Unknown connector provider")
-    except RuntimeError as e:
-        raise HTTPException(status_code=500, detail=str(e)) from e
-    return ConnectorStartResponse(authorization_url=url, state=state)
-
-
-@app.get("/connectors/{provider}/callback")
-def connector_oauth_callback(provider: str, request: Request):
-    """Public OAuth redirect target (Google). Validates state and exchanges the code."""
-    if provider not in ("google_calendar", "google_tasks"):
-        raise HTTPException(status_code=404, detail="Unknown connector provider")
-    q = request.query_params
-    err = q.get("error")
-    state = q.get("state")
-    code = q.get("code")
-    if err:
-        if provider == "google_calendar":
-            url = gcal_connector.oauth_error_callback(state, err)
-        else:
-            url = gtasks_connector.oauth_error_callback(state, err)
-        return RedirectResponse(url=url, status_code=302)
-    if not code or not state:
-        raise HTTPException(status_code=400, detail="Missing code or state")
-    try:
-        if provider == "google_calendar":
-            redirect_url, _, _ = gcal_connector.complete_oauth_callback(code, state)
-        else:
-            redirect_url, _, _ = gtasks_connector.complete_oauth_callback(code, state)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e)) from e
-    return RedirectResponse(url=redirect_url, status_code=302)
-
-
-@app.post("/connectors/{provider}/disconnect", response_model=ConnectorDisconnectResponse)
-def connector_disconnect(provider: str, payload: dict = Depends(get_current_user)):
-    user_id = payload.get("sub", "")
-    try:
-        if provider == "google_calendar":
-            gcal_connector.revoke_and_disconnect(user_id)
-        elif provider == "google_tasks":
-            gtasks_connector.revoke_and_disconnect(user_id)
-        else:
-            raise HTTPException(status_code=404, detail="Unknown connector provider")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e)) from e
-    return ConnectorDisconnectResponse(ok=True, provider_key=provider)
-
-
-@app.get("/connectors/google_tasks/lists", response_model=TaskListsResponse)
-def google_tasks_list_tasklists(payload: dict = Depends(get_current_user)):
-    user_id = payload.get("sub", "")
-    try:
-        raw = gtasks_connector.list_task_lists(user_id)
-    except RuntimeError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=str(e)) from e
-    items = [TaskListItemOut(id=x["id"], title=x.get("title") or "") for x in raw]
-    return TaskListsResponse(items=items)
-
-
-@app.post("/connectors/google_tasks/select-list")
-def google_tasks_select_list(body: SelectTaskListRequest, payload: dict = Depends(get_current_user)):
-    user_id = payload.get("sub", "")
-    try:
-        connector_svc.upsert_selected_task_list(
-            user_id,
-            gtasks_connector.PROVIDER_KEY,
-            body.task_list_id,
-            body.task_list_title,
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-    return {"ok": True}
-
-
-@app.get("/connectors/google_tasks/tasks")
-def google_tasks_list_tasks(
-    show_completed: bool = False,
-    payload: dict = Depends(get_current_user),
-):
-    user_id = payload.get("sub", "")
-    task_list_id, _ = connector_svc.get_connector_resource(
-        user_id, gtasks_connector.PROVIDER_KEY, "task_list"
-    )
-    if not task_list_id:
-        raise HTTPException(status_code=400, detail="No task list selected")
-    try:
-        tasks = gtasks_connector.fetch_tasks(user_id, task_list_id, show_completed=show_completed)
-    except RuntimeError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=str(e)) from e
-    return {"items": tasks}
-
-
-@app.post("/connectors/google_tasks/tasks")
-def google_tasks_create_task(body: CreateGoogleTaskRequest, payload: dict = Depends(get_current_user)):
-    user_id = payload.get("sub", "")
-    task_list_id, _ = connector_svc.get_connector_resource(
-        user_id, gtasks_connector.PROVIDER_KEY, "task_list"
-    )
-    if not task_list_id:
-        raise HTTPException(status_code=400, detail="No task list selected")
-    try:
-        task = gtasks_connector.create_task(user_id, task_list_id, body.title, body.notes)
-    except RuntimeError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=str(e)) from e
-    return task
-
-
-@app.patch("/connectors/google_tasks/tasks/{task_id}")
-def google_tasks_update_task(
-    task_id: str,
-    body: UpdateGoogleTaskRequest,
-    payload: dict = Depends(get_current_user),
-):
-    user_id = payload.get("sub", "")
-    task_list_id, _ = connector_svc.get_connector_resource(
-        user_id, gtasks_connector.PROVIDER_KEY, "task_list"
-    )
-    if not task_list_id:
-        raise HTTPException(status_code=400, detail="No task list selected")
-    patch: dict = {}
-    if body.title is not None:
-        patch["title"] = body.title
-    if body.notes is not None:
-        patch["notes"] = body.notes
-    if body.status is not None:
-        patch["status"] = body.status
-    elif body.completed is True:
-        patch["status"] = "completed"
-    elif body.completed is False:
-        patch["status"] = "needsAction"
-    if not patch:
-        raise HTTPException(status_code=400, detail="No fields to update")
-    try:
-        task = gtasks_connector.update_task(user_id, task_list_id, task_id, patch)
-    except RuntimeError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=str(e)) from e
-    return task
-
-
-@app.delete("/connectors/google_tasks/tasks/{task_id}")
-def google_tasks_delete_task(task_id: str, payload: dict = Depends(get_current_user)):
-    user_id = payload.get("sub", "")
-    task_list_id, _ = connector_svc.get_connector_resource(
-        user_id, gtasks_connector.PROVIDER_KEY, "task_list"
-    )
-    if not task_list_id:
-        raise HTTPException(status_code=400, detail="No task list selected")
-    try:
-        gtasks_connector.delete_task(user_id, task_list_id, task_id)
-    except RuntimeError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=str(e)) from e
-    return {"ok": True}
 
 # ─── Ideas ───────────────────────────────────────────────────────────────────
     
@@ -440,7 +225,7 @@ async def chat_stream(req: ChatStreamRequest, payload: dict = Depends(get_curren
 
     async def event_stream():
         full_response = ""
-        async for token in stream_chat(history):
+        async for token in stream_chat(history, user_id):
             full_response += token
             yield f'data: {json.dumps({"type": "token", "content": token})}\n\n'
         

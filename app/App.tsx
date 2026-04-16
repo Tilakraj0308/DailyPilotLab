@@ -14,6 +14,8 @@ import HomeScreen from "./src/screens/HomeScreen";
 import ChatScreen from "./src/screens/ChatScreen";
 import SettingsScreen from "./src/screens/SettingsScreen";
 import ProfileScreen from "./src/screens/ProfileScreen";
+import ToolAccessScreen from "./src/connectors/ToolAccessScreen";
+import GlobalAlertUI from "./src/components/GlobalAlertUI";
 import { supabase } from "./src/lib/supabase";
 import * as Linking from "expo-linking";
 import * as QueryParams from "expo-auth-session/build/QueryParams";
@@ -144,6 +146,7 @@ function AppNavigator() {
             <Stack.Screen name="Chat" component={ChatScreen} />
             <Stack.Screen name="Profile" component={ProfileScreen} />
             <Stack.Screen name="Settings" component={SettingsScreen} />
+            <Stack.Screen name="ToolAccess" component={ToolAccessScreen} />
           </>
         ) : (
           <Stack.Screen name="Login" component={LoginScreen} />
@@ -159,11 +162,11 @@ export default function App() {
       <AuthProvider>
         <View style={{ flex: 1, backgroundColor: Platform.OS === 'web' ? '#e2e9ec' : 'transparent' }}>
           <View style={[
-            { flex: 1 }, 
-            Platform.OS === 'web' && { 
-              maxWidth: 480, 
-              width: '100%', 
-              marginHorizontal: 'auto', 
+            { flex: 1 },
+            Platform.OS === 'web' && {
+              maxWidth: 480,
+              width: '100%',
+              marginHorizontal: 'auto',
               backgroundColor: '#f8f9fa',
               boxShadow: '0 25px 50px -12px rgb(0 0 0 / 0.25)', // Tailwind shadow-2xl equivalent loosely
               borderLeftWidth: 1,
@@ -172,6 +175,7 @@ export default function App() {
             }
           ]}>
             <AppNavigator />
+            <GlobalAlertUI />
           </View>
         </View>
       </AuthProvider>

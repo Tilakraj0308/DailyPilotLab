@@ -1,4 +1,4 @@
-import { getApiUrl } from "./api";
+import { getApiUrl } from "../lib/api";
 
 export const GOOGLE_CALENDAR_PROVIDER = "google_calendar";
 export const GOOGLE_TASKS_PROVIDER = "google_tasks";
@@ -192,4 +192,93 @@ export async function deleteGoogleTask(accessToken: string, taskId: string): Pro
     const text = await res.text();
     throw new Error(text || `Failed to delete task (${res.status})`);
   }
+}
+
+// ── Tool Registry & History ────────────────────────────────────────────────
+
+export type ToolPermissionMap = {
+  create: boolean;
+  read: boolean;
+  update: boolean;
+  delete: boolean;
+};
+
+export async function fetchToolPermissions(
+  provider: string,
+  accessToken: string
+): Promise<ToolPermissionMap> {
+  const res = await fetch(`${getApiUrl()}/connectors/${provider}/permissions`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to load permissions (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function updateToolPermission(
+  provider: string,
+  crudType: string,
+  enabled: boolean,
+  accessToken: string
+): Promise<void> {
+  const res = await fetch(`${getApiUrl()}/connectors/${provider}/permissions`, {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ crud_type: crudType, enabled }),
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to update permission (${res.status})`);
+  }
+}
+
+export type ConnectorHistoryItem = {
+  id: string;
+  provider_key: string;
+  tool_name: string;
+  crud_type: string;
+  params: any;
+  result_summary: any;
+  status: "success" | "error";
+  error_message: string | null;
+  triggered_by: "user" | "ai_agent" | "automation";
+  created_at: string;
+};
+
+export async function fetchConnectorHistory(
+  provider: string,
+  accessToken: string
+): Promise<ConnectorHistoryItem[]> {
+  const res = await fetch(`${getApiUrl()}/connectors/${provider}/history`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to load history (${res.status})`);
+  }
+  const data = await res.json();
+  return data.items ?? [];
+}
+
+export type ToolDefinition = {
+  name: string;
+  description: string;
+  crud_type: string;
+  parameters: any;
+};
+
+export async function fetchAvailableTools(
+  provider: string,
+  accessToken: string
+): Promise<ToolDefinition[]> {
+  const res = await fetch(`${getApiUrl()}/connectors/${provider}/tools`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to load tools (${res.status})`);
+  }
+  const data = await res.json();
+  return data.tools ?? [];
 }
