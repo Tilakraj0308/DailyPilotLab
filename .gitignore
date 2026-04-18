@@ -5,6 +5,8 @@ server/.env
 app/.env.local
 server/.env.local
 supabase/.temp/
+.worktrees/
+worktrees/
 .cursorrules
 .cursor/rules/
 .notes/
