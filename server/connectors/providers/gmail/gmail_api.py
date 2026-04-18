@@ -15,9 +15,19 @@ def _auth_headers(access_token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {access_token}"}
 
 
-def list_inbox_messages(*, access_token: str, max_results: int, q: str) -> dict[str, Any]:
+def _clamp_max_results(max_results: int | str) -> int:
+    """Return maxResults in 1..50; non-coercible values use 30."""
+    default = 30
+    try:
+        n = int(max_results)
+    except (TypeError, ValueError):
+        return default
+    return max(1, min(50, n))
+
+
+def list_inbox_messages(*, access_token: str, max_results: int | str, q: str) -> dict[str, Any]:
     params = {
-        "maxResults": str(max(1, min(50, int(max_results)))),
+        "maxResults": str(_clamp_max_results(max_results)),
         "labelIds": "INBOX",
         "q": q,
     }
@@ -29,9 +39,11 @@ def list_inbox_messages(*, access_token: str, max_results: int, q: str) -> dict[
     return r.json()
 
 
-def get_thread(*, access_token: str, thread_id: str, format: str = "metadata") -> dict[str, Any]:
+def get_thread(
+    *, access_token: str, thread_id: str, message_format: str = "metadata"
+) -> dict[str, Any]:
     tid = urllib.parse.quote(thread_id, safe="")
-    params = urllib.parse.urlencode({"format": format})
+    params = urllib.parse.urlencode({"format": message_format})
     url = f"{GMAIL_API_BASE}/users/me/threads/{tid}?{params}"
     r = requests.get(url, headers=_auth_headers(access_token), timeout=45)
     if r.status_code != 200:
