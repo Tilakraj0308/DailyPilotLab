@@ -603,4 +603,4 @@ def test_gmail_start_returns_503_when_provider_row_missing(
     assert r.status_code == 503
     detail = r.json()["detail"]
     assert "connector_providers" in detail
-    assert "20260418_gmail_connector_provider" in detail
+    assert "20260418150000_gmail_connector_provider" in detail

@@ -335,7 +335,7 @@ def connector_start(
                 f"Connector '{provider}' is implemented in the API but not registered in Postgres "
                 f"table public.connector_providers (OAuth cannot start until it exists). "
                 f"Apply Supabase migrations — for Gmail run migration "
-                f"`supabase/migrations/20260418_gmail_connector_provider.sql` "
+                f"`supabase/migrations/20260418150000_gmail_connector_provider.sql` "
                 f"(e.g. `npx supabase db push` from the repo root), or insert the row manually, then retry."
             ),
         )

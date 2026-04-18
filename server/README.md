@@ -130,7 +130,7 @@ The database schema is managed via **Supabase migration files** in `supabase/mig
 | `20260415_connectors_foundation.sql`   | Connector providers, `user_connectors`, encrypted tokens, OAuth state sessions                                    |
 | `20260417_google_tasks_connector_resources.sql` | Seeds `google_tasks` provider; `user_connector_resources` for selected task list metadata              |
 | `20260418_notion_connector_provider.sql`        | Seeds `notion` provider row                                                                           |
-| `20260418_gmail_connector_provider.sql`         | Seeds `gmail` provider row                                                                              |
+| `20260418150000_gmail_connector_provider.sql`   | Seeds `gmail` provider row (timestamp distinct from `20260418_notion_*`; see note below)               |
 
 **1. Install the Supabase CLI(if you don't already have)** by following the [official install guide](https://supabase.com/docs/guides/cli/getting-started).
 
@@ -184,7 +184,9 @@ Interactive docs: `http://127.0.0.1:8000/docs`
 
 Calendar, Tasks, and **Gmail** use separate provider keys but the **same** `GOOGLE_CONNECTOR_CLIENT_ID`. Register **Gmail API** in Google Cloud (Library) and add **`GOOGLE_GMAIL_CONNECTOR_REDIRECT_URI`** (for example `http://127.0.0.1:8000/connectors/gmail/callback`) alongside the Calendar and Tasks callback URIs on the OAuth Web client. Authorization URLs omit `prompt=consent` by default so Google can offer **incremental** consent when you connect additional Google products; `prompt=consent` is added only when the connector row is `reauth_required` or `error` (see `should_force_google_oauth_consent_prompt` in [`connectors/db.py`](connectors/db.py)). When the Supabase JWT includes `email`, it is sent as Google’s **`login_hint`** so Google can prefill / skip the account chooser when that matches the user’s Google session (not guaranteed if multiple accounts or policies require a picker).
 
-**Database:** every connector `provider_key` must exist in `public.connector_providers` before OAuth starts (FK on `oauth_state_sessions`). If `POST /connectors/gmail/start` returns **503** mentioning `connector_providers`, apply migrations so `20260418_gmail_connector_provider.sql` has run (`npx supabase db push`), or insert the `gmail` row manually.
+**Database:** every connector `provider_key` must exist in `public.connector_providers` before OAuth starts (FK on `oauth_state_sessions`). If `POST /connectors/gmail/start` returns **503** mentioning `connector_providers`, apply migrations so `20260418150000_gmail_connector_provider.sql` has run (`npx supabase db push`), or insert the `gmail` row manually.
+
+**Migration timestamps:** use a **unique** `YYYYMMDDHHMMSS` prefix per file. Two files sharing the same eight-digit day prefix (e.g. `20260418_foo.sql` and `20260418_bar.sql`) map to the same `schema_migrations.version` and **`db push` will fail** with a duplicate key on `schema_migrations`.
 
 ### Notion connector
 
