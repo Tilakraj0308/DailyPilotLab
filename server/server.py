@@ -15,7 +15,7 @@ from typing import List
 from dotenv import load_dotenv
 from utils.topic_manager import update_topic_recency
 from services.chat_service import transcribe_audio, stream_chat
-from services.chat_db import get_or_create_session, save_message, load_history
+from services.chat_db import ChatSessionAccessError, get_or_create_session, save_message, load_history
 from connectors import router as connectors_router
 
 load_dotenv()
@@ -217,7 +217,10 @@ async def chat_stream(req: ChatStreamRequest, payload: dict = Depends(get_curren
     user_text = req.content
     user_id = payload.get("sub", "")
 
-    await asyncio.to_thread(get_or_create_session, session_id, user_id)
+    try:
+        await asyncio.to_thread(get_or_create_session, session_id, user_id)
+    except ChatSessionAccessError as e:
+        raise HTTPException(status_code=403, detail=str(e)) from e
     await asyncio.to_thread(save_message, session_id, "user", user_text)
 
     history_rows = await asyncio.to_thread(load_history, session_id)

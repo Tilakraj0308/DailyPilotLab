@@ -7,7 +7,7 @@ from connectors.base_connector import BaseConnector
 class CalendarConnector(BaseConnector):
     provider_key = "google_calendar"
     default_scopes = [
-        "https://www.googleapis.com/auth/calendar.readonly",
+        "https://www.googleapis.com/auth/calendar",
         "openid",
         "https://www.googleapis.com/auth/userinfo.email",
     ]

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Image } from "react-native";
+import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Image } from "react-native";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { ArrowLeft } from "lucide-react-native";
 
@@ -176,8 +176,7 @@ export default function ToolAccessScreen() {
                                     disabled={saving}
                                 />
 
-                                {/* Only tasks has full CRUD tools for now */}
-                                {providerKey === "google_tasks" && (
+                                {(providerKey === "google_tasks" || providerKey === "google_calendar") && (
                                     <>
                                         <PermissionToggleCard
                                             crudType="create"

@@ -84,23 +84,40 @@ def execute_tool(
         tool_module = _get_tool_module(provider_key, crud_type)
         result = tool_module.execute(connector, user_id, tool_name, params)
     except Exception as e:
-        # Log failure
+        # Log failure (same shape as chat_service tool message on error)
         _log_history(
-            user_id, provider_key, tool_name, crud_type,
-            params, None, "error", str(e), triggered_by,
+            user_id,
+            provider_key,
+            tool_name,
+            crud_type,
+            params,
+            None,
+            "error",
+            str(e),
+            triggered_by,
+            ai_tool_response={"error": str(e)},
         )
         logger.error("Tool execution failed: %s — %s", tool_name, traceback.format_exc())
         raise ToolExecutionError(f"Tool '{tool_name}' failed: {e}") from e
 
     # 5. Log success
     result_summary = _summarize_result(result)
+    ai_tool_response = {"ok": True, "tool": tool_name, "result": result}
     _log_history(
-        user_id, provider_key, tool_name, crud_type,
-        params, result_summary, "success", None, triggered_by,
+        user_id,
+        provider_key,
+        tool_name,
+        crud_type,
+        params,
+        result_summary,
+        "success",
+        None,
+        triggered_by,
+        ai_tool_response=ai_tool_response,
     )
 
     # 6. Return
-    return {"ok": True, "tool": tool_name, "result": result}
+    return ai_tool_response
 
 
 def _summarize_result(result: Any) -> dict | None:
@@ -124,6 +141,7 @@ def _log_history(
     status: str,
     error_message: str | None,
     triggered_by: str,
+    ai_tool_response: dict[str, Any] | None = None,
 ) -> None:
     """Log a tool call to history. Fails silently to not block execution."""
     try:
@@ -138,6 +156,7 @@ def _log_history(
             status=status,
             error_message=error_message,
             triggered_by=triggered_by,
+            ai_tool_response=ai_tool_response,
         )
     except Exception as e:
         logger.warning("Failed to log tool history: %s", e)

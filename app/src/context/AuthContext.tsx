@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Session, User } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabase";
 import { getApiUrl } from "../lib/api";
@@ -74,6 +75,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
 
     const signOut = async () => {
+        // Prevents the next account on this device from reusing a global chat session id.
+        await AsyncStorage.removeItem("@chat_session_id");
         await supabase.auth.signOut();
         setSession(null);
     };

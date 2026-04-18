@@ -1,12 +1,42 @@
 import os
 from db.dbConnection import get_dict_cursor
 
+
+class ChatSessionAccessError(Exception):
+    """Raised when session_id is already bound to another user."""
+
+    pass
+
+
 def get_or_create_session(session_id: str, user_id: str) -> str:
-    """Ensure the chat session exists in the database."""
+    """
+    Ensure the chat session exists for this user.
+
+    Uses INSERT ... ON CONFLICT so concurrent streams with the same session_id
+    do not race on SELECT-then-INSERT (duplicate key on chat_sessions_pkey).
+    """
     with get_dict_cursor() as cur:
-        cur.execute("SELECT id FROM public.chat_sessions WHERE id = %s AND user_id = %s", (session_id, user_id))
-        if not cur.fetchone():
-            cur.execute("INSERT INTO public.chat_sessions (id, user_id) VALUES (%s, %s)", (session_id, user_id))
+        cur.execute(
+            """
+            INSERT INTO public.chat_sessions (id, user_id)
+            VALUES (%s, %s)
+            ON CONFLICT (id) DO NOTHING
+            """,
+            (session_id, user_id),
+        )
+        cur.execute(
+            "SELECT user_id FROM public.chat_sessions WHERE id = %s",
+            (session_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            raise RuntimeError("chat_sessions row missing after upsert")
+        owner = str(row["user_id"])
+        if owner != str(user_id):
+            raise ChatSessionAccessError(
+                "This chat session id belongs to a different login. "
+                "Use a new chat or update the app: chat session storage must be per account."
+            )
     return session_id
 
 def save_message(session_id: str, role: str, content: str):

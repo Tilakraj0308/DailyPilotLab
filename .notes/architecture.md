@@ -1,10 +1,13 @@
 # Architecture — DailyPilotLab
 
-## Layer Diagram
+## Layer diagram
+
+All backend paths below are under **`server/`** (run commands from that directory unless documented otherwise).
+
 ```
 ┌─────────────────────────────────────────────────────┐
-│                  server.py (FastAPI)                 │
-│              12 API endpoints — routing              │
+│              server/server.py (FastAPI)              │
+│              API endpoints — routing                 │
 └──────────┬─────────────────────────────┬────────────┘
            │                             │
   ┌────────▼────────┐         ┌──────────▼──────────┐
@@ -32,37 +35,40 @@
   └──────────────────┘
 ```
 
-## Folder Conventions
+## Folder conventions
+
 ```
 DailyPilotLab/
-├── server.py            # All route definitions (thin controller)
-├── config/
-│   ├── prompts/         # 5 YAML prompt templates for LLM calls
-│   └── memory/          # personal_state.json (persistent user profile)
-├── db/
-│   ├── dbConnection.py  # get_dict_cursor() context manager
-│   └── seed.py          # DDL + sample data
-├── models/
-│   ├── ideas.py         # Pydantic: IdeaCreateInput, IdeaOut, etc.
-│   ├── topics.py        # Pydantic: TopicCreateInput, TopicUpdateInput
-│   ├── traits.py        # Pydantic: TraitCandidate, TraitExtractionResponse
-│   └── output_schemas.py# Pydantic schemas for OpenAI structured outputs
-├── services/
-│   ├── ideas_service.py # IdeaService — all idea SQL queries
-│   ├── topics_service.py# TopicsService — all topic SQL queries
-│   └── trait_service.py # TraitsService — embed, dedup, EMA upsert
-├── utils/
-│   ├── helpers.py       # LLM orchestration (classify, organize, refine, traits)
-│   ├── idea_manager.py  # Idea business logic (create, refine, delete)
-│   ├── topic_manager.py # Topic business logic (create, update, recency)
-│   └── openAi.py        # OpenAIWrapper singleton
-└── .notes/              # Memory Bank (this folder)
+├── server/
+│   ├── server.py            # All route definitions (thin controller)
+│   ├── config/
+│   │   ├── prompts/         # YAML prompt templates for LLM calls
+│   │   └── memory/          # personal_state.json (persistent user profile)
+│   ├── db/
+│   │   ├── dbConnection.py  # get_dict_cursor() context manager
+│   │   └── seed.py          # sample data
+│   ├── models/
+│   │   ├── ideas.py         # Pydantic: IdeaCreateInput, IdeaOut, etc.
+│   │   ├── topics.py        # Pydantic: TopicCreateInput, TopicUpdateInput
+│   │   ├── traits.py        # Pydantic: TraitCandidate, TraitExtractionResponse
+│   │   └── output_schemas.py# Pydantic schemas for OpenAI structured outputs
+│   ├── services/
+│   │   ├── ideas_service.py # IdeaService — all idea SQL queries
+│   │   ├── topics_service.py# TopicsService — all topic SQL queries
+│   │   └── trait_service.py # TraitsService — embed, dedup, EMA upsert
+│   └── utils/
+│       ├── helpers.py       # LLM orchestration (classify, organize, refine, traits)
+│       ├── idea_manager.py  # Idea business logic (create, refine, delete)
+│       ├── topic_manager.py # Topic business logic (create, update, recency)
+│       └── openAi.py        # OpenAIWrapper singleton
+├── app/                     # Expo client (see app/README.md)
+└── .notes/                  # Memory Bank (this folder)
 ```
 
 ## Data Flow Pattern
 All endpoints follow: **Route → Manager → Helper/Service → DB/LLM**
 
-- `server.py` is a thin routing layer (no business logic)
+- `server/server.py` is a thin routing layer (no business logic)
 - `*_manager.py` files orchestrate multi-step flows
 - `helpers.py` handles all LLM interactions
 - `*_service.py` files contain raw SQL queries

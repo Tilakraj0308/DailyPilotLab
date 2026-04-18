@@ -6,6 +6,7 @@ import EventSource from 'react-native-sse';
 import * as FileSystem from 'expo-file-system/legacy';
 import { FileSystemUploadType } from 'expo-file-system/legacy';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../context/AuthContext';
 
 export type ChatMessage = {
     id: string;
@@ -13,7 +14,12 @@ export type ChatMessage = {
     content: string;
 };
 
-const STORE_KEY = '@chat_session_id';
+/** Legacy global key — reused the same UUID across accounts on one device (403 on server). */
+const LEGACY_STORE_KEY = '@chat_session_id';
+
+function sessionStorageKey(userId: string): string {
+    return `@chat_session_id:${userId}`;
+}
 
 /**
  * Get the API URL based on platform.
@@ -41,25 +47,41 @@ function getApiUrl(): string {
 }
 
 export function useChat() {
+    const { user, isLoading: authLoading } = useAuth();
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [status, setStatus] = useState<'connecting' | 'connected' | 'reconnecting' | 'error'>('connecting');
     const [sessionId, setSessionId] = useState<string | null>(null);
     const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
 
     useEffect(() => {
+        if (authLoading) return;
+
         const initSession = async () => {
-            const saved = await AsyncStorage.getItem(STORE_KEY);
+            if (!user?.id) {
+                setSessionId(null);
+                setMessages([]);
+                setStatus('connecting');
+                return;
+            }
+
+            setMessages([]);
+
+            // Drop legacy key so a previous account’s session UUID is never reused.
+            await AsyncStorage.removeItem(LEGACY_STORE_KEY);
+
+            const key = sessionStorageKey(user.id);
+            const saved = await AsyncStorage.getItem(key);
             if (saved) {
                 setSessionId(saved);
             } else {
                 const newId = Crypto.randomUUID();
-                await AsyncStorage.setItem(STORE_KEY, newId);
+                await AsyncStorage.setItem(key, newId);
                 setSessionId(newId);
             }
             setStatus('connected');
         };
         initSession();
-    }, []);
+    }, [authLoading, user?.id]);
 
     const sendText = async (text: string) => {
         if (!text.trim() || status !== 'connected' || !sessionId) return;
@@ -182,8 +204,10 @@ export function useChat() {
     };
 
     const clearSession = async () => {
+        if (!user?.id) return;
+        const key = sessionStorageKey(user.id);
         const newId = Crypto.randomUUID();
-        await AsyncStorage.setItem(STORE_KEY, newId);
+        await AsyncStorage.setItem(key, newId);
         setMessages([]);
         setSessionId(newId);
     };

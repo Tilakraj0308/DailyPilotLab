@@ -10,6 +10,8 @@ DailyPilot is designed to help you manage your daily chores, remember your choic
 
 The project is split into two main components. If you are a developer looking to set up the project locally or contribute, please refer to the individual component setups:
 
+**AI / agent tooling:** [AGENTS.md](AGENTS.md) (repo map, commands, links to `.notes/`), [`.cursor/rules/`](.cursor/rules/) (Cursor project rules), and nested `AGENTS.md` files under `server/` and `app/`.
+
 ### 1. [Server (Backend)](./server/README.md)
 The backend is a FastAPI service powered by a Supabase Postgres database with the `pgvector` extension. It handles semantic search, AI-driven topic extraction (via OpenAI), and data persistence.
 
