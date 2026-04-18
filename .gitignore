@@ -5,3 +5,9 @@ server/.env
 app/.env.local
 server/.env.local
 supabase/.temp/
+.cursorrules
+.cursor/rules/
+.notes/
+AGENTS.md
+app/AGENTS.md
+server/AGENTS.md
