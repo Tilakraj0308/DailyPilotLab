@@ -3,8 +3,10 @@ from __future__ import annotations
 import base64
 import importlib
 from email import message_from_bytes
+from unittest.mock import Mock
 
 import pytest
+import requests.exceptions
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -204,3 +206,117 @@ def test_gmail_send_draft(gmail_client: TestClient, monkeypatch: pytest.MonkeyPa
     r = gmail_client.post("/connectors/gmail/drafts/draft-xyz/send")
     assert r.status_code == 200
     assert r.json() == {"ok": True, "id": "sent-msg-id"}
+
+
+def test_gmail_create_draft_logs_history(
+    gmail_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    logged: list[dict] = []
+
+    def capture_log(**kwargs):
+        logged.append(kwargs)
+
+    monkeypatch.setattr(router_module.history, "log_tool_call", capture_log)
+
+    def fake_create(*, access_token: str, body: dict):
+        return {"id": "draft-1", "message": {"id": "msg-new", "threadId": "th-reply"}}
+
+    monkeypatch.setattr(router_module.gmail_api, "create_draft", fake_create)
+
+    r = gmail_client.post(
+        "/connectors/gmail/drafts",
+        json={
+            "thread_id": "th-reply",
+            "to": ["bob@example.com"],
+            "subject": "Re: hi",
+            "body_text": "Body line",
+        },
+    )
+    assert r.status_code == 200
+    assert len(logged) == 1
+    assert logged[0]["user_id"] == "test-user"
+    assert logged[0]["provider_key"] == "gmail"
+    assert logged[0]["tool_name"] == "gmail_ui_create_draft"
+    assert logged[0]["crud_type"] == "create"
+    assert logged[0]["triggered_by"] == "user"
+    assert logged[0]["status"] == "success"
+    assert logged[0]["params"] == {
+        "thread_id": "th-reply",
+        "draft_id": "draft-1",
+        "message_id": "msg-new",
+    }
+    assert logged[0]["result_summary"] == {
+        "draft_id": "draft-1",
+        "thread_id": "th-reply",
+        "message_id": "msg-new",
+    }
+
+
+def test_gmail_send_draft_logs_history(
+    gmail_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    logged: list[dict] = []
+
+    def capture_log(**kwargs):
+        logged.append(kwargs)
+
+    monkeypatch.setattr(router_module.history, "log_tool_call", capture_log)
+
+    def fake_send(*, access_token: str, draft_id: str):
+        return {"id": "sent-msg-id", "threadId": "th-1", "labelIds": ["SENT"]}
+
+    monkeypatch.setattr(router_module.gmail_api, "send_draft", fake_send)
+
+    r = gmail_client.post("/connectors/gmail/drafts/draft-xyz/send")
+    assert r.status_code == 200
+    assert len(logged) == 1
+    assert logged[0]["tool_name"] == "gmail_ui_send_draft"
+    assert logged[0]["crud_type"] == "update"
+    assert logged[0]["params"] == {"draft_id": "draft-xyz", "thread_id": "th-1"}
+    assert logged[0]["result_summary"] == {"message_id": "sent-msg-id", "thread_id": "th-1"}
+
+
+def test_gmail_thread_detail_maps_404(
+    gmail_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fake_get_thread(**kwargs):
+        resp = Mock()
+        resp.status_code = 404
+        raise requests.exceptions.HTTPError(response=resp)
+
+    monkeypatch.setattr(router_module.gmail_api, "get_thread", fake_get_thread)
+
+    r = gmail_client.get("/connectors/gmail/threads/missing")
+    assert r.status_code == 404
+    assert r.json()["detail"] == "Gmail resource not found"
+
+
+def test_gmail_create_draft_maps_404(
+    gmail_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fake_create(**kwargs):
+        resp = Mock()
+        resp.status_code = 404
+        raise requests.exceptions.HTTPError(response=resp)
+
+    monkeypatch.setattr(router_module.gmail_api, "create_draft", fake_create)
+
+    r = gmail_client.post(
+        "/connectors/gmail/drafts",
+        json={"to": ["a@b.com"], "subject": "s", "body_text": "x"},
+    )
+    assert r.status_code == 404
+
+
+def test_gmail_send_draft_maps_404(
+    gmail_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fake_send(**kwargs):
+        resp = Mock()
+        resp.status_code = 404
+        raise requests.exceptions.HTTPError(response=resp)
+
+    monkeypatch.setattr(router_module.gmail_api, "send_draft", fake_send)
+
+    r = gmail_client.post("/connectors/gmail/drafts/bad-draft/send")
+    assert r.status_code == 404

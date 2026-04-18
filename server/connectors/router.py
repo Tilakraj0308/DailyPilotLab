@@ -1,12 +1,15 @@
 import base64
+import logging
 from email.message import EmailMessage
 
+import requests.exceptions
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from utils.auth_middleware import get_current_user
 
 from connectors import db
+from connectors import history
 from connectors.models import (
     ConnectorDisconnectResponse,
     ConnectorListResponse,
@@ -31,6 +34,7 @@ from connectors.providers.google_tasks.tools import update as tasks_update
 from connectors.providers.google_tasks.tools import delete as tasks_delete
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 GMAIL_PRIORITY_Q = "in:inbox newer_than:14d"
 GMAIL_PRIORITY_MAX_THREADS = 15
@@ -121,6 +125,42 @@ def _normalize_thread_for_ui(raw: dict[str, object]) -> dict[str, object]:
     }
 
 
+def _map_gmail_upstream_exc(exc: BaseException) -> HTTPException:
+    """Map Gmail HTTP client failures to API responses (404 when resource missing)."""
+    if isinstance(exc, requests.exceptions.HTTPError):
+        if exc.response is not None and exc.response.status_code == 404:
+            return HTTPException(status_code=404, detail="Gmail resource not found")
+        return HTTPException(status_code=502, detail=str(exc))
+    return HTTPException(status_code=502, detail=str(exc))
+
+
+def _log_gmail_ui_tool(
+    user_id: str,
+    *,
+    tool_name: str,
+    crud_type: str,
+    params: dict[str, object | None],
+    result_summary: dict[str, object],
+) -> None:
+    clean_params = {k: v for k, v in params.items() if v is not None}
+    clean_summary = {k: v for k, v in result_summary.items() if v is not None}
+    try:
+        history.log_tool_call(
+            user_id=user_id,
+            provider_key="gmail",
+            tool_name=tool_name,
+            crud_type=crud_type,
+            params=clean_params or None,
+            result_summary=clean_summary or None,
+            status="success",
+            error_message=None,
+            triggered_by="user",
+            ai_tool_response=None,
+        )
+    except Exception as e:
+        logger.warning("Failed to log gmail UI tool history: %s", e)
+
+
 @router.get("/gmail/priority", response_model=GmailPriorityResponse)
 def gmail_priority(
     max_results: int = 30,
@@ -138,7 +178,7 @@ def gmail_priority(
     except RuntimeError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
-        raise HTTPException(status_code=502, detail=str(e)) from e
+        raise _map_gmail_upstream_exc(e) from e
 
     msgs = listed.get("messages") or []
     if not isinstance(msgs, list):
@@ -168,7 +208,7 @@ def gmail_priority(
         except RuntimeError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
         except Exception as e:
-            raise HTTPException(status_code=502, detail=str(e)) from e
+            raise _map_gmail_upstream_exc(e) from e
         if isinstance(raw, dict):
             items.append(_thread_summary_from_api(raw))
 
@@ -189,7 +229,7 @@ def gmail_thread_detail(thread_id: str, payload: dict = Depends(get_current_user
     except RuntimeError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
-        raise HTTPException(status_code=502, detail=str(e)) from e
+        raise _map_gmail_upstream_exc(e) from e
     if not isinstance(raw, dict):
         raise HTTPException(status_code=502, detail="Invalid thread response")
     return _normalize_thread_for_ui(raw)
@@ -225,7 +265,7 @@ def gmail_create_draft(body: GmailDraftCreateRequest, payload: dict = Depends(ge
     except RuntimeError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
-        raise HTTPException(status_code=502, detail=str(e)) from e
+        raise _map_gmail_upstream_exc(e) from e
 
     if not isinstance(created, dict):
         raise HTTPException(status_code=502, detail="Invalid draft response")
@@ -240,6 +280,21 @@ def gmail_create_draft(body: GmailDraftCreateRequest, payload: dict = Depends(ge
         tid = inner.get("threadId")
         if tid is not None:
             out_thread_id = str(tid)
+    _log_gmail_ui_tool(
+        user_id,
+        tool_name="gmail_ui_create_draft",
+        crud_type="create",
+        params={
+            "thread_id": body.thread_id,
+            "draft_id": draft_id or None,
+            "message_id": message_id,
+        },
+        result_summary={
+            "draft_id": draft_id,
+            "thread_id": out_thread_id,
+            "message_id": message_id,
+        },
+    )
     return GmailDraftCreateResponse(
         draft_id=draft_id,
         message_id=message_id,
@@ -257,10 +312,20 @@ def gmail_send_draft(draft_id: str, payload: dict = Depends(get_current_user)):
     except RuntimeError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
-        raise HTTPException(status_code=502, detail=str(e)) from e
+        raise _map_gmail_upstream_exc(e) from e
     if not isinstance(sent, dict):
         raise HTTPException(status_code=502, detail="Invalid send response")
-    return {"ok": True, "id": str(sent.get("id") or "")}
+    sent_id = str(sent.get("id") or "")
+    thread_after = sent.get("threadId")
+    thread_str = str(thread_after) if thread_after is not None else None
+    _log_gmail_ui_tool(
+        user_id,
+        tool_name="gmail_ui_send_draft",
+        crud_type="update",
+        params={"draft_id": draft_id, "thread_id": thread_str},
+        result_summary={"message_id": sent_id, "thread_id": thread_str},
+    )
+    return {"ok": True, "id": sent_id}
 
 
 @router.get("", response_model=ConnectorListResponse)
