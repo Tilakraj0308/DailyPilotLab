@@ -1,0 +1,206 @@
+from __future__ import annotations
+
+import base64
+import importlib
+from email import message_from_bytes
+
+import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from connectors.router import router
+from utils.auth_middleware import get_current_user
+
+# `connectors/__init__.py` binds `connectors.router` to the APIRouter instance;
+# patch the actual module object via importlib.
+router_module = importlib.import_module("connectors.router")
+
+
+class FakeGmailConnector:
+    def ensure_access_token(self, user_id: str) -> str:
+        assert user_id == "test-user"
+        return "fake-access-token"
+
+
+@pytest.fixture
+def gmail_client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
+    monkeypatch.setitem(
+        router_module.PROVIDER_MAP,
+        "gmail",
+        lambda: FakeGmailConnector(),
+    )
+    app = FastAPI()
+    app.include_router(router, prefix="/connectors")
+    app.dependency_overrides[get_current_user] = lambda: {
+        "sub": "test-user",
+        "email": "test@example.com",
+    }
+    return TestClient(app)
+
+
+def test_gmail_priority_hydrates_threads(
+    gmail_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[tuple[str, str]] = []
+
+    def fake_list(*, access_token: str, max_results, q: str):
+        assert access_token == "fake-access-token"
+        assert q == "in:inbox newer_than:14d"
+        assert max_results == 30
+        return {
+            "messages": [
+                {"id": "m1", "threadId": "t1"},
+                {"id": "m2", "threadId": "t1"},
+                {"id": "m3", "threadId": "t2"},
+            ]
+        }
+
+    def fake_get_thread(*, access_token: str, thread_id: str, message_format: str = "metadata"):
+        assert access_token == "fake-access-token"
+        assert message_format == "metadata"
+        calls.append(("get", thread_id))
+        return {
+            "id": thread_id,
+            "snippet": f"snip-{thread_id}",
+            "messages": [
+                {
+                    "id": f"msg-{thread_id}",
+                    "snippet": "hello",
+                    "internalDate": "1700000000000",
+                    "labelIds": ["INBOX", "UNREAD"],
+                    "payload": {
+                        "headers": [
+                            {"name": "Subject", "value": f"Sub {thread_id}"},
+                            {"name": "From", "value": "alice@example.com"},
+                        ]
+                    },
+                }
+            ],
+        }
+
+    monkeypatch.setattr(router_module.gmail_api, "list_inbox_messages", fake_list)
+    monkeypatch.setattr(router_module.gmail_api, "get_thread", fake_get_thread)
+
+    r = gmail_client.get("/connectors/gmail/priority")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["query"] == "in:inbox newer_than:14d"
+    assert len(data["items"]) == 2
+    assert data["items"][0]["id"] == "t1"
+    assert data["items"][0]["subject"] == "Sub t1"
+    assert data["items"][1]["id"] == "t2"
+    assert calls == [("get", "t1"), ("get", "t2")]
+
+
+def test_gmail_priority_max_results_passed_through(
+    gmail_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured: dict = {}
+
+    def fake_list(*, access_token: str, max_results, q: str):
+        captured["max_results"] = max_results
+        return {"messages": []}
+
+    monkeypatch.setattr(router_module.gmail_api, "list_inbox_messages", fake_list)
+    monkeypatch.setattr(
+        router_module.gmail_api,
+        "get_thread",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("no threads")),
+    )
+
+    r = gmail_client.get("/connectors/gmail/priority", params={"max_results": 5})
+    assert r.status_code == 200
+    assert captured["max_results"] == 5
+
+
+def test_gmail_thread_detail_normalized(gmail_client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_get_thread(*, access_token: str, thread_id: str, message_format: str = "metadata"):
+        assert thread_id == "thr99"
+        return {
+            "id": "thr99",
+            "snippet": "thread snip",
+            "historyId": "h1",
+            "messages": [
+                {
+                    "id": "m-a",
+                    "snippet": "a",
+                    "internalDate": "1",
+                    "labelIds": ["INBOX"],
+                    "payload": {
+                        "headers": [
+                            {"name": "From", "value": "x@y.com"},
+                            {"name": "To", "value": "z@y.com"},
+                            {"name": "Subject", "value": "Hi"},
+                            {"name": "Cc", "value": "c@y.com"},
+                        ]
+                    },
+                }
+            ],
+        }
+
+    monkeypatch.setattr(router_module.gmail_api, "get_thread", fake_get_thread)
+
+    r = gmail_client.get("/connectors/gmail/threads/thr99")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["id"] == "thr99"
+    assert body["snippet"] == "thread snip"
+    assert body["historyId"] == "h1"
+    assert len(body["messages"]) == 1
+    m = body["messages"][0]
+    assert m["id"] == "m-a"
+    assert m["headers"]["from"] == "x@y.com"
+    assert m["headers"]["to"] == "z@y.com"
+    assert m["headers"]["subject"] == "Hi"
+    assert m["headers"]["cc"] == "c@y.com"
+
+
+def test_gmail_create_draft_encodes_rfc822_and_thread(
+    gmail_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    received: dict = {}
+
+    def fake_create(*, access_token: str, body: dict):
+        received["body"] = body
+        return {
+            "id": "draft-1",
+            "message": {"id": "msg-new", "threadId": "th-reply"},
+        }
+
+    monkeypatch.setattr(router_module.gmail_api, "create_draft", fake_create)
+
+    r = gmail_client.post(
+        "/connectors/gmail/drafts",
+        json={
+            "thread_id": "th-reply",
+            "to": ["bob@example.com"],
+            "subject": "Re: hi",
+            "body_text": "Body line",
+        },
+    )
+    assert r.status_code == 200
+    assert r.json() == {
+        "draft_id": "draft-1",
+        "message_id": "msg-new",
+        "thread_id": "th-reply",
+    }
+    raw = received["body"]["message"]["raw"]
+    padded = raw + "=" * ((4 - len(raw) % 4) % 4)
+    decoded = base64.urlsafe_b64decode(padded.encode("ascii"))
+    msg = message_from_bytes(decoded)
+    assert msg["to"] == "bob@example.com"
+    assert msg["subject"] == "Re: hi"
+    assert msg.get_payload() == "Body line\n"
+    assert received["body"]["message"]["threadId"] == "th-reply"
+
+
+def test_gmail_send_draft(gmail_client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_send(*, access_token: str, draft_id: str):
+        assert draft_id == "draft-xyz"
+        return {"id": "sent-msg-id", "labelIds": ["SENT"]}
+
+    monkeypatch.setattr(router_module.gmail_api, "send_draft", fake_send)
+
+    r = gmail_client.post("/connectors/gmail/drafts/draft-xyz/send")
+    assert r.status_code == 200
+    assert r.json() == {"ok": True, "id": "sent-msg-id"}

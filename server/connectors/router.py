@@ -1,7 +1,12 @@
+import base64
+from email.message import EmailMessage
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
+from pydantic import BaseModel
 from utils.auth_middleware import get_current_user
 
+from connectors import db
 from connectors.models import (
     ConnectorDisconnectResponse,
     ConnectorListResponse,
@@ -9,20 +14,254 @@ from connectors.models import (
     ConnectorStartResponse,
     ConnectorStatusItem,
     CreateGoogleTaskRequest,
+    GmailDraftCreateRequest,
+    GmailDraftCreateResponse,
+    GmailPriorityResponse,
+    GmailThreadSummaryOut,
     SelectTaskListRequest,
     TaskListsResponse,
     TaskListItemOut,
     UpdateGoogleTaskRequest,
 )
-from pydantic import BaseModel
-from connectors import db
 from connectors.providers import PROVIDER_MAP
+from connectors.providers.gmail import gmail_api
 from connectors.providers.google_tasks.tools import read as tasks_read
 from connectors.providers.google_tasks.tools import create as tasks_create
 from connectors.providers.google_tasks.tools import update as tasks_update
 from connectors.providers.google_tasks.tools import delete as tasks_delete
 
 router = APIRouter()
+
+GMAIL_PRIORITY_Q = "in:inbox newer_than:14d"
+GMAIL_PRIORITY_MAX_THREADS = 15
+_HEADER_KEYS_UI = frozenset(
+    {
+        "from",
+        "to",
+        "cc",
+        "bcc",
+        "subject",
+        "date",
+        "message-id",
+        "in-reply-to",
+        "references",
+    }
+)
+
+
+def _payload_headers_subset(payload: dict | None) -> dict[str, str]:
+    if not payload or "headers" not in payload:
+        return {}
+    out: dict[str, str] = {}
+    for h in payload["headers"]:
+        name = (h.get("name") or "").strip()
+        if not name:
+            continue
+        lk = name.lower()
+        if lk in _HEADER_KEYS_UI:
+            out[lk] = h.get("value") or ""
+    return out
+
+
+def _thread_summary_from_api(raw: dict[str, object]) -> GmailThreadSummaryOut:
+    tid = str(raw.get("id") or "")
+    snippet = raw.get("snippet")
+    snip_str = str(snippet) if isinstance(snippet, str) else None
+    messages = raw.get("messages") or []
+    if not isinstance(messages, list) or not messages:
+        return GmailThreadSummaryOut(id=tid, snippet=snip_str)
+    m0 = messages[0]
+    if not isinstance(m0, dict):
+        return GmailThreadSummaryOut(id=tid, snippet=snip_str)
+    headers: dict[str, str] = {}
+    pl = m0.get("payload")
+    if isinstance(pl, dict):
+        for h in pl.get("headers") or []:
+            if not isinstance(h, dict):
+                continue
+            lk = (h.get("name") or "").lower()
+            headers[lk] = h.get("value") or ""
+    internal = m0.get("internalDate")
+    labels = m0.get("labelIds")
+    label_list = list(labels) if isinstance(labels, list) else []
+    return GmailThreadSummaryOut(
+        id=tid,
+        snippet=snip_str,
+        subject=headers.get("subject"),
+        from_addr=headers.get("from"),
+        internal_date_ms=str(internal) if internal is not None else None,
+        label_ids=[str(x) for x in label_list],
+    )
+
+
+def _normalize_thread_for_ui(raw: dict[str, object]) -> dict[str, object]:
+    tid = str(raw.get("id") or "")
+    out_messages: list[dict[str, object]] = []
+    for m in raw.get("messages") or []:
+        if not isinstance(m, dict):
+            continue
+        pl = m.get("payload")
+        pl_dict = pl if isinstance(pl, dict) else None
+        out_messages.append(
+            {
+                "id": str(m.get("id") or ""),
+                "snippet": m.get("snippet"),
+                "internalDate": m.get("internalDate"),
+                "labelIds": list(m.get("labelIds") or [])
+                if isinstance(m.get("labelIds"), list)
+                else [],
+                "headers": _payload_headers_subset(pl_dict),
+            }
+        )
+    return {
+        "id": tid,
+        "snippet": raw.get("snippet"),
+        "historyId": raw.get("historyId"),
+        "messages": out_messages,
+    }
+
+
+@router.get("/gmail/priority", response_model=GmailPriorityResponse)
+def gmail_priority(
+    max_results: int = 30,
+    payload: dict = Depends(get_current_user),
+):
+    user_id = payload.get("sub", "")
+    connector = PROVIDER_MAP["gmail"]()
+    try:
+        access_token = connector.ensure_access_token(user_id)
+        listed = gmail_api.list_inbox_messages(
+            access_token=access_token,
+            max_results=max_results,
+            q=GMAIL_PRIORITY_Q,
+        )
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+
+    msgs = listed.get("messages") or []
+    if not isinstance(msgs, list):
+        msgs = []
+
+    thread_ids: list[str] = []
+    seen: set[str] = set()
+    for m in msgs:
+        if not isinstance(m, dict):
+            continue
+        th = m.get("threadId")
+        if not th or not isinstance(th, str):
+            continue
+        if th not in seen:
+            seen.add(th)
+            thread_ids.append(th)
+    thread_ids = thread_ids[:GMAIL_PRIORITY_MAX_THREADS]
+
+    items: list[GmailThreadSummaryOut] = []
+    for thid in thread_ids:
+        try:
+            raw = gmail_api.get_thread(
+                access_token=access_token,
+                thread_id=thid,
+                message_format="metadata",
+            )
+        except RuntimeError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=str(e)) from e
+        if isinstance(raw, dict):
+            items.append(_thread_summary_from_api(raw))
+
+    return GmailPriorityResponse(query=GMAIL_PRIORITY_Q, items=items)
+
+
+@router.get("/gmail/threads/{thread_id}")
+def gmail_thread_detail(thread_id: str, payload: dict = Depends(get_current_user)):
+    user_id = payload.get("sub", "")
+    connector = PROVIDER_MAP["gmail"]()
+    try:
+        access_token = connector.ensure_access_token(user_id)
+        raw = gmail_api.get_thread(
+            access_token=access_token,
+            thread_id=thread_id,
+            message_format="metadata",
+        )
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+    if not isinstance(raw, dict):
+        raise HTTPException(status_code=502, detail="Invalid thread response")
+    return _normalize_thread_for_ui(raw)
+
+
+@router.post("/gmail/drafts", response_model=GmailDraftCreateResponse)
+def gmail_create_draft(body: GmailDraftCreateRequest, payload: dict = Depends(get_current_user)):
+    user_id = payload.get("sub", "")
+    connector = PROVIDER_MAP["gmail"]()
+    try:
+        access_token = connector.ensure_access_token(user_id)
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    msg = EmailMessage()
+    msg["Subject"] = body.subject
+    if body.to:
+        msg["To"] = ", ".join(body.to)
+    if body.cc:
+        msg["Cc"] = ", ".join(body.cc)
+    if body.bcc:
+        msg["Bcc"] = ", ".join(body.bcc)
+    msg.set_content(body.body_text)
+    raw_bytes = msg.as_bytes()
+    raw_b64 = base64.urlsafe_b64encode(raw_bytes).decode("ascii").rstrip("=")
+
+    api_body: dict = {"message": {"raw": raw_b64}}
+    if body.thread_id:
+        api_body["message"]["threadId"] = body.thread_id
+
+    try:
+        created = gmail_api.create_draft(access_token=access_token, body=api_body)
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+
+    if not isinstance(created, dict):
+        raise HTTPException(status_code=502, detail="Invalid draft response")
+    draft_id = str(created.get("id") or "")
+    inner = created.get("message")
+    message_id = None
+    out_thread_id = None
+    if isinstance(inner, dict):
+        mid = inner.get("id")
+        if mid is not None:
+            message_id = str(mid)
+        tid = inner.get("threadId")
+        if tid is not None:
+            out_thread_id = str(tid)
+    return GmailDraftCreateResponse(
+        draft_id=draft_id,
+        message_id=message_id,
+        thread_id=out_thread_id,
+    )
+
+
+@router.post("/gmail/drafts/{draft_id}/send")
+def gmail_send_draft(draft_id: str, payload: dict = Depends(get_current_user)):
+    user_id = payload.get("sub", "")
+    connector = PROVIDER_MAP["gmail"]()
+    try:
+        access_token = connector.ensure_access_token(user_id)
+        sent = gmail_api.send_draft(access_token=access_token, draft_id=draft_id)
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+    if not isinstance(sent, dict):
+        raise HTTPException(status_code=502, detail="Invalid send response")
+    return {"ok": True, "id": str(sent.get("id") or "")}
+
 
 @router.get("", response_model=ConnectorListResponse)
 def list_connectors(payload: dict = Depends(get_current_user)):
