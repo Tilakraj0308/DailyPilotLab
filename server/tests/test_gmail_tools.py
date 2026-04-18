@@ -124,6 +124,72 @@ def test_gmail_list_priority_threads_unread_first_then_internal_date(
     assert out["items"][1]["subject"] == "Read newest"
 
 
+def test_gmail_list_priority_threads_orders_unread_important_before_unread_then_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_list(*, access_token: str, max_results, q: str):
+        return {
+            "messages": [
+                {"id": "a", "threadId": "t-unread-plain"},
+                {"id": "b", "threadId": "t-read"},
+                {"id": "c", "threadId": "t-unread-imp"},
+            ]
+        }
+
+    def fake_get_thread(*, access_token: str, thread_id: str, message_format: str = "metadata"):
+        if thread_id == "t-unread-imp":
+            return {
+                "id": thread_id,
+                "snippet": "i",
+                "messages": [
+                    {
+                        "id": "m-imp",
+                        "internalDate": "1000",
+                        "labelIds": ["INBOX", "UNREAD", "IMPORTANT"],
+                        "payload": {"headers": [{"name": "Subject", "value": "Important unread"}]},
+                    },
+                ],
+            }
+        if thread_id == "t-unread-plain":
+            return {
+                "id": thread_id,
+                "snippet": "p",
+                "messages": [
+                    {
+                        "id": "m-plain",
+                        "internalDate": "9000",
+                        "labelIds": ["INBOX", "UNREAD"],
+                        "payload": {"headers": [{"name": "Subject", "value": "Plain unread"}]},
+                    },
+                ],
+            }
+        return {
+            "id": thread_id,
+            "snippet": "r",
+            "messages": [
+                {
+                    "id": "m-read",
+                    "internalDate": "99999",
+                    "labelIds": ["INBOX"],
+                    "payload": {"headers": [{"name": "Subject", "value": "Read newest"}]},
+                },
+            ],
+        }
+
+    import connectors.providers.gmail.gmail_api as gmail_api_mod
+
+    monkeypatch.setattr(gmail_api_mod, "list_inbox_messages", fake_list)
+    monkeypatch.setattr(gmail_api_mod, "get_thread", fake_get_thread)
+
+    conn = FakeGmailConnector()
+    out = gmail_read.execute(conn, "u1", "gmail_list_priority_threads", {})
+    assert [x["subject"] for x in out["items"]] == [
+        "Important unread",
+        "Plain unread",
+        "Read newest",
+    ]
+
+
 def test_gmail_list_priority_threads_custom_q(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, Any] = {}
 

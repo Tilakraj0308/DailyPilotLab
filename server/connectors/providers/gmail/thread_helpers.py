@@ -136,6 +136,24 @@ def normalize_thread_detail_dict(raw: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _priority_sort_key(item: dict[str, Any]) -> tuple[int, int, int]:
+    """
+    Ascending sort key for priority view: unread first, IMPORTANT label next,
+    then newer internalDate first (via negated ms).
+    """
+    labels = item.get("label_ids") or []
+    if not isinstance(labels, list):
+        labels = []
+    unread_rank = 0 if "UNREAD" in labels else 1
+    important_rank = 0 if "IMPORTANT" in labels else 1
+    raw_ms = item.get("internal_date_ms")
+    try:
+        ms = int(str(raw_ms).strip()) if raw_ms is not None else 0
+    except ValueError:
+        ms = 0
+    return (unread_rank, important_rank, -ms)
+
+
 def fetch_priority_threads(
     *,
     access_token: str,
@@ -177,16 +195,6 @@ def fetch_priority_threads(
         )
         if isinstance(raw, dict):
             items.append(thread_summary_dict_from_api(raw))
-
-    def _priority_sort_key(row: dict[str, Any]) -> tuple[int, int]:
-        labels = row.get("label_ids") or []
-        unread = 0 if isinstance(labels, list) and "UNREAD" in labels else 1
-        raw_ms = row.get("internal_date_ms")
-        try:
-            ms = int(str(raw_ms).strip()) if raw_ms is not None else 0
-        except ValueError:
-            ms = 0
-        return (unread, -ms)
 
     items.sort(key=_priority_sort_key)
 

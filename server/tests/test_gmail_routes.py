@@ -54,9 +54,9 @@ def test_gmail_priority_hydrates_threads(
         assert max_results == 30
         return {
             "messages": [
-                {"id": "m1", "threadId": "t1"},
-                {"id": "m2", "threadId": "t1"},
-                {"id": "m3", "threadId": "t2"},
+                {"id": "m1", "threadId": "t-unread-imp"},
+                {"id": "m2", "threadId": "t-read"},
+                {"id": "m3", "threadId": "t-unread-plain"},
             ]
         }
 
@@ -64,7 +64,7 @@ def test_gmail_priority_hydrates_threads(
         assert access_token == "fake-access-token"
         assert message_format == "metadata"
         calls.append(("get", thread_id))
-        if thread_id == "t1":
+        if thread_id == "t-read":
             # Latest-by-internalDate is second message; labels INBOX only (read).
             return {
                 "id": thread_id,
@@ -85,15 +85,34 @@ def test_gmail_priority_hydrates_threads(
                     {
                         "id": f"msg-{thread_id}",
                         "snippet": "hello",
-                        "internalDate": "2000",
+                        "internalDate": "9000",
                         "labelIds": ["INBOX"],
                         "payload": {
                             "headers": [
-                                {"name": "Subject", "value": f"Sub {thread_id}"},
+                                {"name": "Subject", "value": "Read thread"},
                                 {"name": "From", "value": "alice@example.com"},
                             ]
                         },
                     },
+                ],
+            }
+        if thread_id == "t-unread-imp":
+            return {
+                "id": thread_id,
+                "snippet": f"snip-{thread_id}",
+                "messages": [
+                    {
+                        "id": f"msg-{thread_id}",
+                        "snippet": "hello",
+                        "internalDate": "1000",
+                        "labelIds": ["INBOX", "UNREAD", "IMPORTANT"],
+                        "payload": {
+                            "headers": [
+                                {"name": "Subject", "value": "Important unread"},
+                                {"name": "From", "value": "alice@example.com"},
+                            ]
+                        },
+                    }
                 ],
             }
         return {
@@ -103,11 +122,11 @@ def test_gmail_priority_hydrates_threads(
                 {
                     "id": f"msg-{thread_id}",
                     "snippet": "hello",
-                    "internalDate": "1500",
+                    "internalDate": "5000",
                     "labelIds": ["INBOX", "UNREAD"],
                     "payload": {
                         "headers": [
-                            {"name": "Subject", "value": f"Sub {thread_id}"},
+                            {"name": "Subject", "value": "Plain unread"},
                             {"name": "From", "value": "alice@example.com"},
                         ]
                     },
@@ -122,13 +141,22 @@ def test_gmail_priority_hydrates_threads(
     assert r.status_code == 200
     data = r.json()
     assert data["query"] == "in:inbox newer_than:14d"
-    assert len(data["items"]) == 2
-    # UNREAD threads first; t2 unread then t1 read. Summary uses latest message by internalDate.
-    assert data["items"][0]["id"] == "t2"
-    assert data["items"][0]["subject"] == "Sub t2"
-    assert data["items"][1]["id"] == "t1"
-    assert data["items"][1]["subject"] == "Sub t1"
-    assert calls == [("get", "t1"), ("get", "t2")]
+    assert len(data["items"]) == 3
+    # Unread+IMPORTANT, then unread without IMPORTANT (newer internalDate does not outrank IMPORTANT),
+    # then read. Summary uses latest message by internalDate.
+    assert [x["id"] for x in data["items"]] == [
+        "t-unread-imp",
+        "t-unread-plain",
+        "t-read",
+    ]
+    assert data["items"][0]["subject"] == "Important unread"
+    assert data["items"][1]["subject"] == "Plain unread"
+    assert data["items"][2]["subject"] == "Read thread"
+    assert calls == [
+        ("get", "t-unread-imp"),
+        ("get", "t-read"),
+        ("get", "t-unread-plain"),
+    ]
 
 
 def test_gmail_priority_max_results_passed_through(
