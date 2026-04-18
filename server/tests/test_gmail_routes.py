@@ -44,6 +44,7 @@ def gmail_client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
             "delete": True,
         },
     )
+    monkeypatch.setattr(router_module.db, "connector_provider_exists", lambda _pk: True)
     app = FastAPI()
     app.include_router(router, prefix="/connectors")
     app.dependency_overrides[get_current_user] = lambda: {
@@ -585,3 +586,21 @@ def test_gmail_thread_detail_maps_upstream_403_as_401(
     r = gmail_client.get("/connectors/gmail/threads/t")
     assert r.status_code == 401
     assert r.json()["detail"] == _RECONNECT_DETAIL
+
+
+def test_gmail_start_returns_503_when_provider_row_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(router_module.db, "connector_provider_exists", lambda _pk: False)
+    app = FastAPI()
+    app.include_router(router, prefix="/connectors")
+    app.dependency_overrides[get_current_user] = lambda: {
+        "sub": "user-1",
+        "email": "you@example.com",
+    }
+    client = TestClient(app)
+    r = client.post("/connectors/gmail/start", json={"return_to": None})
+    assert r.status_code == 503
+    detail = r.json()["detail"]
+    assert "connector_providers" in detail
+    assert "20260418_gmail_connector_provider" in detail

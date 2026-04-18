@@ -328,6 +328,18 @@ def connector_start(
     if provider not in PROVIDER_MAP:
         raise HTTPException(status_code=404, detail="Unknown connector provider")
 
+    if not db.connector_provider_exists(provider):
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                f"Connector '{provider}' is implemented in the API but not registered in Postgres "
+                f"table public.connector_providers (OAuth cannot start until it exists). "
+                f"Apply Supabase migrations — for Gmail run migration "
+                f"`supabase/migrations/20260418_gmail_connector_provider.sql` "
+                f"(e.g. `npx supabase db push` from the repo root), or insert the row manually, then retry."
+            ),
+        )
+
     provider_instance = PROVIDER_MAP[provider]()
     try:
         url, state = provider_instance.build_start_authorization_url(

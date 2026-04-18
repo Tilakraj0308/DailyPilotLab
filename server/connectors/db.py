@@ -19,6 +19,16 @@ def cleanup_expired_oauth_states() -> None:
         cur.execute("DELETE FROM public.oauth_state_sessions WHERE expires_at < now()")
 
 
+def connector_provider_exists(provider_key: str) -> bool:
+    """True if `provider_key` is present in `public.connector_providers` (required for OAuth FK)."""
+    with get_dict_cursor() as cur:
+        cur.execute(
+            "SELECT 1 FROM public.connector_providers WHERE provider_key = %s LIMIT 1",
+            (provider_key,),
+        )
+        return cur.fetchone() is not None
+
+
 def insert_oauth_state(
     state: str,
     user_id: str,
