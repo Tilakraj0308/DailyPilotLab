@@ -52,12 +52,30 @@ _GMAIL_AI_REPLY_SYSTEM = (
 )
 logger = logging.getLogger(__name__)
 
+_GMAIL_RECONNECT_DETAIL = (
+    "Gmail access was denied or expired; reconnect your Gmail connector."
+)
+
+
+def _require_gmail_tool_permission(user_id: str, crud_type: str, *, feature: str) -> None:
+    """Raise 403 when connector_tool_permissions disables this CRUD type for Gmail."""
+    permissions = db.get_tool_permissions(user_id, "gmail")
+    if not permissions.get(crud_type, True):
+        raise HTTPException(
+            status_code=403,
+            detail=f"{feature} is disabled: enable '{crud_type}' for the Gmail connector.",
+        )
+
 
 def _map_gmail_upstream_exc(exc: BaseException) -> HTTPException:
     """Map Gmail HTTP client failures to API responses (404 when resource missing)."""
     if isinstance(exc, requests.exceptions.HTTPError):
-        if exc.response is not None and exc.response.status_code == 404:
-            return HTTPException(status_code=404, detail="Gmail resource not found")
+        resp = exc.response
+        if resp is not None:
+            if resp.status_code == 404:
+                return HTTPException(status_code=404, detail="Gmail resource not found")
+            if resp.status_code in (401, 403):
+                return HTTPException(status_code=401, detail=_GMAIL_RECONNECT_DETAIL)
         return HTTPException(status_code=502, detail=str(exc))
     return HTTPException(status_code=502, detail=str(exc))
 
@@ -95,6 +113,7 @@ def gmail_priority(
     payload: dict = Depends(get_current_user),
 ):
     user_id = payload.get("sub", "")
+    _require_gmail_tool_permission(user_id, "read", feature="Gmail priority inbox")
     connector = PROVIDER_MAP["gmail"]()
     try:
         access_token = connector.ensure_access_token(user_id)
@@ -115,6 +134,7 @@ def gmail_priority(
 @router.get("/gmail/threads/{thread_id}")
 def gmail_thread_detail(thread_id: str, payload: dict = Depends(get_current_user)):
     user_id = payload.get("sub", "")
+    _require_gmail_tool_permission(user_id, "read", feature="Gmail thread detail")
     connector = PROVIDER_MAP["gmail"]()
     try:
         access_token = connector.ensure_access_token(user_id)
@@ -138,6 +158,10 @@ def gmail_ai_suggest_reply(
     payload: dict = Depends(get_current_user),
 ):
     user_id = payload.get("sub", "")
+    # Requires "create" (not read-only): generates outbound reply content for the user.
+    _require_gmail_tool_permission(
+        user_id, "create", feature="Gmail AI suggest-reply"
+    )
     connector = PROVIDER_MAP["gmail"]()
     try:
         access_token = connector.ensure_access_token(user_id)
@@ -178,6 +202,7 @@ def gmail_ai_suggest_reply(
 @router.post("/gmail/drafts", response_model=GmailDraftCreateResponse)
 def gmail_create_draft(body: GmailDraftCreateRequest, payload: dict = Depends(get_current_user)):
     user_id = payload.get("sub", "")
+    _require_gmail_tool_permission(user_id, "create", feature="Gmail create draft")
     connector = PROVIDER_MAP["gmail"]()
     try:
         access_token = connector.ensure_access_token(user_id)
@@ -245,6 +270,7 @@ def gmail_create_draft(body: GmailDraftCreateRequest, payload: dict = Depends(ge
 @router.post("/gmail/drafts/{draft_id}/send")
 def gmail_send_draft(draft_id: str, payload: dict = Depends(get_current_user)):
     user_id = payload.get("sub", "")
+    _require_gmail_tool_permission(user_id, "update", feature="Gmail send draft")
     connector = PROVIDER_MAP["gmail"]()
     try:
         access_token = connector.ensure_access_token(user_id)

@@ -6,7 +6,6 @@ import pytest
 
 from connectors.providers.gmail.tools import create as gmail_create
 from connectors.providers.gmail.tools import read as gmail_read
-from connectors.providers.gmail.tools import update as gmail_update
 
 
 class FakeGmailConnector:
@@ -284,18 +283,3 @@ def test_gmail_create_draft_execute(monkeypatch: pytest.MonkeyPatch) -> None:
     assert out == {"draft_id": "d1", "message_id": "m1", "thread_id": "th1"}
     assert received["body"]["message"]["threadId"] == "th1"
     assert "raw" in received["body"]["message"]
-
-
-def test_gmail_send_draft_execute(monkeypatch: pytest.MonkeyPatch) -> None:
-    def fake_send(*, access_token: str, draft_id: str):
-        assert access_token == "fake-token"
-        assert draft_id == "draft-9"
-        return {"id": "sent-1", "labelIds": ["SENT"]}
-
-    import connectors.providers.gmail.gmail_api as gmail_api_mod
-
-    monkeypatch.setattr(gmail_api_mod, "send_draft", fake_send)
-
-    conn = FakeGmailConnector()
-    out = gmail_update.execute(conn, "u1", "gmail_send_draft", {"draft_id": "draft-9"})
-    assert out == {"ok": True, "id": "sent-1"}

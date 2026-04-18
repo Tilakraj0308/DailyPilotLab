@@ -34,6 +34,16 @@ def gmail_client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
         "gmail",
         lambda: FakeGmailConnector(),
     )
+    monkeypatch.setattr(
+        router_module.db,
+        "get_tool_permissions",
+        lambda user_id, provider_key: {
+            "create": True,
+            "read": True,
+            "update": True,
+            "delete": True,
+        },
+    )
     app = FastAPI()
     app.include_router(router, prefix="/connectors")
     app.dependency_overrides[get_current_user] = lambda: {
@@ -442,3 +452,136 @@ def test_gmail_send_draft_maps_404(
 
     r = gmail_client.post("/connectors/gmail/drafts/bad-draft/send")
     assert r.status_code == 404
+
+
+def test_gmail_priority_forbidden_without_read(
+    gmail_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        router_module.db,
+        "get_tool_permissions",
+        lambda uid, pk: {
+            "create": True,
+            "read": False,
+            "update": True,
+            "delete": True,
+        },
+    )
+    r = gmail_client.get("/connectors/gmail/priority")
+    assert r.status_code == 403
+    assert "read" in r.json()["detail"]
+
+
+def test_gmail_thread_detail_forbidden_without_read(
+    gmail_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        router_module.db,
+        "get_tool_permissions",
+        lambda uid, pk: {
+            "create": True,
+            "read": False,
+            "update": True,
+            "delete": True,
+        },
+    )
+    r = gmail_client.get("/connectors/gmail/threads/t1")
+    assert r.status_code == 403
+
+
+def test_gmail_create_draft_forbidden_without_create(
+    gmail_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        router_module.db,
+        "get_tool_permissions",
+        lambda uid, pk: {
+            "create": False,
+            "read": True,
+            "update": True,
+            "delete": True,
+        },
+    )
+    r = gmail_client.post(
+        "/connectors/gmail/drafts",
+        json={"to": ["a@b.com"], "subject": "s", "body_text": "x"},
+    )
+    assert r.status_code == 403
+    assert "create" in r.json()["detail"]
+
+
+def test_gmail_send_draft_forbidden_without_update(
+    gmail_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        router_module.db,
+        "get_tool_permissions",
+        lambda uid, pk: {
+            "create": True,
+            "read": True,
+            "update": False,
+            "delete": True,
+        },
+    )
+    r = gmail_client.post("/connectors/gmail/drafts/d1/send")
+    assert r.status_code == 403
+    assert "update" in r.json()["detail"]
+
+
+def test_gmail_ai_suggest_reply_forbidden_without_create(
+    gmail_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        router_module.db,
+        "get_tool_permissions",
+        lambda uid, pk: {
+            "create": False,
+            "read": True,
+            "update": True,
+            "delete": True,
+        },
+    )
+    r = gmail_client.post(
+        "/connectors/gmail/ai/suggest-reply",
+        json={"thread_id": "thr-x"},
+    )
+    assert r.status_code == 403
+    assert "create" in r.json()["detail"]
+
+
+_RECONNECT_DETAIL = (
+    "Gmail access was denied or expired; reconnect your Gmail connector."
+)
+
+
+def test_gmail_thread_detail_maps_upstream_401_short_detail(
+    gmail_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fake_get_thread(**kwargs):
+        resp = Mock()
+        resp.status_code = 401
+        resp.text = "B" * 8000
+        raise requests.exceptions.HTTPError(response=resp)
+
+    monkeypatch.setattr(router_module.gmail_api, "get_thread", fake_get_thread)
+
+    r = gmail_client.get("/connectors/gmail/threads/t")
+    assert r.status_code == 401
+    assert r.json()["detail"] == _RECONNECT_DETAIL
+    assert len(r.json()["detail"]) < 500
+
+
+def test_gmail_thread_detail_maps_upstream_403_as_401(
+    gmail_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fake_get_thread(**kwargs):
+        resp = Mock()
+        resp.status_code = 403
+        resp.text = "forbidden-payload"
+        raise requests.exceptions.HTTPError(response=resp)
+
+    monkeypatch.setattr(router_module.gmail_api, "get_thread", fake_get_thread)
+
+    r = gmail_client.get("/connectors/gmail/threads/t")
+    assert r.status_code == 401
+    assert r.json()["detail"] == _RECONNECT_DETAIL
