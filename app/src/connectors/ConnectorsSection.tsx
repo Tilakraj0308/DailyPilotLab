@@ -9,6 +9,7 @@ import {
     startConnectorOAuth,
     GOOGLE_CALENDAR_PROVIDER,
     GOOGLE_TASKS_PROVIDER,
+    NOTION_PROVIDER,
     ConnectorStatusItem,
 } from "./api";
 import { getConnectorReturnUrl, openConnectorAuthorizationUrl } from "./oauthFlow";
@@ -32,6 +33,7 @@ function statusPill(status: string | undefined): { label: string; bg: string; te
 
 function connectedSuccessLabel(provider: string | null): string {
     if (provider === GOOGLE_TASKS_PROVIDER) return "Google Tasks is connected.";
+    if (provider === NOTION_PROVIDER) return "Notion is connected.";
     return "Google Calendar is connected.";
 }
 
@@ -127,6 +129,7 @@ export default function ConnectorsSection() {
 
     const googleCal = items.find((c) => c.provider_key === GOOGLE_CALENDAR_PROVIDER);
     const googleTasks = items.find((c) => c.provider_key === GOOGLE_TASKS_PROVIDER);
+    const notion = items.find((c) => c.provider_key === NOTION_PROVIDER);
 
     const calConnected = googleCal?.status === "connected";
     const calReauth = googleCal?.status === "reauth_required";
@@ -146,6 +149,11 @@ export default function ConnectorsSection() {
         ? { label: "Setup needed", bg: "bg-amber-100", text: "text-amber-900" }
         : statusPill(googleTasks?.status);
 
+    const notionConnected = notion?.status === "connected";
+    const notionReauth = notion?.status === "reauth_required";
+    const notionErr = notion?.status === "error";
+    const notionConnecting = notion?.status === "connecting";
+    const notionPill = statusPill(notion?.status);
 
     return (
         <View>
@@ -190,6 +198,22 @@ export default function ConnectorsSection() {
                         isError={tasksErr}
                         isBusy={busyId === GOOGLE_TASKS_PROVIDER}
                         onPressCard={() => handleCardPress(GOOGLE_TASKS_PROVIDER, tasksConnected, tasksReauth)}
+                    />
+
+                    <ConnectorCard
+                        title="Notion"
+                        description={
+                            notion?.provider_email || "Connect your workspace for AI page tools"
+                        }
+                        iconName="description"
+                        pill={notionPill}
+                        errorMessage={notion?.error_message}
+                        isConnected={notionConnected}
+                        isReauth={notionReauth}
+                        isConnecting={notionConnecting}
+                        isError={notionErr}
+                        isBusy={busyId === NOTION_PROVIDER}
+                        onPressCard={() => handleCardPress(NOTION_PROVIDER, notionConnected, notionReauth)}
                     />
                 </View>
             )}

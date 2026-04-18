@@ -2,6 +2,7 @@ import { getApiUrl } from "../lib/api";
 
 export const GOOGLE_CALENDAR_PROVIDER = "google_calendar";
 export const GOOGLE_TASKS_PROVIDER = "google_tasks";
+export const NOTION_PROVIDER = "notion";
 
 export type ConnectorStatusItem = {
   provider_key: string;

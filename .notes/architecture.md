@@ -74,6 +74,16 @@ All endpoints follow: **Route → Manager → Helper/Service → DB/LLM**
 - `*_service.py` files contain raw SQL queries
 - `dbConnection.py` provides cursor context managers
 
+## Connectors (integrations)
+
+Third-party OAuth and tool execution live under **`server/connectors/`** (mounted at `/connectors`).
+
+- **Registry:** `connectors/providers/__init__.py` maps `provider_key` → connector class (`google_calendar`, `google_tasks`, `notion`).
+- **Google:** `GoogleOAuthConnector` in `connectors/base_connector.py` — Google OAuth PKCE, token refresh, revoke.
+- **Notion:** `NotionConnector` in `connectors/providers/notion/` — Notion OAuth token endpoint (HTTP Basic), refresh, local-only disconnect.
+- **Tools:** Each provider can expose `tools/` with `TOOL_DEFINITIONS`; `tool_registry.py` and `tool_executor.py` resolve tools and enforce CRUD permissions + history.
+- **Client:** Expo app `app/src/connectors/` — Profile integrations, OAuth return handling, Tool Access screen.
+
 ## Database Schema (4 Tables)
 | Table | Purpose |
 |-------|---------|

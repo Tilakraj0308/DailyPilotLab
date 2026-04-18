@@ -45,3 +45,11 @@
 | `openai` | LLM + embeddings SDK |
 | `pyyaml` | Prompt template loading |
 | `python-dotenv` | Environment variable management |
+| `requests` | HTTP to third-party APIs (Google APIs, Notion REST API) |
+
+## Third-party integrations (connectors)
+
+| Integration | Mechanism |
+|-------------|-----------|
+| Google Calendar / Tasks | OAuth 2.0 PKCE (Web client), Google REST APIs |
+| Notion | Public integration OAuth 2.0 (`api.notion.com/v1/oauth/*`), Notion REST API with `Notion-Version` header |

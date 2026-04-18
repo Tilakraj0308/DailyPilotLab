@@ -1,11 +1,11 @@
 """
-Base Connector class providing shared OAuth lifecycle methods.
+Google OAuth connector — Calendar / Tasks shared OAuth lifecycle.
+
+Notion and other providers use separate connector classes; this module stays Google-specific.
 """
 
 from __future__ import annotations
 
-import base64
-import hashlib
 import logging
 import os
 import secrets
@@ -16,6 +16,13 @@ from typing import Any
 import requests
 
 from connectors import db
+from connectors.oauth_common import (
+    append_query,
+    default_return_to,
+    env,
+    oauth_ttl_seconds,
+    pkce_pair,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -25,41 +32,21 @@ GOOGLE_REVOKE_URL = "https://oauth2.googleapis.com/revoke"
 GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
 
 
-def _env(name: str, default: str = "") -> str:
-    return os.getenv(name, default).strip()
-
-def _pkce_pair() -> tuple[str, str]:
-    verifier = secrets.token_urlsafe(32)
-    digest = hashlib.sha256(verifier.encode("ascii")).digest()
-    challenge = base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
-    return verifier, challenge
-
-def _oauth_ttl_seconds() -> int:
-    return int(_env("CONNECTOR_OAUTH_STATE_TTL_SECONDS", "600") or "600")
-
 def _client_credentials() -> tuple[str, str]:
-    cid = _env("GOOGLE_CONNECTOR_CLIENT_ID")
-    csec = _env("GOOGLE_CONNECTOR_CLIENT_SECRET")
+    cid = env("GOOGLE_CONNECTOR_CLIENT_ID")
+    csec = env("GOOGLE_CONNECTOR_CLIENT_SECRET")
     if not cid or not csec:
         raise RuntimeError(
             "GOOGLE_CONNECTOR_CLIENT_ID and GOOGLE_CONNECTOR_CLIENT_SECRET must be set"
         )
     return cid, csec
 
-def _default_return_to() -> str | None:
-    return _env("FRONTEND_CONNECTOR_BASE_URL") or None
 
-def _append_query(url: str | None, params: dict[str, str]) -> str:
-    base_url = url or _default_return_to() or "http://localhost:8081"
-    parts = urllib.parse.urlparse(base_url)
-    q = dict(urllib.parse.parse_qsl(parts.query))
-    q.update(params)
-    new_query = urllib.parse.urlencode(q)
-    return urllib.parse.urlunparse(
-        (parts.scheme, parts.netloc, parts.path, parts.params, new_query, parts.fragment)
-    )
+class GoogleOAuthConnector:
+    """
+    Google OAuth 2.0 PKCE flow for Calendar / Tasks.
+    """
 
-class BaseConnector:
     provider_key: str
     default_scopes: list[str]
 
@@ -74,9 +61,9 @@ class BaseConnector:
     ) -> tuple[str, str]:
         _client_credentials()
         oauth_redirect = self._redirect_uri()
-        verifier, challenge = _pkce_pair()
+        verifier, challenge = pkce_pair()
         state = secrets.token_urlsafe(32)
-        effective_return = return_to or _default_return_to()
+        effective_return = return_to or default_return_to()
 
         db.insert_oauth_state(
             state=state,
@@ -85,7 +72,7 @@ class BaseConnector:
             code_verifier=verifier,
             oauth_redirect_uri=oauth_redirect,
             return_to=effective_return,
-            ttl_seconds=_oauth_ttl_seconds(),
+            ttl_seconds=oauth_ttl_seconds(),
         )
         db.upsert_user_connector_connecting(user_id, self.provider_key)
 
@@ -185,7 +172,6 @@ class BaseConnector:
             external_account_id=ext_id,
             provider_email=email,
         )
-        # Seed permissions on fresh connection
         db.init_default_permissions(user_id, self.provider_key)
 
         return self._success_redirect(return_to), True, None
@@ -199,10 +185,13 @@ class BaseConnector:
         return self._failure_redirect(return_to, oauth_error or "oauth_error")
 
     def _success_redirect(self, return_to: str | None) -> str:
-        return _append_query(return_to, {"connector_status": "success", "provider": self.provider_key})
+        return append_query(return_to, {"connector_status": "success", "provider": self.provider_key})
 
     def _failure_redirect(self, return_to: str | None, reason: str) -> str:
-        return _append_query(return_to, {"connector_status": "error", "provider": self.provider_key, "reason": reason})
+        return append_query(
+            return_to,
+            {"connector_status": "error", "provider": self.provider_key, "reason": reason},
+        )
 
     def revoke_and_disconnect(self, user_id: str) -> None:
         info = db.delete_tokens_and_disconnect(user_id, self.provider_key)
@@ -276,3 +265,7 @@ class BaseConnector:
 
         db.save_tokens_for_connector(uc_id, new_access, new_refresh, new_expires)
         return new_access
+
+
+# Backward compatibility for google_calendar / google_tasks connectors
+BaseConnector = GoogleOAuthConnector

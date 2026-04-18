@@ -53,6 +53,13 @@
 
 ---
 
+### Google-specific vs provider-neutral connector base
+**Decision**: Rename the former generic `BaseConnector` to `GoogleOAuthConnector`; keep `BaseConnector` as an alias for Google connectors only. Add `NotionConnector` as a separate class with Notion OAuth/token semantics.
+**Why**: The previous `BaseConnector` was entirely Google-coupled (URLs, env vars, consent, revoke). Pretending it was generic would force `if provider == "notion"` branches or silent wrong behavior.
+**Trade-off**: Slightly more files; new providers either subclass Google (if ever justified) or implement their own connector class with the same public methods expected by `router.py`.
+
+---
+
 ### Two-Phase Topic Assignment (Vector + LLM)
 **Decision**: Phase 1 uses pgvector similarity (fast, cheap), Phase 2 uses LLM (smart, expensive).
 **Why**: Handles easy matches at DB speed, falls back to LLM only for ambiguous cases.

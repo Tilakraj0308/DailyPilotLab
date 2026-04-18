@@ -82,9 +82,10 @@ OPENAPI=sk-...
 # JWT Secret from Supabase → Project Settings → API (label: JWT Secret). Not the anon key.
 SUPABASE_JWT_SECRET=your-supabase-jwt-secret
 
-# ── Connectors (Google Calendar / Google Tasks OAuth) ─────────────────────────
-# Same `GOOGLE_CONNECTOR_CLIENT_*` Web client; add both redirect URIs in Google Cloud.
-# See `.env.example` for `GOOGLE_CONNECTOR_*`, optional `GOOGLE_TASKS_CONNECTOR_REDIRECT_URI`, and `CONNECTOR_ENCRYPTION_SECRET`.
+# ── Connectors (Google Calendar / Google Tasks / Notion) ──────────────────────
+# Google: same `GOOGLE_CONNECTOR_CLIENT_*` Web client; add Calendar + Tasks redirect URIs in Google Cloud.
+# Notion: public integration OAuth — see `.env.example` for `NOTION_CLIENT_*`, `NOTION_CONNECTOR_REDIRECT_URI`.
+# Shared: `CONNECTOR_ENCRYPTION_SECRET`, `CONNECTOR_OAUTH_STATE_TTL_SECONDS`, `FRONTEND_CONNECTOR_BASE_URL`.
 
 # ── Tuning knobs (leave defaults unless you know what you're changing) ────────
 TOPIC_ASSIGNMENT_THRESHOLD_SIMILARITY=0.48
@@ -127,7 +128,8 @@ The database schema is managed via **Supabase migration files** in `supabase/mig
 | `20260310_create_stored_functions.sql` | `assign_and_return_matches`, `update_topic_recency_metrics`                                                        |
 | `20260327_create_chat_tables.sql`      | `chat_sessions`, `chat_messages`                                                                                   |
 | `20260415_connectors_foundation.sql`   | Connector providers, `user_connectors`, encrypted tokens, OAuth state sessions                                    |
-| `20260416_google_tasks_connector_resources.sql` | Seeds `google_tasks` provider; `user_connector_resources` for selected task list metadata              |
+| `20260417_google_tasks_connector_resources.sql` | Seeds `google_tasks` provider; `user_connector_resources` for selected task list metadata              |
+| `20260418_notion_connector_provider.sql`        | Seeds `notion` provider row                                                                           |
 
 **1. Install the Supabase CLI(if you don't already have)** by following the [official install guide](https://supabase.com/docs/guides/cli/getting-started).
 
@@ -179,7 +181,13 @@ Interactive docs: `http://127.0.0.1:8000/docs`
 
 ### Connectors and Google consent
 
-Calendar and Tasks use separate provider keys but the **same** `GOOGLE_CONNECTOR_CLIENT_ID`. Authorization URLs omit `prompt=consent` by default so Google can offer **incremental** consent for the second product; `prompt=consent` is added only when the connector row is `reauth_required` or `error` (see `should_force_google_oauth_consent_prompt` in [`services/connector_service.py`](services/connector_service.py)). When the Supabase JWT includes `email`, it is sent as Google’s **`login_hint`** so Google can prefill / skip the account chooser when that matches the user’s Google session (not guaranteed if multiple accounts or policies require a picker).
+Calendar and Tasks use separate provider keys but the **same** `GOOGLE_CONNECTOR_CLIENT_ID`. Authorization URLs omit `prompt=consent` by default so Google can offer **incremental** consent for the second product; `prompt=consent` is added only when the connector row is `reauth_required` or `error` (see `should_force_google_oauth_consent_prompt` in [`connectors/db.py`](connectors/db.py)). When the Supabase JWT includes `email`, it is sent as Google’s **`login_hint`** so Google can prefill / skip the account chooser when that matches the user’s Google session (not guaranteed if multiple accounts or policies require a picker).
+
+### Notion connector
+
+Notion uses a **separate** OAuth client (`NOTION_CLIENT_ID` / `NOTION_CLIENT_SECRET` from [Notion integrations](https://www.notion.so/my-integrations)). Register the **exact** redirect URI **`NOTION_CONNECTOR_REDIRECT_URI`** (for example `http://127.0.0.1:8000/connectors/notion/callback`). Token exchange uses Notion’s `POST /v1/oauth/token` with HTTP Basic auth; there is no Google-style remote revoke URL — **disconnect** clears tokens locally. Optional **`NOTION_API_VERSION`** defaults to `2022-06-28` and should match Notion REST calls.
+
+If Chrome shows **`ERR_SSL_PROTOCOL_ERROR`** on the callback: the browser is opening **`https://`** to `127.0.0.1:8000`, but the dev server only speaks **`http://`**. Use **`http://`** in the address bar, ensure Notion’s redirect URI is **`http://...`** (not `https://`), and remove any HSTS entry for `127.0.0.1` in `chrome://net-internals/#hsts` if you previously forced HTTPS for loopback.
 
 ---
 
@@ -199,8 +207,8 @@ Calendar and Tasks use separate provider keys but the **same** `GOOGLE_CONNECTOR
 | `GET`  | `/refine-ideas`             | Refine raw ideas using AI                  |
 | `GET`  | `/auth/profile`             | Sync Supabase user into `public.users`     |
 | `GET`  | `/connectors`               | List connector status per provider (auth)   |
-| `POST` | `/connectors/{provider}/start` | Start OAuth (`google_calendar` \| `google_tasks`) — returns `authorization_url` (auth) |
-| `GET`  | `/connectors/{provider}/callback` | OAuth redirect — **public** (Google)   |
+| `POST` | `/connectors/{provider}/start` | Start OAuth (`google_calendar` \| `google_tasks` \| `notion`) — returns `authorization_url` (auth) |
+| `GET`  | `/connectors/{provider}/callback` | OAuth redirect — **public** (Google or Notion)   |
 | `POST` | `/connectors/{provider}/disconnect` | Revoke tokens and disconnect (auth)   |
 | `GET`  | `/connectors/google_tasks/lists` | Task lists for the connected account (auth) |
 | `POST` | `/connectors/google_tasks/select-list` | Persist one selected task list (`task_list_id`, optional `task_list_title`) (auth) |

@@ -31,6 +31,10 @@ const PROVIDER_INFO: Record<string, { title: string; iconUri: string }> = {
         title: "Google Calendar",
         iconUri: "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a5/Google_Calendar_icon_%282020%29.svg/512px-Google_Calendar_icon_%282020%29.svg.png",
     },
+    notion: {
+        title: "Notion",
+        iconUri: "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e9/Notion-logo.svg/512px-Notion-logo.svg.png",
+    },
 };
 
 export default function ToolAccessScreen() {
@@ -176,7 +180,9 @@ export default function ToolAccessScreen() {
                                     disabled={saving}
                                 />
 
-                                {(providerKey === "google_tasks" || providerKey === "google_calendar") && (
+                                {(providerKey === "google_tasks" ||
+                                    providerKey === "google_calendar" ||
+                                    providerKey === "notion") && (
                                     <>
                                         <PermissionToggleCard
                                             crudType="create"

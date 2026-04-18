@@ -70,7 +70,7 @@ def connector_start(
 
 @router.get("/{provider}/callback")
 def connector_oauth_callback(provider: str, request: Request):
-    """Public OAuth redirect target (Google). Validates state and exchanges the code."""
+    """Public OAuth redirect target. Validates state and exchanges the authorization code."""
     if provider not in PROVIDER_MAP:
         raise HTTPException(status_code=404, detail="Unknown connector provider")
 

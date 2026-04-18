@@ -163,14 +163,16 @@ All auth state is managed by Supabase. The backend only verifies the JWT and mai
 
 ---
 
-## Connectors (Google Calendar & Google Tasks)
+## Connectors (Google Calendar, Google Tasks, Notion)
 
-Sign-in uses **Supabase + Google**. Calendar and Tasks use a **separate Google OAuth Web client** on the backend (`GOOGLE_CONNECTOR_*` in server `.env`). Flow:
+Sign-in uses **Supabase + Google** for account auth. **Google Calendar** and **Google Tasks** use a **separate Google OAuth Web client** on the backend (`GOOGLE_CONNECTOR_*` in server `.env`). **Notion** uses its own public integration OAuth (`NOTION_CLIENT_*`, `NOTION_CONNECTOR_REDIRECT_URI` — see [`server/.env.example`](../server/.env.example) and [`server/README.md`](../server/README.md)).
 
-1. User opens **Profile** (Me tab or avatar menu) and taps **Connect Google Calendar** or **Connect Google Tasks** under Integrations.
-2. App calls `POST /connectors/{provider}/start` (`google_calendar` or `google_tasks`) with the Supabase JWT and a `return_to` URL (where the backend redirects after OAuth).
-3. User completes Google consent; Google hits the **server** callback `GET /connectors/{provider}/callback`.
-4. Server exchanges the code (PKCE), encrypts tokens, stores them, then redirects the browser/app to `return_to?connector_status=success|error&provider=...`.
+Flow (all connectors):
+
+1. User opens **Profile** (Me tab or avatar menu) and taps a connector under Integrations.
+2. App calls `POST /connectors/{provider}/start` (`google_calendar`, `google_tasks`, or `notion`) with the Supabase JWT and a `return_to` URL (where the backend redirects after OAuth).
+3. User completes provider consent; the provider hits the **server** callback `GET /connectors/{provider}/callback`.
+4. Server exchanges the code (Google: PKCE; Notion: Basic-auth token endpoint per Notion docs), encrypts tokens, stores them, then redirects the browser/app to `return_to?connector_status=success|error&provider=...`.
 
 **Consent UX:** Calendar and Tasks stay **separate** connectors, but both use the **same** Google OAuth Web client. The API usually **does not** send `prompt=consent` so Google can use **incremental authorization** when you connect the second product (often a shorter step). It **does** send `prompt=consent` when that connector is already in `reauth_required` or `error` so you get a full re-approval. Google still hosts the consent screen; it cannot be replaced for these APIs.
 
@@ -180,6 +182,8 @@ Sign-in uses **Supabase + Google**. Calendar and Tasks use a **separate Google O
 - `GOOGLE_TASKS_CONNECTOR_REDIRECT_URI` — required; e.g. `http://127.0.0.1:8000/connectors/google_tasks/callback` (must not reuse the Calendar callback path — Google hits that exact URL and the server routes by path)
 
 Ensure `EXPO_PUBLIC_API_URL` points at your API for device testing.
+
+**Notion:** Create a **public** integration in the Notion developer dashboard and add the same redirect URI as `NOTION_CONNECTOR_REDIRECT_URI` on the server. Secrets stay in `server/.env` only.
 
 **Google Tasks (v1):** After connecting, choose **one** task list; the app stores it server-side (`user_connector_resources`). Profile shows a short preview and quick-add for that list.
 
@@ -198,13 +202,16 @@ app/
 │   ├── lib/
 │   │   ├── api.ts                  # getApiUrl() — backend base URL (LAN / emulator rules)
 │   │   ├── supabase.ts             # Supabase client (detectSessionInUrl: true on web)
-│   │   ├── alerts.ts               # Cross-platform alert helper (window.alert on web)
-│   │   ├── connectors.ts         # GET /connectors, start, disconnect (Bearer JWT)
-│   │   └── oauthConnectorFlow.ts # Web vs native browser flow for connector OAuth
+│   │   └── alerts.ts               # Cross-platform alert helper (window.alert on web)
+│   ├── connectors/                 # Integrations UI + connector API client (Calendar, Tasks, Notion)
+│   │   ├── api.ts
+│   │   ├── ConnectorsSection.tsx
+│   │   ├── oauthFlow.ts
+│   │   ├── ToolAccessScreen.tsx
+│   │   └── …
 │   ├── hooks/
 │   │   └── useChat.ts              # Chat state, SSE streaming, web-compatible audio upload
 │   ├── components/
-│   │   ├── ConnectorsSection.tsx   # Integrations — Calendar + Tasks — embedded in Profile
 │   │   ├── MainBottomNav.tsx       # Shared bottom bar (Home / Chat / Me → Profile)
 │   │   └── SoundBarsEqualizer.tsx  # Reanimated audio visualizer (native only)
 │   └── screens/
