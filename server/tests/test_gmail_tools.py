@@ -66,6 +66,64 @@ def test_gmail_list_priority_threads_execute(monkeypatch: pytest.MonkeyPatch) ->
     assert calls == [("t1", "metadata")]
 
 
+def test_gmail_list_priority_threads_unread_first_then_internal_date(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_list(*, access_token: str, max_results, q: str):
+        return {
+            "messages": [
+                {"id": "a", "threadId": "read-new"},
+                {"id": "b", "threadId": "unread-old"},
+            ]
+        }
+
+    def fake_get_thread(*, access_token: str, thread_id: str, message_format: str = "metadata"):
+        if thread_id == "read-new":
+            return {
+                "id": thread_id,
+                "snippet": "r",
+                "messages": [
+                    {
+                        "id": "m1",
+                        "internalDate": "9999",
+                        "labelIds": ["INBOX"],
+                        "payload": {
+                            "headers": [
+                                {"name": "Subject", "value": "Read newest"},
+                            ]
+                        },
+                    },
+                ],
+            }
+        return {
+            "id": thread_id,
+            "snippet": "u",
+            "messages": [
+                {
+                    "id": "m2",
+                    "internalDate": "1",
+                    "labelIds": ["INBOX", "UNREAD"],
+                    "payload": {
+                        "headers": [
+                            {"name": "Subject", "value": "Unread oldest"},
+                        ]
+                    },
+                },
+            ],
+        }
+
+    import connectors.providers.gmail.gmail_api as gmail_api_mod
+
+    monkeypatch.setattr(gmail_api_mod, "list_inbox_messages", fake_list)
+    monkeypatch.setattr(gmail_api_mod, "get_thread", fake_get_thread)
+
+    conn = FakeGmailConnector()
+    out = gmail_read.execute(conn, "u1", "gmail_list_priority_threads", {})
+    assert [x["id"] for x in out["items"]] == ["unread-old", "read-new"]
+    assert out["items"][0]["subject"] == "Unread oldest"
+    assert out["items"][1]["subject"] == "Read newest"
+
+
 def test_gmail_list_priority_threads_custom_q(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, Any] = {}
 

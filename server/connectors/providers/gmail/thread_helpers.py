@@ -38,6 +38,30 @@ def _payload_headers_subset(payload: dict | None) -> dict[str, str]:
     return out
 
 
+def _message_internal_date_ms(m: dict[str, Any]) -> int:
+    raw = m.get("internalDate")
+    if raw is None:
+        return 0
+    try:
+        return int(str(raw).strip())
+    except ValueError:
+        return 0
+
+
+def _representative_message(messages: list[Any]) -> dict[str, Any] | None:
+    """Latest message in thread by Gmail internalDate (milliseconds since epoch)."""
+    best: dict[str, Any] | None = None
+    best_ts = -1
+    for m in messages:
+        if not isinstance(m, dict):
+            continue
+        ts = _message_internal_date_ms(m)
+        if ts > best_ts:
+            best_ts = ts
+            best = m
+    return best
+
+
 def thread_summary_dict_from_api(raw: dict[str, Any]) -> dict[str, Any]:
     """Shape aligned with GmailThreadSummaryOut (dict form for tools / JSON)."""
     tid = str(raw.get("id") or "")
@@ -53,8 +77,8 @@ def thread_summary_dict_from_api(raw: dict[str, Any]) -> dict[str, Any]:
             "internal_date_ms": None,
             "label_ids": [],
         }
-    m0 = messages[0]
-    if not isinstance(m0, dict):
+    m0 = _representative_message(messages)
+    if m0 is None:
         return {
             "id": tid,
             "snippet": snip_str,
@@ -153,5 +177,17 @@ def fetch_priority_threads(
         )
         if isinstance(raw, dict):
             items.append(thread_summary_dict_from_api(raw))
+
+    def _priority_sort_key(row: dict[str, Any]) -> tuple[int, int]:
+        labels = row.get("label_ids") or []
+        unread = 0 if isinstance(labels, list) and "UNREAD" in labels else 1
+        raw_ms = row.get("internal_date_ms")
+        try:
+            ms = int(str(raw_ms).strip()) if raw_ms is not None else 0
+        except ValueError:
+            ms = 0
+        return (unread, -ms)
+
+    items.sort(key=_priority_sort_key)
 
     return {"query": q, "items": items}

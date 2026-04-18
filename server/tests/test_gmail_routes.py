@@ -64,6 +64,38 @@ def test_gmail_priority_hydrates_threads(
         assert access_token == "fake-access-token"
         assert message_format == "metadata"
         calls.append(("get", thread_id))
+        if thread_id == "t1":
+            # Latest-by-internalDate is second message; labels INBOX only (read).
+            return {
+                "id": thread_id,
+                "snippet": f"snip-{thread_id}",
+                "messages": [
+                    {
+                        "id": "m-old",
+                        "snippet": "old",
+                        "internalDate": "1000",
+                        "labelIds": ["INBOX"],
+                        "payload": {
+                            "headers": [
+                                {"name": "Subject", "value": "Stale subject"},
+                                {"name": "From", "value": "old@example.com"},
+                            ]
+                        },
+                    },
+                    {
+                        "id": f"msg-{thread_id}",
+                        "snippet": "hello",
+                        "internalDate": "2000",
+                        "labelIds": ["INBOX"],
+                        "payload": {
+                            "headers": [
+                                {"name": "Subject", "value": f"Sub {thread_id}"},
+                                {"name": "From", "value": "alice@example.com"},
+                            ]
+                        },
+                    },
+                ],
+            }
         return {
             "id": thread_id,
             "snippet": f"snip-{thread_id}",
@@ -71,7 +103,7 @@ def test_gmail_priority_hydrates_threads(
                 {
                     "id": f"msg-{thread_id}",
                     "snippet": "hello",
-                    "internalDate": "1700000000000",
+                    "internalDate": "1500",
                     "labelIds": ["INBOX", "UNREAD"],
                     "payload": {
                         "headers": [
@@ -91,9 +123,11 @@ def test_gmail_priority_hydrates_threads(
     data = r.json()
     assert data["query"] == "in:inbox newer_than:14d"
     assert len(data["items"]) == 2
-    assert data["items"][0]["id"] == "t1"
-    assert data["items"][0]["subject"] == "Sub t1"
-    assert data["items"][1]["id"] == "t2"
+    # UNREAD threads first; t2 unread then t1 read. Summary uses latest message by internalDate.
+    assert data["items"][0]["id"] == "t2"
+    assert data["items"][0]["subject"] == "Sub t2"
+    assert data["items"][1]["id"] == "t1"
+    assert data["items"][1]["subject"] == "Sub t1"
     assert calls == [("get", "t1"), ("get", "t2")]
 
 
