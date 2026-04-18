@@ -5,6 +5,30 @@ export const GOOGLE_TASKS_PROVIDER = "google_tasks";
 export const NOTION_PROVIDER = "notion";
 export const GMAIL_PROVIDER = "gmail";
 
+/** Turn FastAPI `{ "detail": "..." }` bodies into a single alert-friendly string. */
+function messageFromApiError(text: string, status: number): string {
+  const trimmed = text.trim();
+  if (!trimmed) return `Request failed (${status})`;
+  try {
+    const j = JSON.parse(trimmed) as { detail?: unknown };
+    if (typeof j.detail === "string") return j.detail;
+    if (Array.isArray(j.detail)) {
+      return j.detail
+        .map((item: unknown) => {
+          if (item && typeof item === "object" && "msg" in item) {
+            const m = (item as { msg?: string }).msg;
+            if (typeof m === "string") return m;
+          }
+          return JSON.stringify(item);
+        })
+        .join("; ");
+    }
+  } catch {
+    // not JSON — use raw body
+  }
+  return trimmed;
+}
+
 export type ConnectorStatusItem = {
   provider_key: string;
   display_name: string;
@@ -53,7 +77,7 @@ export async function startConnectorOAuth(
   });
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(text || `Failed to start connector (${res.status})`);
+    throw new Error(messageFromApiError(text, res.status));
   }
   return res.json();
 }
