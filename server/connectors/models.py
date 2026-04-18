@@ -64,3 +64,37 @@ class UpdateGoogleTaskRequest(BaseModel):
     notes: str | None = None
     status: str | None = None
     completed: bool | None = None
+
+
+class GmailThreadSummaryOut(BaseModel):
+    id: str
+    snippet: str | None = None
+    subject: str | None = None
+    from_addr: str | None = None
+    internal_date_ms: str | None = None
+    label_ids: list[str] = Field(default_factory=list)
+
+
+class GmailPriorityResponse(BaseModel):
+    query: str
+    items: list[GmailThreadSummaryOut]
+
+
+class GmailDraftCreateRequest(BaseModel):
+    thread_id: str | None = None
+    to: list[str] = Field(default_factory=list)
+    cc: list[str] = Field(default_factory=list)
+    bcc: list[str] = Field(default_factory=list)
+    subject: str
+    body_text: str
+
+
+class GmailDraftCreateResponse(BaseModel):
+    draft_id: str
+    message_id: str | None = None
+    thread_id: str | None = None
+
+
+class GmailDraftSendRequest(BaseModel):
+    # Intentionally empty: sending is explicit by route + draft id path param
+    pass
