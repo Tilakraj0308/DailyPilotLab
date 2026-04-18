@@ -18,6 +18,7 @@ import {
   fetchGmailPriority,
   fetchGmailThread,
   sendGmailDraft,
+  suggestGmailReplyDraft,
   GmailThreadDetail,
   GmailThreadSummary,
 } from "./api";
@@ -45,10 +46,45 @@ function parseAddressList(raw: string): string[] {
     .filter(Boolean);
 }
 
+function normalizeEmailAddr(fromHeader: string | undefined): string {
+  return extractEmail(fromHeader || "").trim().toLowerCase();
+}
+
+/** Prefer latest message From that is not the signed-in user; else last message From. */
+function replyToFromThread(detail: GmailThreadDetail, userEmail: string | undefined): string {
+  const self = (userEmail || "").trim().toLowerCase();
+  const msgs = detail.messages;
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    const rawFrom = msgs[i]?.headers?.from;
+    if (!rawFrom) continue;
+    const addr = normalizeEmailAddr(rawFrom);
+    if (!addr) continue;
+    if (self && addr === self) continue;
+    return extractEmail(rawFrom) || rawFrom.trim();
+  }
+  const last = msgs[msgs.length - 1];
+  const lf = last?.headers?.from;
+  if (!lf) return "";
+  return extractEmail(lf) || lf.trim();
+}
+
+function formatPriorityTime(internalDateMs: string | null | undefined): string {
+  if (internalDateMs == null || internalDateMs === "") return "";
+  const n = Number(internalDateMs);
+  if (!Number.isFinite(n)) return "";
+  const d = new Date(n);
+  const diff = Date.now() - n;
+  if (diff < 60_000) return "Now";
+  if (diff < 86_400_000)
+    return d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
 export default function GmailConnectorScreen() {
   const navigation = useNavigation();
-  const { session } = useAuth();
+  const { session, user } = useAuth();
   const token = session?.access_token;
+  const userEmail = user?.email ?? undefined;
 
   const [loadingList, setLoadingList] = useState(true);
   const [priorityItems, setPriorityItems] = useState<GmailThreadSummary[]>([]);
@@ -63,6 +99,7 @@ export default function GmailConnectorScreen() {
   const [bodyField, setBodyField] = useState("");
 
   const [creating, setCreating] = useState(false);
+  const [suggestingAi, setSuggestingAi] = useState(false);
   const [sending, setSending] = useState(false);
   const [draftId, setDraftId] = useState<string | null>(null);
   const [reviewed, setReviewed] = useState(false);
@@ -112,9 +149,7 @@ export default function GmailConnectorScreen() {
         detail.snippet ||
         "";
       setSubjectField(replySubject(subj));
-      const last = detail.messages[detail.messages.length - 1];
-      const fromLast = extractEmail(last?.headers?.from);
-      setToField(fromLast);
+      setToField(replyToFromThread(detail, userEmail));
     } catch (e: any) {
       universalAlert("Gmail", e?.message || "Could not load thread.");
       setSelectedSummary(null);
@@ -154,6 +189,27 @@ export default function GmailConnectorScreen() {
       universalAlert("Gmail", e?.message || "Could not create draft.");
     } finally {
       setCreating(false);
+    }
+  };
+
+  const handleSuggestAiDraft = async () => {
+    if (!token || !selectedSummary?.id) {
+      universalAlert("Gmail", "Open a thread first.");
+      return;
+    }
+    setSuggestingAi(true);
+    try {
+      const out = await suggestGmailReplyDraft(token, selectedSummary.id);
+      setBodyField((out.body_text || "").trim());
+      const subj = (out.subject || "").trim();
+      if (subj && !subjectField.trim()) {
+        setSubjectField(subj);
+      }
+      if (draftId) resetDraftFlow();
+    } catch (e: any) {
+      universalAlert("Gmail", e?.message || "Could not get AI draft.");
+    } finally {
+      setSuggestingAi(false);
     }
   };
 
@@ -210,6 +266,8 @@ export default function GmailConnectorScreen() {
           <View className="mb-6 gap-2">
             {priorityItems.map((row) => {
               const active = selectedSummary?.id === row.id;
+              const unread = (row.label_ids || []).includes("UNREAD");
+              const timeLabel = formatPriorityTime(row.internal_date_ms ?? undefined);
               return (
                 <TouchableOpacity
                   key={row.id}
@@ -218,13 +276,29 @@ export default function GmailConnectorScreen() {
                     active ? "border-secondary bg-secondary-container/40" : "border-outline-variant/20 bg-surface-container-lowest"
                   }`}
                 >
-                  <Text
-                    className="text-on-surface text-sm"
-                    numberOfLines={1}
-                    style={{ fontFamily: "Inter_600SemiBold" }}
-                  >
-                    {row.subject || "(no subject)"}
-                  </Text>
+                  <View className="flex-row items-start justify-between gap-2">
+                    <Text
+                      className="text-on-surface text-sm flex-1"
+                      numberOfLines={1}
+                      style={{ fontFamily: "Inter_600SemiBold" }}
+                    >
+                      {row.subject || "(no subject)"}
+                    </Text>
+                    <View className="flex-row items-center shrink-0 gap-1.5">
+                      {unread ? (
+                        <View className="bg-indigo-600 px-2 py-0.5 rounded-full">
+                          <Text className="text-white text-[10px]" style={{ fontFamily: "Inter_600SemiBold" }}>
+                            Unread
+                          </Text>
+                        </View>
+                      ) : null}
+                      {timeLabel ? (
+                        <Text className="text-on-surface-variant text-[10px]" style={{ fontFamily: "Inter_500Medium" }}>
+                          {timeLabel}
+                        </Text>
+                      ) : null}
+                    </View>
+                  </View>
                   <Text className="text-on-surface-variant text-xs mt-1" numberOfLines={1}>
                     {row.from_addr || ""}
                   </Text>
@@ -257,8 +331,18 @@ export default function GmailConnectorScreen() {
             ) : threadDetail ? (
               <View className="rounded-xl border border-outline-variant/20 bg-surface-container-lowest p-3 max-h-64">
                 <ScrollView nestedScrollEnabled>
-                  {threadDetail.messages.map((m) => (
+                  {threadDetail.messages.map((m) => {
+                    const isDraft = (m.labelIds || []).includes("DRAFT");
+                    return (
                     <View key={m.id} className="mb-3 border-b border-outline-variant/10 pb-3 last:border-0">
+                      {isDraft ? (
+                        <Text
+                          className="text-[10px] text-amber-800 bg-amber-50 border border-amber-200 self-start px-2 py-0.5 rounded-md mb-1"
+                          style={{ fontFamily: "Inter_600SemiBold" }}
+                        >
+                          Draft — not sent
+                        </Text>
+                      ) : null}
                       <Text className="text-[10px] text-on-surface-variant uppercase mb-1">
                         {m.headers.from || "—"} → {m.headers.to || ""}
                       </Text>
@@ -269,7 +353,8 @@ export default function GmailConnectorScreen() {
                       ) : null}
                       <Text className="text-xs text-on-surface-variant">{m.snippet || ""}</Text>
                     </View>
-                  ))}
+                    );
+                  })}
                 </ScrollView>
               </View>
             ) : null}
@@ -302,7 +387,7 @@ export default function GmailConnectorScreen() {
           onChangeText={setSubjectField}
         />
         <TextInput
-          className="border border-outline-variant/30 rounded-xl px-3 py-3 text-on-surface text-sm mb-4 bg-surface-container-lowest min-h-[120px]"
+          className="border border-outline-variant/30 rounded-xl px-3 py-3 text-on-surface text-sm mb-3 bg-surface-container-lowest min-h-[120px]"
           placeholder="Draft body"
           placeholderTextColor="#94a3b8"
           value={bodyField}
@@ -313,6 +398,20 @@ export default function GmailConnectorScreen() {
           multiline
           textAlignVertical="top"
         />
+
+        <TouchableOpacity
+          className="bg-indigo-600 px-4 py-3 rounded-xl items-center mb-4"
+          onPress={handleSuggestAiDraft}
+          disabled={suggestingAi || !selectedSummary}
+        >
+          {suggestingAi ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text className="text-white text-sm" style={{ fontFamily: "Inter_600SemiBold" }}>
+              Ask AI to draft
+            </Text>
+          )}
+        </TouchableOpacity>
 
         <TouchableOpacity
           className="bg-secondary px-4 py-3 rounded-xl items-center mb-4"

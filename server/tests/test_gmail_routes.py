@@ -10,6 +10,9 @@ import requests.exceptions
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+import utils.openAi as openai_utils
+
+from connectors.models import GmailAiDraftSuggestionOut
 from connectors.router import router
 from utils.auth_middleware import get_current_user
 
@@ -113,6 +116,63 @@ def test_gmail_priority_max_results_passed_through(
     r = gmail_client.get("/connectors/gmail/priority", params={"max_results": 5})
     assert r.status_code == 200
     assert captured["max_results"] == 5
+
+
+def test_gmail_ai_suggest_reply_uses_thread_and_openai(
+    gmail_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured: dict = {}
+
+    def fake_get_thread(*, access_token: str, thread_id: str, message_format: str = "metadata"):
+        captured["thread_id"] = thread_id
+        assert message_format == "metadata"
+        return {
+            "id": thread_id,
+            "snippet": "snip",
+            "messages": [
+                {
+                    "id": "m1",
+                    "snippet": "hi",
+                    "internalDate": "1",
+                    "labelIds": ["INBOX"],
+                    "payload": {"headers": [{"name": "From", "value": "bob@example.com"}]},
+                }
+            ],
+        }
+
+    def fake_completion(system_prompt: str, user_prompt: str, response_format=None, model: str = "gpt-3.5-turbo"):
+        captured["system"] = system_prompt
+        captured["user"] = user_prompt
+        assert response_format is GmailAiDraftSuggestionOut
+        assert "draft" in system_prompt.lower()
+        return GmailAiDraftSuggestionOut(subject="Re: Hello", body_text="Thanks for your note.")
+
+    monkeypatch.setattr(router_module.gmail_api, "get_thread", fake_get_thread)
+    monkeypatch.setattr(openai_utils.openai_client, "get_chat_completion", fake_completion)
+
+    r = gmail_client.post("/connectors/gmail/ai/suggest-reply", json={"thread_id": "thr-ai"})
+    assert r.status_code == 200
+    assert r.json() == {"subject": "Re: Hello", "body_text": "Thanks for your note."}
+    assert captured["thread_id"] == "thr-ai"
+    assert "thr-ai" in captured["user"]
+
+
+def test_gmail_ai_suggest_reply_rejects_empty_body(
+    gmail_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        router_module.gmail_api,
+        "get_thread",
+        lambda **kwargs: {"id": "t", "messages": []},
+    )
+
+    def fake_completion(**kwargs):
+        return GmailAiDraftSuggestionOut(subject=None, body_text="   ")
+
+    monkeypatch.setattr(openai_utils.openai_client, "get_chat_completion", fake_completion)
+
+    r = gmail_client.post("/connectors/gmail/ai/suggest-reply", json={"thread_id": "t"})
+    assert r.status_code == 502
 
 
 def test_gmail_thread_detail_normalized(gmail_client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -188,7 +188,7 @@ Ensure `EXPO_PUBLIC_API_URL` points at your API for device testing.
 
 **Google Tasks (v1):** After connecting, choose **one** task list; the app stores it server-side (`user_connector_resources`). Profile shows a short preview and quick-add for that list.
 
-**Gmail:** Provider key `gmail`. **Tool Access** ([`ToolAccessScreen.tsx`](src/connectors/ToolAccessScreen.tsx)) is used for tool permissions and connector history for `gmail`, the same pattern as Calendar / Tasks / Notion (`GET` / `PUT /connectors/gmail/permissions`, `GET /connectors/gmail/history`). The dedicated inbox UI is **`GmailConnectorScreen`** (stack route name **`GmailConnector`** in the navigation plan); wire it in `App.tsx` when the screen lands. Those flows call the backend with `getApiUrl()` and `Authorization: Bearer <Supabase access token>`:
+**Gmail:** Provider key `gmail`. Tapping a **connected** Gmail row under Integrations opens **Tool Access** (same as other providers). From there, **Open Gmail connector** goes to **`GmailConnectorScreen`** (stack route **`GmailConnector`** in [`App.tsx`](App.tsx)). Those flows call the backend with `getApiUrl()` and `Authorization: Bearer <Supabase access token>`:
 
 | Endpoint | Role |
 |----------|------|
@@ -198,6 +198,7 @@ Ensure `EXPO_PUBLIC_API_URL` points at your API for device testing.
 | `GET /connectors/gmail/threads/{thread_id}` | Thread detail for read / draft context |
 | `POST /connectors/gmail/drafts` | Create a draft |
 | `POST /connectors/gmail/drafts/{draft_id}/send` | Send a draft after explicit confirmation |
+| `POST /connectors/gmail/ai/suggest-reply` | AI-assisted reply draft for a thread (`thread_id` in JSON body) |
 | `GET` / `PUT /connectors/gmail/permissions` | Tool permission toggles (shared connector route shape) |
 | `GET /connectors/gmail/history` | Activity feed for Gmail tool / UI actions |
 
@@ -222,7 +223,7 @@ app/
 │   │   ├── ConnectorsSection.tsx
 │   │   ├── oauthFlow.ts
 │   │   ├── ToolAccessScreen.tsx
-│   │   ├── GmailConnectorScreen.tsx  # (when added) Gmail priority inbox + drafts — stack: GmailConnector
+│   │   ├── GmailConnectorScreen.tsx  # Gmail priority inbox + drafts — stack: GmailConnector
 │   │   └── …
 │   ├── hooks/
 │   │   └── useChat.ts              # Chat state, SSE streaming, web-compatible audio upload

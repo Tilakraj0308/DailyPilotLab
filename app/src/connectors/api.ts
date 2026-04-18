@@ -410,3 +410,27 @@ export async function sendGmailDraft(
   }
   return res.json();
 }
+
+export type GmailAiDraftSuggestion = {
+  subject?: string | null;
+  body_text: string;
+};
+
+export async function suggestGmailReplyDraft(
+  accessToken: string,
+  threadId: string
+): Promise<GmailAiDraftSuggestion> {
+  const res = await fetch(`${getApiUrl()}/connectors/gmail/ai/suggest-reply`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ thread_id: threadId }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `Failed to get AI draft (${res.status})`);
+  }
+  return res.json();
+}

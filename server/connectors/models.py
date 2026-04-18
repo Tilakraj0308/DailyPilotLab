@@ -98,3 +98,14 @@ class GmailDraftCreateResponse(BaseModel):
 class GmailDraftSendRequest(BaseModel):
     # Intentionally empty: sending is explicit by route + draft id path param
     pass
+
+
+class GmailAiSuggestReplyRequest(BaseModel):
+    thread_id: str
+
+
+class GmailAiDraftSuggestionOut(BaseModel):
+    """Structured reply draft from the AI suggest-reply endpoint."""
+
+    subject: str | None = None
+    body_text: str

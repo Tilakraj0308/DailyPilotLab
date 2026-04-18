@@ -121,11 +121,7 @@ export default function ConnectorsSection() {
     const handleCardPress = (providerKey: string, isConnected: boolean, isReauth: boolean) => {
         if (!token) return;
         if (isConnected && !isReauth) {
-            if (providerKey === GMAIL_PROVIDER) {
-                navigation.navigate("GmailConnector");
-            } else {
-                navigation.navigate("ToolAccess", { provider_key: providerKey });
-            }
+            navigation.navigate("ToolAccess", { provider_key: providerKey });
         } else {
             // Not connected or reauth required, start OAuth flow
             handleConnectProvider(providerKey);

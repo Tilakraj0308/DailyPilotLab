@@ -1,4 +1,5 @@
 import base64
+import json
 import logging
 from email.message import EmailMessage
 
@@ -17,6 +18,8 @@ from connectors.models import (
     ConnectorStartResponse,
     ConnectorStatusItem,
     CreateGoogleTaskRequest,
+    GmailAiDraftSuggestionOut,
+    GmailAiSuggestReplyRequest,
     GmailDraftCreateRequest,
     GmailDraftCreateResponse,
     GmailPriorityResponse,
@@ -39,6 +42,14 @@ from connectors.providers.google_tasks.tools import update as tasks_update
 from connectors.providers.google_tasks.tools import delete as tasks_delete
 
 router = APIRouter()
+
+_GMAIL_AI_REPLY_SYSTEM = (
+    "You draft email replies only. Output must follow the required JSON schema. "
+    "Write a polite, concise reply body the user can paste into Gmail. "
+    "Do not include instructions about sending, clicking send, or using the UI. "
+    "Do not claim the message was sent. "
+    "Optional subject: only if a clearer subject helps; otherwise omit or null."
+)
 logger = logging.getLogger(__name__)
 
 
@@ -119,6 +130,49 @@ def gmail_thread_detail(thread_id: str, payload: dict = Depends(get_current_user
     if not isinstance(raw, dict):
         raise HTTPException(status_code=502, detail="Invalid thread response")
     return normalize_thread_detail_dict(raw)
+
+
+@router.post("/gmail/ai/suggest-reply", response_model=GmailAiDraftSuggestionOut)
+def gmail_ai_suggest_reply(
+    body: GmailAiSuggestReplyRequest,
+    payload: dict = Depends(get_current_user),
+):
+    user_id = payload.get("sub", "")
+    connector = PROVIDER_MAP["gmail"]()
+    try:
+        access_token = connector.ensure_access_token(user_id)
+        raw = gmail_api.get_thread(
+            access_token=access_token,
+            thread_id=body.thread_id,
+            message_format="metadata",
+        )
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        raise _map_gmail_upstream_exc(e) from e
+    if not isinstance(raw, dict):
+        raise HTTPException(status_code=502, detail="Invalid thread response")
+    normalized = normalize_thread_detail_dict(raw)
+    user_prompt = json.dumps(normalized, indent=2, default=str)
+    from utils.openAi import openai_client
+
+    try:
+        parsed = openai_client.get_chat_completion(
+            system_prompt=_GMAIL_AI_REPLY_SYSTEM,
+            user_prompt=user_prompt,
+            response_format=GmailAiDraftSuggestionOut,
+        )
+    except Exception as e:
+        logger.exception("Gmail AI suggest-reply failed")
+        raise HTTPException(status_code=502, detail=f"AI draft failed: {e!s}") from e
+    if parsed is None:
+        raise HTTPException(status_code=502, detail="AI returned no draft")
+    if not (parsed.body_text or "").strip():
+        raise HTTPException(status_code=502, detail="AI returned an empty body")
+    return GmailAiDraftSuggestionOut(
+        subject=parsed.subject,
+        body_text=parsed.body_text.strip(),
+    )
 
 
 @router.post("/gmail/drafts", response_model=GmailDraftCreateResponse)

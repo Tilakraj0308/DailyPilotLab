@@ -215,6 +215,7 @@ If Chrome shows **`ERR_SSL_PROTOCOL_ERROR`** on the callback: the browser is ope
 | `GET`  | `/connectors/gmail/threads/{thread_id}` | Gmail thread detail (auth) |
 | `POST` | `/connectors/gmail/drafts` | Create a Gmail draft (auth) |
 | `POST` | `/connectors/gmail/drafts/{draft_id}/send` | Send an existing draft after user approval (auth) |
+| `POST` | `/connectors/gmail/ai/suggest-reply` | JSON `{ "thread_id" }` — AI reply draft (`subject` optional, `body_text`) from thread context (auth) |
 | `GET`  | `/connectors/google_tasks/lists` | Task lists for the connected account (auth) |
 | `POST` | `/connectors/google_tasks/select-list` | Persist one selected task list (`task_list_id`, optional `task_list_title`) (auth) |
 | `GET`  | `/connectors/google_tasks/tasks` | Tasks in the selected list (`show_completed` query) (auth) |
