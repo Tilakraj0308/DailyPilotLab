@@ -3,6 +3,7 @@ import { getApiUrl } from "../lib/api";
 export const GOOGLE_CALENDAR_PROVIDER = "google_calendar";
 export const GOOGLE_TASKS_PROVIDER = "google_tasks";
 export const NOTION_PROVIDER = "notion";
+export const GMAIL_PROVIDER = "gmail";
 
 export type ConnectorStatusItem = {
   provider_key: string;
@@ -284,4 +285,128 @@ export async function fetchAvailableTools(
   }
   const data = await res.json();
   return data.tools ?? [];
+}
+
+// ── Gmail (priority inbox + thread + drafts) ───────────────────────────────
+
+export type GmailThreadSummary = {
+  id: string;
+  snippet?: string | null;
+  subject?: string | null;
+  from_addr?: string | null;
+  internal_date_ms?: string | null;
+  label_ids?: string[];
+};
+
+export type GmailPriorityResponse = {
+  query: string;
+  items: GmailThreadSummary[];
+};
+
+export type GmailThreadMessage = {
+  id: string;
+  snippet?: string | null;
+  internalDate?: string | null;
+  labelIds?: string[];
+  headers: Record<string, string>;
+};
+
+export type GmailThreadDetail = {
+  id: string;
+  snippet?: string | null;
+  historyId?: string | null;
+  messages: GmailThreadMessage[];
+};
+
+export type GmailDraftCreateBody = {
+  thread_id?: string | null;
+  to?: string[];
+  cc?: string[];
+  bcc?: string[];
+  subject: string;
+  body_text: string;
+};
+
+export type GmailDraftCreateResult = {
+  draft_id: string;
+  message_id?: string | null;
+  thread_id?: string | null;
+};
+
+export async function fetchGmailPriority(
+  accessToken: string,
+  maxResults = 30
+): Promise<GmailPriorityResponse> {
+  const q = new URLSearchParams();
+  if (maxResults !== 30) q.set("max_results", String(maxResults));
+  const suffix = q.toString() ? `?${q.toString()}` : "";
+  const res = await fetch(`${getApiUrl()}/connectors/gmail/priority${suffix}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `Failed to load Gmail priority (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function fetchGmailThread(
+  accessToken: string,
+  threadId: string
+): Promise<GmailThreadDetail> {
+  const res = await fetch(
+    `${getApiUrl()}/connectors/gmail/threads/${encodeURIComponent(threadId)}`,
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    }
+  );
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `Failed to load thread (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function createGmailDraft(
+  accessToken: string,
+  body: GmailDraftCreateBody
+): Promise<GmailDraftCreateResult> {
+  const res = await fetch(`${getApiUrl()}/connectors/gmail/drafts`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      thread_id: body.thread_id ?? null,
+      to: body.to ?? [],
+      cc: body.cc ?? [],
+      bcc: body.bcc ?? [],
+      subject: body.subject,
+      body_text: body.body_text,
+    }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `Failed to create draft (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function sendGmailDraft(
+  accessToken: string,
+  draftId: string
+): Promise<{ ok: boolean; id: string }> {
+  const res = await fetch(
+    `${getApiUrl()}/connectors/gmail/drafts/${encodeURIComponent(draftId)}/send`,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${accessToken}` },
+    }
+  );
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `Failed to send draft (${res.status})`);
+  }
+  return res.json();
 }

@@ -35,11 +35,15 @@ const PROVIDER_INFO: Record<string, { title: string; iconUri: string }> = {
         title: "Notion",
         iconUri: "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e9/Notion-logo.svg/512px-Notion-logo.svg.png",
     },
+    gmail: {
+        title: "Gmail",
+        iconUri: "https://upload.wikimedia.org/wikipedia/commons/thumb/7/7e/Gmail_icon_%282020%29.svg/512px-Gmail_icon_%282020%29.svg.png",
+    },
 };
 
 export default function ToolAccessScreen() {
     const route = useRoute<any>();
-    const navigation = useNavigation();
+    const navigation = useNavigation<any>();
     const { session } = useAuth();
 
     const providerKey = route.params?.provider_key;
@@ -182,7 +186,8 @@ export default function ToolAccessScreen() {
 
                                 {(providerKey === "google_tasks" ||
                                     providerKey === "google_calendar" ||
-                                    providerKey === "notion") && (
+                                    providerKey === "notion" ||
+                                    providerKey === "gmail") && (
                                     <>
                                         <PermissionToggleCard
                                             crudType="create"
@@ -206,6 +211,25 @@ export default function ToolAccessScreen() {
                                 )}
                             </View>
                         </View>
+
+                        {providerKey === "gmail" && (
+                            <View className="mb-8">
+                                <Text className="text-primary text-xs tracking-widest mb-2 uppercase" style={{ fontFamily: "Inter_600SemiBold" }}>
+                                    Gmail tools
+                                </Text>
+                                <Text className="text-on-surface-variant text-sm mb-4" style={{ fontFamily: "Inter_400Regular" }}>
+                                    Open the priority inbox view to read threads and create or send drafts.
+                                </Text>
+                                <TouchableOpacity
+                                    className="bg-secondary px-4 py-3 rounded-xl items-center border border-secondary shadow-sm"
+                                    onPress={() => navigation.navigate("GmailConnector")}
+                                >
+                                    <Text className="text-white text-sm" style={{ fontFamily: "Inter_600SemiBold" }}>
+                                        Open Gmail connector
+                                    </Text>
+                                </TouchableOpacity>
+                            </View>
+                        )}
 
                         {providerKey === "google_tasks" && (
                             <View className="mb-8">

@@ -10,6 +10,7 @@ import {
     GOOGLE_CALENDAR_PROVIDER,
     GOOGLE_TASKS_PROVIDER,
     NOTION_PROVIDER,
+    GMAIL_PROVIDER,
     ConnectorStatusItem,
 } from "./api";
 import { getConnectorReturnUrl, openConnectorAuthorizationUrl } from "./oauthFlow";
@@ -34,6 +35,7 @@ function statusPill(status: string | undefined): { label: string; bg: string; te
 function connectedSuccessLabel(provider: string | null): string {
     if (provider === GOOGLE_TASKS_PROVIDER) return "Google Tasks is connected.";
     if (provider === NOTION_PROVIDER) return "Notion is connected.";
+    if (provider === GMAIL_PROVIDER) return "Gmail is connected.";
     return "Google Calendar is connected.";
 }
 
@@ -119,8 +121,11 @@ export default function ConnectorsSection() {
     const handleCardPress = (providerKey: string, isConnected: boolean, isReauth: boolean) => {
         if (!token) return;
         if (isConnected && !isReauth) {
-            // If genuinely connected, go to Tool Access configuration
-            navigation.navigate("ToolAccess", { provider_key: providerKey });
+            if (providerKey === GMAIL_PROVIDER) {
+                navigation.navigate("GmailConnector");
+            } else {
+                navigation.navigate("ToolAccess", { provider_key: providerKey });
+            }
         } else {
             // Not connected or reauth required, start OAuth flow
             handleConnectProvider(providerKey);
@@ -130,6 +135,7 @@ export default function ConnectorsSection() {
     const googleCal = items.find((c) => c.provider_key === GOOGLE_CALENDAR_PROVIDER);
     const googleTasks = items.find((c) => c.provider_key === GOOGLE_TASKS_PROVIDER);
     const notion = items.find((c) => c.provider_key === NOTION_PROVIDER);
+    const gmail = items.find((c) => c.provider_key === GMAIL_PROVIDER);
 
     const calConnected = googleCal?.status === "connected";
     const calReauth = googleCal?.status === "reauth_required";
@@ -154,6 +160,12 @@ export default function ConnectorsSection() {
     const notionErr = notion?.status === "error";
     const notionConnecting = notion?.status === "connecting";
     const notionPill = statusPill(notion?.status);
+
+    const gmailConnected = gmail?.status === "connected";
+    const gmailReauth = gmail?.status === "reauth_required";
+    const gmailErr = gmail?.status === "error";
+    const gmailConnecting = gmail?.status === "connecting";
+    const gmailPill = statusPill(gmail?.status);
 
     return (
         <View>
@@ -214,6 +226,22 @@ export default function ConnectorsSection() {
                         isError={notionErr}
                         isBusy={busyId === NOTION_PROVIDER}
                         onPressCard={() => handleCardPress(NOTION_PROVIDER, notionConnected, notionReauth)}
+                    />
+
+                    <ConnectorCard
+                        title="Gmail"
+                        description={
+                            gmail?.provider_email || "Priority inbox and drafts for your connected account"
+                        }
+                        iconName="mail"
+                        pill={gmailPill}
+                        errorMessage={gmail?.error_message}
+                        isConnected={gmailConnected}
+                        isReauth={gmailReauth}
+                        isConnecting={gmailConnecting}
+                        isError={gmailErr}
+                        isBusy={busyId === GMAIL_PROVIDER}
+                        onPressCard={() => handleCardPress(GMAIL_PROVIDER, gmailConnected, gmailReauth)}
                     />
                 </View>
             )}

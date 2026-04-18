@@ -15,6 +15,7 @@ import ChatScreen from "./src/screens/ChatScreen";
 import SettingsScreen from "./src/screens/SettingsScreen";
 import ProfileScreen from "./src/screens/ProfileScreen";
 import ToolAccessScreen from "./src/connectors/ToolAccessScreen";
+import GmailConnectorScreen from "./src/connectors/GmailConnectorScreen";
 import GlobalAlertUI from "./src/components/GlobalAlertUI";
 import { supabase } from "./src/lib/supabase";
 import * as Linking from "expo-linking";
@@ -147,6 +148,7 @@ function AppNavigator() {
             <Stack.Screen name="Profile" component={ProfileScreen} />
             <Stack.Screen name="Settings" component={SettingsScreen} />
             <Stack.Screen name="ToolAccess" component={ToolAccessScreen} />
+            <Stack.Screen name="GmailConnector" component={GmailConnectorScreen} />
           </>
         ) : (
           <Stack.Screen name="Login" component={LoginScreen} />
