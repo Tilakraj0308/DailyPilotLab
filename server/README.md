@@ -82,8 +82,8 @@ OPENAPI=sk-...
 # JWT Secret from Supabase → Project Settings → API (label: JWT Secret). Not the anon key.
 SUPABASE_JWT_SECRET=your-supabase-jwt-secret
 
-# ── Connectors (Google Calendar / Google Tasks / Notion) ──────────────────────
-# Google: same `GOOGLE_CONNECTOR_CLIENT_*` Web client; add Calendar + Tasks redirect URIs in Google Cloud.
+# ── Connectors (Google Calendar / Google Tasks / Gmail / Notion) ──────────────────────
+# Google: same `GOOGLE_CONNECTOR_CLIENT_*` Web client; add Calendar, Tasks, and Gmail redirect URIs in Google Cloud.
 # Notion: public integration OAuth — see `.env.example` for `NOTION_CLIENT_*`, `NOTION_CONNECTOR_REDIRECT_URI`.
 # Shared: `CONNECTOR_ENCRYPTION_SECRET`, `CONNECTOR_OAUTH_STATE_TTL_SECONDS`, `FRONTEND_CONNECTOR_BASE_URL`.
 
@@ -130,6 +130,7 @@ The database schema is managed via **Supabase migration files** in `supabase/mig
 | `20260415_connectors_foundation.sql`   | Connector providers, `user_connectors`, encrypted tokens, OAuth state sessions                                    |
 | `20260417_google_tasks_connector_resources.sql` | Seeds `google_tasks` provider; `user_connector_resources` for selected task list metadata              |
 | `20260418_notion_connector_provider.sql`        | Seeds `notion` provider row                                                                           |
+| `20260418_gmail_connector_provider.sql`         | Seeds `gmail` provider row                                                                              |
 
 **1. Install the Supabase CLI(if you don't already have)** by following the [official install guide](https://supabase.com/docs/guides/cli/getting-started).
 
@@ -181,7 +182,7 @@ Interactive docs: `http://127.0.0.1:8000/docs`
 
 ### Connectors and Google consent
 
-Calendar and Tasks use separate provider keys but the **same** `GOOGLE_CONNECTOR_CLIENT_ID`. Authorization URLs omit `prompt=consent` by default so Google can offer **incremental** consent for the second product; `prompt=consent` is added only when the connector row is `reauth_required` or `error` (see `should_force_google_oauth_consent_prompt` in [`connectors/db.py`](connectors/db.py)). When the Supabase JWT includes `email`, it is sent as Google’s **`login_hint`** so Google can prefill / skip the account chooser when that matches the user’s Google session (not guaranteed if multiple accounts or policies require a picker).
+Calendar, Tasks, and **Gmail** use separate provider keys but the **same** `GOOGLE_CONNECTOR_CLIENT_ID`. Register **Gmail API** in Google Cloud (Library) and add **`GOOGLE_GMAIL_CONNECTOR_REDIRECT_URI`** (for example `http://127.0.0.1:8000/connectors/gmail/callback`) alongside the Calendar and Tasks callback URIs on the OAuth Web client. Authorization URLs omit `prompt=consent` by default so Google can offer **incremental** consent when you connect additional Google products; `prompt=consent` is added only when the connector row is `reauth_required` or `error` (see `should_force_google_oauth_consent_prompt` in [`connectors/db.py`](connectors/db.py)). When the Supabase JWT includes `email`, it is sent as Google’s **`login_hint`** so Google can prefill / skip the account chooser when that matches the user’s Google session (not guaranteed if multiple accounts or policies require a picker).
 
 ### Notion connector
 
@@ -207,9 +208,13 @@ If Chrome shows **`ERR_SSL_PROTOCOL_ERROR`** on the callback: the browser is ope
 | `GET`  | `/refine-ideas`             | Refine raw ideas using AI                  |
 | `GET`  | `/auth/profile`             | Sync Supabase user into `public.users`     |
 | `GET`  | `/connectors`               | List connector status per provider (auth)   |
-| `POST` | `/connectors/{provider}/start` | Start OAuth (`google_calendar` \| `google_tasks` \| `notion`) — returns `authorization_url` (auth) |
-| `GET`  | `/connectors/{provider}/callback` | OAuth redirect — **public** (Google or Notion)   |
+| `POST` | `/connectors/{provider}/start` | Start OAuth (`google_calendar` \| `google_tasks` \| `gmail` \| `notion`) — returns `authorization_url` (auth) |
+| `GET`  | `/connectors/{provider}/callback` | OAuth redirect — **public** (Google or Notion; Gmail uses `/connectors/gmail/callback`)   |
 | `POST` | `/connectors/{provider}/disconnect` | Revoke tokens and disconnect (auth)   |
+| `GET`  | `/connectors/gmail/priority` | Priority-oriented Gmail thread summaries for the connected account (auth) |
+| `GET`  | `/connectors/gmail/threads/{thread_id}` | Gmail thread detail (auth) |
+| `POST` | `/connectors/gmail/drafts` | Create a Gmail draft (auth) |
+| `POST` | `/connectors/gmail/drafts/{draft_id}/send` | Send an existing draft after user approval (auth) |
 | `GET`  | `/connectors/google_tasks/lists` | Task lists for the connected account (auth) |
 | `POST` | `/connectors/google_tasks/select-list` | Persist one selected task list (`task_list_id`, optional `task_list_title`) (auth) |
 | `GET`  | `/connectors/google_tasks/tasks` | Tasks in the selected list (`show_completed` query) (auth) |

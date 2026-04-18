@@ -163,29 +163,43 @@ All auth state is managed by Supabase. The backend only verifies the JWT and mai
 
 ---
 
-## Connectors (Google Calendar, Google Tasks, Notion)
+## Connectors (Google Calendar, Google Tasks, Gmail, Notion)
 
-Sign-in uses **Supabase + Google** for account auth. **Google Calendar** and **Google Tasks** use a **separate Google OAuth Web client** on the backend (`GOOGLE_CONNECTOR_*` in server `.env`). **Notion** uses its own public integration OAuth (`NOTION_CLIENT_*`, `NOTION_CONNECTOR_REDIRECT_URI` — see [`server/.env.example`](../server/.env.example) and [`server/README.md`](../server/README.md)).
+Sign-in uses **Supabase + Google** for account auth. **Google Calendar**, **Google Tasks**, and **Gmail** share a **separate Google OAuth Web client** on the backend (`GOOGLE_CONNECTOR_*` and per-product redirect env vars in server `.env`). **Notion** uses its own public integration OAuth (`NOTION_CLIENT_*`, `NOTION_CONNECTOR_REDIRECT_URI` — see [`server/.env.example`](../server/.env.example) and [`server/README.md`](../server/README.md)).
 
 Flow (all connectors):
 
 1. User opens **Profile** (Me tab or avatar menu) and taps a connector under Integrations.
-2. App calls `POST /connectors/{provider}/start` (`google_calendar`, `google_tasks`, or `notion`) with the Supabase JWT and a `return_to` URL (where the backend redirects after OAuth).
+2. App calls `POST /connectors/{provider}/start` (`google_calendar`, `google_tasks`, `gmail`, or `notion`) with the Supabase JWT and a `return_to` URL (where the backend redirects after OAuth).
 3. User completes provider consent; the provider hits the **server** callback `GET /connectors/{provider}/callback`.
 4. Server exchanges the code (Google: PKCE; Notion: Basic-auth token endpoint per Notion docs), encrypts tokens, stores them, then redirects the browser/app to `return_to?connector_status=success|error&provider=...`.
 
-**Consent UX:** Calendar and Tasks stay **separate** connectors, but both use the **same** Google OAuth Web client. The API usually **does not** send `prompt=consent` so Google can use **incremental authorization** when you connect the second product (often a shorter step). It **does** send `prompt=consent` when that connector is already in `reauth_required` or `error` so you get a full re-approval. Google still hosts the consent screen; it cannot be replaced for these APIs.
+**Consent UX:** Calendar, Tasks, and Gmail are **separate** connector providers but use the **same** Google OAuth Web client. The API usually **does not** send `prompt=consent` so Google can use **incremental authorization** when you connect another Google product (often a shorter step). It **does** send `prompt=consent` when that connector is already in `reauth_required` or `error` so you get a full re-approval. Google still hosts the consent screen; it cannot be replaced for these APIs.
 
-**Google Cloud:** Enable **Google Calendar API** and **Google Tasks API** for the project. Under the OAuth client’s **Authorized redirect URIs**, add every URI you use:
+**Google Cloud:** Enable **Google Calendar API**, **Google Tasks API**, and **Gmail API** for the project. Under the OAuth client’s **Authorized redirect URIs**, add every URI you use:
 
 - `GOOGLE_CONNECTOR_REDIRECT_URI` — e.g. `http://127.0.0.1:8000/connectors/google_calendar/callback`
 - `GOOGLE_TASKS_CONNECTOR_REDIRECT_URI` — required; e.g. `http://127.0.0.1:8000/connectors/google_tasks/callback` (must not reuse the Calendar callback path — Google hits that exact URL and the server routes by path)
+- `GOOGLE_GMAIL_CONNECTOR_REDIRECT_URI` — e.g. `http://127.0.0.1:8000/connectors/gmail/callback` (same pattern; register explicitly unless you rely on derivation from the Calendar URI — see server `.env.example`)
 
 Ensure `EXPO_PUBLIC_API_URL` points at your API for device testing.
 
 **Notion:** Create a **public** integration in the Notion developer dashboard and add the same redirect URI as `NOTION_CONNECTOR_REDIRECT_URI` on the server. Secrets stay in `server/.env` only.
 
 **Google Tasks (v1):** After connecting, choose **one** task list; the app stores it server-side (`user_connector_resources`). Profile shows a short preview and quick-add for that list.
+
+**Gmail:** Provider key `gmail`. **Tool Access** ([`ToolAccessScreen.tsx`](src/connectors/ToolAccessScreen.tsx)) is used for tool permissions and connector history for `gmail`, the same pattern as Calendar / Tasks / Notion (`GET` / `PUT /connectors/gmail/permissions`, `GET /connectors/gmail/history`). The dedicated inbox UI is **`GmailConnectorScreen`** (stack route name **`GmailConnector`** in the navigation plan); wire it in `App.tsx` when the screen lands. Those flows call the backend with `getApiUrl()` and `Authorization: Bearer <Supabase access token>`:
+
+| Endpoint | Role |
+|----------|------|
+| `GET /connectors` | Connector status row for `gmail` (with other providers) |
+| `POST /connectors/gmail/start` | Start Gmail OAuth (same JSON body as other `…/start` routes) |
+| `GET /connectors/gmail/priority` | Priority thread list for the inbox UI |
+| `GET /connectors/gmail/threads/{thread_id}` | Thread detail for read / draft context |
+| `POST /connectors/gmail/drafts` | Create a draft |
+| `POST /connectors/gmail/drafts/{draft_id}/send` | Send a draft after explicit confirmation |
+| `GET` / `PUT /connectors/gmail/permissions` | Tool permission toggles (shared connector route shape) |
+| `GET /connectors/gmail/history` | Activity feed for Gmail tool / UI actions |
 
 If you see **`Invalid token`** when connecting, the backend cannot verify your Supabase session JWT (this happens **before** any Google redirect). Add **`SUPABASE_URL`** to `server/.env` (same as `EXPO_PUBLIC_SUPABASE_URL`) if your project uses **JWT Signing Keys / ES256**; otherwise set **`SUPABASE_JWT_SECRET`** to the **JWT Secret** from Supabase → Project Settings → API. Restart the API.
 
@@ -203,11 +217,12 @@ app/
 │   │   ├── api.ts                  # getApiUrl() — backend base URL (LAN / emulator rules)
 │   │   ├── supabase.ts             # Supabase client (detectSessionInUrl: true on web)
 │   │   └── alerts.ts               # Cross-platform alert helper (window.alert on web)
-│   ├── connectors/                 # Integrations UI + connector API client (Calendar, Tasks, Notion)
+│   ├── connectors/                 # Integrations UI + connector API client (Calendar, Tasks, Gmail, Notion)
 │   │   ├── api.ts
 │   │   ├── ConnectorsSection.tsx
 │   │   ├── oauthFlow.ts
 │   │   ├── ToolAccessScreen.tsx
+│   │   ├── GmailConnectorScreen.tsx  # (when added) Gmail priority inbox + drafts — stack: GmailConnector
 │   │   └── …
 │   ├── hooks/
 │   │   └── useChat.ts              # Chat state, SSE streaming, web-compatible audio upload
