@@ -21,11 +21,7 @@ import { supabase } from "./src/lib/supabase";
 import * as Linking from "expo-linking";
 import * as QueryParams from "expo-auth-session/build/QueryParams";
 
-import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
-import { MaterialIcons } from "@expo/vector-icons";
-
 const Stack = createNativeStackNavigator();
-const Tab = createBottomTabNavigator();
 
 /** Used to navigate after OAuth returns with ?connector_status= on web */
 export const navigationRef = createNavigationContainerRef();
@@ -71,44 +67,7 @@ class ErrorBoundary extends React.Component<
   }
 }
 
-function MainTabs() {
-  return (
-    <Tab.Navigator
-      screenOptions={({ route }) => ({
-        headerShown: false,
-        tabBarIcon: ({ color, size }) => {
-          let iconName: string = 'home';
-          if (route.name === 'Home') iconName = 'home';
-          else if (route.name === 'Tasks') iconName = 'check-circle';
-          else if (route.name === 'Chat') iconName = 'chat-bubble';
-          else if (route.name === 'Library') iconName = 'auto-stories';
-          else if (route.name === 'Me') iconName = 'person';
-          return <MaterialIcons name={iconName as any} size={size} color={color} />;
-        },
-        tabBarActiveTintColor: '#4e45e4',
-        tabBarInactiveTintColor: '#586064',
-        tabBarHideOnKeyboard: true,
-        tabBarLabelStyle: {
-          fontFamily: 'Inter_500Medium',
-          fontSize: 10,
-        },
-        tabBarStyle: {
-          backgroundColor: '#f8f9fa',
-          borderTopWidth: 1,
-          borderTopColor: 'rgba(171, 179, 183, 0.1)',
-          paddingBottom: Platform.OS === 'ios' ? 24 : 24,
-          height: Platform.OS === 'ios' ? 80 : 64,
-        },
-      })}
-    >
-      <Tab.Screen name="Home" component={HomeScreen} />
-      <Tab.Screen name="Tasks" component={HomeScreen} />
-      <Tab.Screen name="Chat" component={ChatScreen} />
-      <Tab.Screen name="Library" component={HomeScreen} />
-      <Tab.Screen name="Me" component={ProfileScreen} />
-    </Tab.Navigator>
-  );
-}
+
 
 function AppNavigator() {
   const { session, isLoading } = useAuth();
@@ -185,7 +144,8 @@ function AppNavigator() {
     <NavigationContainer ref={navigationRef}>
       {session ? (
         <Stack.Navigator screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="MainTabs" component={MainTabs} />
+          <Stack.Screen name="Home" component={HomeScreen} />
+          <Stack.Screen name="Chat" component={ChatScreen} />
           <Stack.Screen name="Profile" component={ProfileScreen} />
           <Stack.Screen name="Settings" component={SettingsScreen} />
           <Stack.Screen name="ToolAccess" component={ToolAccessScreen} />

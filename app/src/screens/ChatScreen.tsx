@@ -23,6 +23,7 @@ import { useChat, ChatMessage, ChatSessionSummary } from '../hooks/useChat';
 import { useAudioRecorder, requestRecordingPermissionsAsync, setAudioModeAsync } from 'expo-audio';
 import Animated, { useSharedValue, withTiming, FadeIn, FadeOut, withRepeat, withSequence, withDelay } from 'react-native-reanimated';
 import SoundBarsEqualizer from '../components/SoundBarsEqualizer';
+import SidebarDrawer from '../components/SidebarDrawer';
 
 // Safely imported expo-audio
 const isAudioAvailable = true;
@@ -185,7 +186,6 @@ export default function ChatScreen() {
     const [inputText, setInputText] = useState('');
 
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-    const sidebarX = useSharedValue(-300);
     const [sessionsGrouped, setSessionsGrouped] = useState<{ title: string, data: ChatSessionSummary[] }[]>([]);
     const [isLoadingSessions, setIsLoadingSessions] = useState(false);
     const [sessionOffset, setSessionOffset] = useState(0);
@@ -248,7 +248,6 @@ export default function ChatScreen() {
     const toggleSidebar = () => {
         const nextState = !isSidebarOpen;
         setIsSidebarOpen(nextState);
-        sidebarX.value = withTiming(nextState ? 0 : -300, { duration: 250 });
         if (nextState && !hasFetchedSessionsRef.current) {
             // First open: fetch from server, show skeleton
             fetchAndGroupSessions(0, false).then(() => {
@@ -535,31 +534,9 @@ export default function ChatScreen() {
 
     return (
         <SafeAreaView className="flex-1 bg-background" edges={['top']}>
-            {/* Sidebar Overlay */}
-            {isSidebarOpen && (
-                <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 40, backgroundColor: 'rgba(0,0,0,0.5)' }}>
-                    <TouchableOpacity
-                        style={{ flex: 1 }}
-                        activeOpacity={1}
-                        onPress={toggleSidebar}
-                    />
-                </View>
-            )}
-
-            {/* Sidebar — Platform-aware animation */}
-            {Platform.OS === 'web' ? (
-                // Web: CSS transition on transform so it actually animates in the browser
-                <View
-                    style={{
-                        position: 'absolute', top: 0, left: 0, bottom: 0,
-                        width: 300, zIndex: 50,
-                        backgroundColor: '#ffffff',
-                        boxShadow: '4px 0 20px rgba(0,0,0,0.12)',
-                        transform: `translateX(${isSidebarOpen ? '0px' : '-300px'})`,
-                        transition: 'transform 250ms cubic-bezier(0.4, 0, 0.2, 1)',
-                    } as any}
-                >
-                    <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
+            <SidebarDrawer isOpen={isSidebarOpen} onClose={toggleSidebar} width={300}>
+                <SafeAreaView className="flex-1 bg-white" edges={['top', 'bottom']}>
+                    <View className="flex-1 px-4 py-2">
                         <View className="flex-row items-center justify-between p-4 border-b border-outline-variant/10">
                             <Text className="text-lg font-bold text-on-surface" style={{ fontFamily: "Manrope_700Bold" }}>Recents</Text>
                             <TouchableOpacity onPress={toggleSidebar} className="p-1">
@@ -577,63 +554,7 @@ export default function ChatScreen() {
                             <HistorySkeleton />
                         ) : (
                             <ScrollView
-                                style={{ flex: 1, padding: 8 }}
-                                showsVerticalScrollIndicator={false}
-                                onScroll={(e: NativeSyntheticEvent<NativeScrollEvent>) => {
-                                    const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
-                                    if (layoutMeasurement.height + contentOffset.y >= contentSize.height - 40) {
-                                        loadMoreSessions();
-                                    }
-                                }}
-                                scrollEventThrottle={400}
-                            >
-                                {sessionsGrouped.map(group => (
-                                    <View key={group.title} style={{ marginBottom: 16 }}>
-                                        <Text className="text-xs font-bold text-on-surface-variant mb-2 px-2" style={{ fontFamily: "Inter_500Medium" }}>{group.title}</Text>
-                                        {group.data.map(session => (
-                                            <TouchableOpacity
-                                                key={session.id}
-                                                className="px-3 py-3 rounded-lg flex-row items-center gap-3 mb-1 bg-surface-container/30"
-                                                onPress={() => { toggleSidebar(); loadSession(session.id); }}
-                                            >
-                                                <MaterialIcons name="chat-bubble-outline" size={18} color="#586064" />
-                                                <Text className="text-sm text-on-surface flex-1" numberOfLines={1} style={{ fontFamily: "Inter_400Regular" }}>
-                                                    {session.title || "New Chat"}
-                                                </Text>
-                                            </TouchableOpacity>
-                                        ))}
-                                    </View>
-                                ))}
-                                {sessionsGrouped.length === 0 && !isLoadingSessions && (
-                                    <Text className="text-sm text-on-surface-variant p-4 text-center" style={{ fontFamily: "Inter_400Regular" }}>No history found.</Text>
-                                )}
-                                {isLoadingSessions && sessionsGrouped.length > 0 && <HistorySkeleton />}
-                            </ScrollView>
-                        )}
-                    </SafeAreaView>
-                </View>
-            ) : (
-                // Native: Reanimated translateX
-                <Animated.View style={{ transform: [{ translateX: sidebarX }], position: 'absolute', top: 0, left: 0, bottom: 0, width: 300, zIndex: 50, backgroundColor: '#ffffff', shadowColor: '#000', shadowOffset: { width: 4, height: 0 }, shadowOpacity: 0.1, shadowRadius: 10, elevation: 10 }}>
-                    <SafeAreaView className="flex-1" edges={['top', 'bottom']}>
-                        <View className="flex-row items-center justify-between p-4 border-b border-outline-variant/10">
-                            <Text className="text-lg font-bold text-on-surface" style={{ fontFamily: "Manrope_700Bold" }}>Recents</Text>
-                            <TouchableOpacity onPress={toggleSidebar} className="p-1">
-                                <MaterialIcons name="close" size={24} color="#586064" />
-                            </TouchableOpacity>
-                        </View>
-                        <TouchableOpacity
-                            onPress={() => { toggleSidebar(); clearSession(); }}
-                            className="flex-row items-center gap-3 mx-2 mt-3 mb-1 px-3 py-3 rounded-lg bg-secondary/10 border border-secondary/20"
-                        >
-                            <MaterialIcons name="add-comment" size={20} color="#4e45e4" />
-                            <Text className="text-sm font-medium text-secondary" style={{ fontFamily: "Inter_500Medium" }}>New Chat</Text>
-                        </TouchableOpacity>
-                        {isLoadingSessions && sessionsGrouped.length === 0 ? (
-                            <HistorySkeleton />
-                        ) : (
-                            <ScrollView
-                                className="flex-1 p-2"
+                                className="flex-1 p-2 mt-2"
                                 showsVerticalScrollIndicator={false}
                                 onScroll={(e: NativeSyntheticEvent<NativeScrollEvent>) => {
                                     const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
@@ -666,9 +587,9 @@ export default function ChatScreen() {
                                 {isLoadingSessions && sessionsGrouped.length > 0 && <HistorySkeleton />}
                             </ScrollView>
                         )}
-                    </SafeAreaView>
-                </Animated.View>
-            )}
+                    </View>
+                </SafeAreaView>
+            </SidebarDrawer>
 
             {/* Header */}
             <View className="flex-row items-center justify-between px-5 py-3 border-b border-outline-variant/10 bg-background">
