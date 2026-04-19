@@ -27,6 +27,9 @@ import { MaterialIcons } from "@expo/vector-icons";
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 
+/** Used to navigate after OAuth returns with ?connector_status= on web */
+export const navigationRef = createNavigationContainerRef();
+
 // Keep splash screen visible while we load fonts and auth state
 SplashScreen.preventAutoHideAsync();
 
@@ -102,7 +105,7 @@ function MainTabs() {
       <Tab.Screen name="Tasks" component={HomeScreen} />
       <Tab.Screen name="Chat" component={ChatScreen} />
       <Tab.Screen name="Library" component={HomeScreen} />
-      <Tab.Screen name="Me" component={HomeScreen} />
+      <Tab.Screen name="Me" component={ProfileScreen} />
     </Tab.Navigator>
   );
 }
@@ -179,9 +182,15 @@ function AppNavigator() {
   }
 
   return (
-    <NavigationContainer>
+    <NavigationContainer ref={navigationRef}>
       {session ? (
-        <MainTabs />
+        <Stack.Navigator screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="MainTabs" component={MainTabs} />
+          <Stack.Screen name="Profile" component={ProfileScreen} />
+          <Stack.Screen name="Settings" component={SettingsScreen} />
+          <Stack.Screen name="ToolAccess" component={ToolAccessScreen} />
+          <Stack.Screen name="GmailConnector" component={GmailConnectorScreen} />
+        </Stack.Navigator>
       ) : (
         <Stack.Navigator screenOptions={{ headerShown: false }}>
           <Stack.Screen name="Login" component={LoginScreen} />

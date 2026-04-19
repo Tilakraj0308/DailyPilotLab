@@ -16,7 +16,6 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { MaterialIcons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { useAuth } from "../context/AuthContext";
-import MainBottomNav from "../components/MainBottomNav";
 
 export default function HomeScreen() {
     const [chatInput, setChatInput] = useState("");
