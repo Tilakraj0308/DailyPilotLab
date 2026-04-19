@@ -15,6 +15,8 @@ DBNAME = os.getenv("dbname")
 
 @contextmanager
 def get_connection():
+    """Open a DB connection. Only connection failures are logged as 'Failed to connect'."""
+    connection = None
     try:
         connection = psycopg2.connect(
             user=USER,
@@ -23,11 +25,13 @@ def get_connection():
             port=PORT,
             dbname=DBNAME
         )
-        yield connection
     except Exception as e:
         print(f"Failed to connect: {e}")
+        raise
+    try:
+        yield connection
     finally:
-        if connection:
+        if connection is not None:
             connection.close()
 
 @contextmanager

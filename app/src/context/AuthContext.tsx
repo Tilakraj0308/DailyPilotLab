@@ -1,7 +1,8 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Session, User } from "@supabase/supabase-js";
-import { Platform } from "react-native";
 import { supabase } from "../lib/supabase";
+import { getApiUrl } from "../lib/api";
 
 interface AuthContextType {
     session: Session | null;
@@ -16,28 +17,6 @@ const AuthContext = createContext<AuthContextType>({
     isLoading: true,
     signOut: async () => { },
 });
-
-/**
- * Get the API URL based on platform.
- */
-function getApiUrl(): string {
-    const envUrl = process.env.EXPO_PUBLIC_API_URL;
-
-    // For web
-    if (!Platform.OS || Platform.OS === 'web') {
-        return envUrl || 'http://localhost:8000';
-    }
-    // If environment variable is set, use it (physical device)
-    if (envUrl) {
-        return envUrl;
-    }
-    // For Android emulator ONLY (when envUrl is not set), use special 10.0.2.2 address
-    if (Platform.OS === 'android') {
-        return 'http://10.0.2.2:8000';
-    }
-    // For iOS simulator & physical devices without env var
-    return 'http://localhost:8000';
-}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
     const [session, setSession] = useState<Session | null>(null);
@@ -96,6 +75,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
 
     const signOut = async () => {
+        // Prevents the next account on this device from reusing a global chat session id.
+        await AsyncStorage.removeItem("@chat_session_id");
         await supabase.auth.signOut();
         setSession(null);
     };

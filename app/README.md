@@ -163,27 +163,81 @@ All auth state is managed by Supabase. The backend only verifies the JWT and mai
 
 ---
 
+## Connectors (Google Calendar, Google Tasks, Gmail, Notion)
+
+Sign-in uses **Supabase + Google** for account auth. **Google Calendar**, **Google Tasks**, and **Gmail** share a **separate Google OAuth Web client** on the backend (`GOOGLE_CONNECTOR_*` and per-product redirect env vars in server `.env`). **Notion** uses its own public integration OAuth (`NOTION_CLIENT_*`, `NOTION_CONNECTOR_REDIRECT_URI` — see [`server/.env.example`](../server/.env.example) and [`server/README.md`](../server/README.md)).
+
+Flow (all connectors):
+
+1. User opens **Profile** (Me tab or avatar menu) and taps a connector under Integrations.
+2. App calls `POST /connectors/{provider}/start` (`google_calendar`, `google_tasks`, `gmail`, or `notion`) with the Supabase JWT and a `return_to` URL (where the backend redirects after OAuth).
+3. User completes provider consent; the provider hits the **server** callback `GET /connectors/{provider}/callback`.
+4. Server exchanges the code (Google: PKCE; Notion: Basic-auth token endpoint per Notion docs), encrypts tokens, stores them, then redirects the browser/app to `return_to?connector_status=success|error&provider=...`.
+
+**Consent UX:** Calendar, Tasks, and Gmail are **separate** connector providers but use the **same** Google OAuth Web client. The API usually **does not** send `prompt=consent` so Google can use **incremental authorization** when you connect another Google product (often a shorter step). It **does** send `prompt=consent` when that connector is already in `reauth_required` or `error` so you get a full re-approval. Google still hosts the consent screen; it cannot be replaced for these APIs.
+
+**Notion vs Google:** Notion OAuth is independent of Google. The backend enforces that the **Notion account’s primary person email** (from Notion’s token response, when present) matches the **email on your app account** (`public.users`, synced from Supabase when the app calls `/auth/profile`). On iOS, connecting Notion uses an **ephemeral in-app browser session** when possible to reduce picking up another Notion login from Safari.
+
+**Google Cloud:** Enable **Google Calendar API**, **Google Tasks API**, and **Gmail API** for the project. Under the OAuth client’s **Authorized redirect URIs**, add every URI you use:
+
+- `GOOGLE_CONNECTOR_REDIRECT_URI` — e.g. `http://127.0.0.1:8000/connectors/google_calendar/callback`
+- `GOOGLE_TASKS_CONNECTOR_REDIRECT_URI` — required; e.g. `http://127.0.0.1:8000/connectors/google_tasks/callback` (must not reuse the Calendar callback path — Google hits that exact URL and the server routes by path)
+- `GOOGLE_GMAIL_CONNECTOR_REDIRECT_URI` — e.g. `http://127.0.0.1:8000/connectors/gmail/callback` (same pattern; register explicitly unless you rely on derivation from the Calendar URI — see server `.env.example`)
+
+Ensure `EXPO_PUBLIC_API_URL` points at your API for device testing.
+
+**Notion:** Create a **public** integration in the Notion developer dashboard and add the same redirect URI as `NOTION_CONNECTOR_REDIRECT_URI` on the server. Secrets stay in `server/.env` only.
+
+**Google Tasks (v1):** After connecting, choose **one** task list; the app stores it server-side (`user_connector_resources`). Profile shows a short preview and quick-add for that list.
+
+**Gmail:** Provider key `gmail`. Tapping a **connected** Gmail row under Integrations opens **Tool Access** (same as other providers). From there, **Open Gmail connector** goes to **`GmailConnectorScreen`** (stack route **`GmailConnector`** in [`App.tsx`](App.tsx)). Those flows call the backend with `getApiUrl()` and `Authorization: Bearer <Supabase access token>`:
+
+| Endpoint | Role |
+|----------|------|
+| `GET /connectors` | Connector status row for `gmail` (with other providers) |
+| `POST /connectors/gmail/start` | Start Gmail OAuth (same JSON body as other `…/start` routes) |
+| `GET /connectors/gmail/priority` | Priority thread list for the inbox UI |
+| `GET /connectors/gmail/threads/{thread_id}` | Thread detail for read / draft context |
+| `POST /connectors/gmail/drafts` | Create a draft |
+| `POST /connectors/gmail/drafts/{draft_id}/send` | Send a draft after explicit confirmation |
+| `POST /connectors/gmail/ai/suggest-reply` | AI-assisted reply draft for a thread (`thread_id` in JSON body) |
+| `GET` / `PUT /connectors/gmail/permissions` | Tool permission toggles (shared connector route shape) |
+| `GET /connectors/gmail/history` | Activity feed for Gmail tool / UI actions |
+
+If you see **`Invalid token`** when connecting, the backend cannot verify your Supabase session JWT (this happens **before** any Google redirect). Add **`SUPABASE_URL`** to `server/.env` (same as `EXPO_PUBLIC_SUPABASE_URL`) if your project uses **JWT Signing Keys / ES256**; otherwise set **`SUPABASE_JWT_SECRET`** to the **JWT Secret** from Supabase → Project Settings → API. Restart the API.
+
+---
+
 ## Project Structure
 
 ```
 app/
-├── App.tsx                         # Root — AuthProvider + responsive web layout wrapper
+├── App.tsx                         # Root — AuthProvider, NavigationContainer ref, OAuth → Profile on web
 ├── src/
 │   ├── context/
 │   │   └── AuthContext.tsx         # Auth state provider (session, signOut)
 │   ├── lib/
+│   │   ├── api.ts                  # getApiUrl() — backend base URL (LAN / emulator rules)
 │   │   ├── supabase.ts             # Supabase client (detectSessionInUrl: true on web)
-│   │   ├── alerts.ts               # Cross-platform alert helper (window.alert on web)
-│   │   └── connectors.ts           # API helpers for connector management
+│   │   └── alerts.ts               # Cross-platform alert helper (window.alert on web)
+│   ├── connectors/                 # Integrations UI + connector API client (Calendar, Tasks, Gmail, Notion)
+│   │   ├── api.ts
+│   │   ├── ConnectorsSection.tsx
+│   │   ├── oauthFlow.ts
+│   │   ├── ToolAccessScreen.tsx
+│   │   ├── GmailConnectorScreen.tsx  # Gmail priority inbox + drafts — stack: GmailConnector
+│   │   └── …
 │   ├── hooks/
 │   │   └── useChat.ts              # Chat state, SSE streaming, web-compatible audio upload
 │   ├── components/
+│   │   ├── MainBottomNav.tsx       # Shared bottom bar (Home / Chat / Me → Profile)
 │   │   └── SoundBarsEqualizer.tsx  # Reanimated audio visualizer (native only)
 │   └── screens/
 │       ├── LoginScreen.tsx         # Google OAuth (web redirect vs native in-app browser)
 │       ├── HomeScreen.tsx          # Main dashboard
 │       ├── ChatScreen.tsx          # Chat UI with voice recording (web + native)
-│       └── ConnectorsScreen.tsx    # OAuth connector management
+│       ├── ProfileScreen.tsx       # Account, integrations, sign out (Me tab)
+│       └── SettingsScreen.tsx      # App preferences placeholder; connectors live on Profile
 ├── app.json                        # Expo config (scheme: dailypilot, web: favicon)
 └── .env                            # Environment variables (gitignored)
 ```

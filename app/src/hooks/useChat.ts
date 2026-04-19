@@ -6,6 +6,7 @@ import EventSource from 'react-native-sse';
 import * as FileSystem from 'expo-file-system/legacy';
 import { FileSystemUploadType } from 'expo-file-system/legacy';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../context/AuthContext';
 
 export type ChatMessage = {
     id: string;
@@ -22,6 +23,7 @@ export type ChatSessionSummary = {
 
 
 const STORE_KEY = '@chat_session_id';
+
 
 /**
  * Get the API URL based on platform.
@@ -49,6 +51,7 @@ function getApiUrl(): string {
 }
 
 export function useChat() {
+    const { user, isLoading: authLoading } = useAuth();
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [status, setStatus] = useState<'connecting' | 'connected' | 'reconnecting' | 'error'>('connecting');
     const [sessionId, setSessionId] = useState<string | null>(null);
@@ -93,7 +96,7 @@ export function useChat() {
             setStatus('connected');
         };
         initSession();
-    }, []);
+    }, [authLoading, user?.id]);
 
     const sendText = async (text: string) => {
         if (!text.trim() || status !== 'connected' || !sessionId) return;
@@ -216,8 +219,10 @@ export function useChat() {
     };
 
     const clearSession = async () => {
+        if (!user?.id) return;
+        const key = sessionStorageKey(user.id);
         const newId = Crypto.randomUUID();
-        await AsyncStorage.setItem(STORE_KEY, newId);
+        await AsyncStorage.setItem(key, newId);
         setMessages([]);
         setSessionId(newId);
     };

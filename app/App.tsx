@@ -1,7 +1,7 @@
 import "./global.css";
 import React, { useEffect } from "react";
 import { View, ActivityIndicator, Text, ScrollView, Platform } from "react-native";
-import { NavigationContainer } from "@react-navigation/native";
+import { NavigationContainer, createNavigationContainerRef } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { useFonts } from "expo-font";
 import * as SplashScreen from "expo-splash-screen";
@@ -12,6 +12,11 @@ import { AuthProvider, useAuth } from "./src/context/AuthContext";
 import LoginScreen from "./src/screens/LoginScreen";
 import HomeScreen from "./src/screens/HomeScreen";
 import ChatScreen from "./src/screens/ChatScreen";
+import SettingsScreen from "./src/screens/SettingsScreen";
+import ProfileScreen from "./src/screens/ProfileScreen";
+import ToolAccessScreen from "./src/connectors/ToolAccessScreen";
+import GmailConnectorScreen from "./src/connectors/GmailConnectorScreen";
+import GlobalAlertUI from "./src/components/GlobalAlertUI";
 import { supabase } from "./src/lib/supabase";
 import * as Linking from "expo-linking";
 import * as QueryParams from "expo-auth-session/build/QueryParams";
@@ -21,6 +26,9 @@ import { MaterialIcons } from "@expo/vector-icons";
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
+
+/** Used to navigate after OAuth returns with ?connector_status= on web */
+export const navigationRef = createNavigationContainerRef();
 
 // Keep splash screen visible while we load fonts and auth state
 SplashScreen.preventAutoHideAsync();
@@ -97,7 +105,7 @@ function MainTabs() {
       <Tab.Screen name="Tasks" component={HomeScreen} />
       <Tab.Screen name="Chat" component={ChatScreen} />
       <Tab.Screen name="Library" component={HomeScreen} />
-      <Tab.Screen name="Me" component={HomeScreen} />
+      <Tab.Screen name="Me" component={ProfileScreen} />
     </Tab.Navigator>
   );
 }
@@ -109,6 +117,13 @@ function AppNavigator() {
   // Root-level listener specifically meant to catch deep links that WebBrowser drops.
   useEffect(() => {
     if (incomingUrl && Platform.OS !== 'web') {
+      // Connector OAuth return — not a Supabase session URL
+      if (
+        incomingUrl.includes("connectors/callback") ||
+        incomingUrl.includes("connector_status=")
+      ) {
+        return;
+      }
       const { params, errorCode } = QueryParams.getQueryParams(incomingUrl);
       if (params?.access_token && params?.refresh_token) {
         supabase.auth.setSession({
@@ -137,6 +152,27 @@ function AppNavigator() {
     }
   }, [fontsLoaded, fontError, isLoading]);
 
+  // OAuth return on web: land on Profile so ConnectorsSection mounts and shows alerts
+  useEffect(() => {
+    if (!session || Platform.OS !== "web" || typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (!params.get("connector_status")) return;
+    const id = requestAnimationFrame(() => {
+      if (navigationRef.isReady()) {
+        navigationRef.navigate("Profile" as never);
+      }
+    });
+    return () => cancelAnimationFrame(id);
+  }, [session]);
+
+  // Native deep link: open Profile when OAuth appends connector_status to URL
+  useEffect(() => {
+    if (!session || !incomingUrl || Platform.OS === "web") return;
+    if (incomingUrl.includes("connector_status=") && navigationRef.isReady()) {
+      navigationRef.navigate("Profile" as never);
+    }
+  }, [incomingUrl, session]);
+
   if (!fontsLoaded || isLoading) {
     return (
       <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#f8f9fa" }}>
@@ -146,9 +182,15 @@ function AppNavigator() {
   }
 
   return (
-    <NavigationContainer>
+    <NavigationContainer ref={navigationRef}>
       {session ? (
-        <MainTabs />
+        <Stack.Navigator screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="MainTabs" component={MainTabs} />
+          <Stack.Screen name="Profile" component={ProfileScreen} />
+          <Stack.Screen name="Settings" component={SettingsScreen} />
+          <Stack.Screen name="ToolAccess" component={ToolAccessScreen} />
+          <Stack.Screen name="GmailConnector" component={GmailConnectorScreen} />
+        </Stack.Navigator>
       ) : (
         <Stack.Navigator screenOptions={{ headerShown: false }}>
           <Stack.Screen name="Login" component={LoginScreen} />
@@ -180,6 +222,7 @@ export default function App() {
             }
           ]}>
             <AppNavigator />
+            <GlobalAlertUI />
           </View>
         </View>
       </AuthProvider>

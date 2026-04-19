@@ -58,7 +58,22 @@ def get_or_create_user(auth_id: str, email: str, display_name: str | None, avata
         user = cur.fetchone()
 
         if user:
-            return dict(user)
+            # Keep IdP email current (used e.g. to match Notion OAuth owner email to the signed-in account).
+            trimmed = (email or "").strip()
+            cur.execute(
+                """
+                UPDATE public.users
+                SET
+                    email = CASE WHEN %s <> '' THEN %s ELSE email END,
+                    display_name = COALESCE(%s, display_name),
+                    avatar_url = COALESCE(%s, avatar_url)
+                WHERE auth_id = %s
+                RETURNING id, auth_id, email, display_name, avatar_url
+                """,
+                (trimmed, trimmed, display_name, avatar_url, auth_id),
+            )
+            updated = cur.fetchone()
+            return dict(updated) if updated else dict(user)
 
         # Create new user
         cur.execute(

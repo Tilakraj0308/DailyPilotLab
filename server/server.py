@@ -1,5 +1,5 @@
-from fastapi import FastAPI, Response, UploadFile, File, Depends
-from fastapi.responses import StreamingResponse
+from fastapi import FastAPI, Response, UploadFile, File, Depends, HTTPException, Request
+from fastapi.responses import StreamingResponse, RedirectResponse
 from pydantic import BaseModel
 import json
 import asyncio
@@ -15,8 +15,9 @@ from typing import List
 from dotenv import load_dotenv
 from utils.topic_manager import update_topic_recency
 from services.chat_service import transcribe_audio, stream_chat
-from services.chat_db import get_or_create_session, save_message, load_history, get_user_sessions
+from services.chat_db import ChatSessionAccessError, get_or_create_session, save_message, load_history, get_user_sessions
 from models.chat import ChatSessionSummary
+from connectors import router as connectors_router
 
 load_dotenv()
 app = FastAPI()
@@ -28,6 +29,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(connectors_router, prefix="/connectors", tags=["connectors"])
 
 # ─── Health Check Endpoint ──────────────────────────────────────────────────
 
@@ -99,6 +102,8 @@ def sync_profile(payload: dict = Depends(get_current_user)):
     
     user = get_or_create_user(auth_id, email, name, avatar_url)
     return {"status": "success", "user": user}
+
+
 
 # ─── Ideas ───────────────────────────────────────────────────────────────────
     
@@ -187,7 +192,10 @@ async def chat_stream(req: ChatStreamRequest, payload: dict = Depends(get_curren
     user_text = req.content
     user_id = payload.get("sub", "")
 
-    await asyncio.to_thread(get_or_create_session, session_id, user_id)
+    try:
+        await asyncio.to_thread(get_or_create_session, session_id, user_id)
+    except ChatSessionAccessError as e:
+        raise HTTPException(status_code=403, detail=str(e)) from e
     await asyncio.to_thread(save_message, session_id, "user", user_text)
 
     history_rows = await asyncio.to_thread(load_history, session_id)
@@ -195,7 +203,7 @@ async def chat_stream(req: ChatStreamRequest, payload: dict = Depends(get_curren
 
     async def event_stream():
         full_response = ""
-        async for token in stream_chat(history):
+        async for token in stream_chat(history, user_id):
             full_response += token
             yield f'data: {json.dumps({"type": "token", "content": token})}\n\n'
         

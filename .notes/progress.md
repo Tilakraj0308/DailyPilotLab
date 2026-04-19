@@ -44,6 +44,7 @@
 - [x] OpenAI integration (structured outputs + embeddings)
 - [x] YAML prompt templates
 - [x] Pydantic models for all I/O
+- [x] Connectors: Google Calendar, Google Tasks, **Notion** (OAuth + encrypted tokens + tool registry CRUD for Notion pages)
 
 ## Pending / Ideas
 - [ ] Error handling improvements (currently swallows errors with 200 status)
