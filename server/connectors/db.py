@@ -19,6 +19,25 @@ def cleanup_expired_oauth_states() -> None:
         cur.execute("DELETE FROM public.oauth_state_sessions WHERE expires_at < now()")
 
 
+def get_user_email_by_auth_id(auth_id: str) -> str | None:
+    """Primary email stored for this app user (synced from Supabase JWT via /auth/profile)."""
+    if not auth_id:
+        return None
+    with get_dict_cursor() as cur:
+        cur.execute(
+            "SELECT email FROM public.users WHERE auth_id = %s LIMIT 1",
+            (auth_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        raw = row.get("email")
+        if raw is None:
+            return None
+        s = str(raw).strip()
+        return s or None
+
+
 def connector_provider_exists(provider_key: str) -> bool:
     """True if `provider_key` is present in `public.connector_providers` (required for OAuth FK)."""
     with get_dict_cursor() as cur:

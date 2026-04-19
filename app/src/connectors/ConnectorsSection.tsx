@@ -39,8 +39,19 @@ function connectedSuccessLabel(provider: string | null): string {
     return "Google Calendar is connected.";
 }
 
+function humanizeConnectorErrorReason(reason: string | null | undefined): string {
+    if (!reason) return "Please try again.";
+    if (reason === "notion_account_email_mismatch") {
+        return (
+            "The Notion account you approved does not use the same email as this app sign-in. " +
+            "Sign out of Notion in the browser (or use a private window), then connect again using the matching Notion user."
+        );
+    }
+    return reason;
+}
+
 export default function ConnectorsSection() {
-    const { session } = useAuth();
+    const { session, user } = useAuth();
     const navigation = useNavigation<any>();
 
     const [items, setItems] = useState<ConnectorStatusItem[]>([]);
@@ -82,7 +93,7 @@ export default function ConnectorsSection() {
             universalAlert("Connected", connectedSuccessLabel(provider));
             window.history.replaceState({}, "", window.location.pathname);
         } else if (status === "error") {
-            universalAlert("Connection failed", reason || "Please try again.");
+            universalAlert("Connection failed", humanizeConnectorErrorReason(reason));
             window.history.replaceState({}, "", window.location.pathname);
         }
     }, []);
@@ -97,7 +108,11 @@ export default function ConnectorsSection() {
                 universalAlert("Connected", connectedSuccessLabel(p));
             } else if (url.includes("connector_status=error")) {
                 load();
-                universalAlert("Connection failed", "Check your settings and try again.");
+                const reason =
+                    typeof parsed.queryParams?.reason === "string"
+                        ? parsed.queryParams.reason
+                        : undefined;
+                universalAlert("Connection failed", humanizeConnectorErrorReason(reason));
             }
         });
         return () => sub.remove();
@@ -105,17 +120,43 @@ export default function ConnectorsSection() {
 
     const handleConnectProvider = async (providerKey: string) => {
         if (!token) return;
-        setBusyId(providerKey);
-        try {
-            const returnTo = getConnectorReturnUrl();
-            const { authorization_url } = await startConnectorOAuth(providerKey, token, returnTo);
-            await openConnectorAuthorizationUrl(authorization_url);
-        } catch (e: any) {
-            universalAlert("Error", e?.message || "Could not start connection.");
-            await load();
-        } finally {
-            setBusyId(null);
+
+        const runOAuth = async () => {
+            setBusyId(providerKey);
+            try {
+                const returnTo = getConnectorReturnUrl();
+                const { authorization_url } = await startConnectorOAuth(providerKey, token, returnTo);
+                await openConnectorAuthorizationUrl(authorization_url, {
+                    preferEphemeralSession: providerKey === NOTION_PROVIDER,
+                });
+            } catch (e: any) {
+                universalAlert("Error", e?.message || "Could not start connection.");
+                await load();
+            } finally {
+                setBusyId(null);
+            }
+        };
+
+        if (providerKey === NOTION_PROVIDER) {
+            const appEmail = user?.email?.trim();
+            if (appEmail) {
+                const webNote =
+                    Platform.OS === "web"
+                        ? " On the web, this Chrome profile may already be logged into Notion as someone else (see the account menu on Notion’s screen). Switch there, sign out at notion.so, or use a Guest/Incognito window—then approve. If you approve the wrong account, the app will reject the connection."
+                        : "";
+                universalAlert(
+                    "Connect Notion",
+                    `This app account is ${appEmail}. Notion must approve access for that same person (Notion’s token email must match).${webNote}`,
+                    [
+                        { text: "Cancel", style: "cancel" },
+                        { text: "Continue", onPress: () => void runOAuth() },
+                    ]
+                );
+                return;
+            }
         }
+
+        await runOAuth();
     };
 
     const handleCardPress = (providerKey: string, isConnected: boolean, isReauth: boolean) => {

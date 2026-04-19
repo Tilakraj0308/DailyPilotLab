@@ -23,6 +23,37 @@ NOTION_TOKEN_URL = "https://api.notion.com/v1/oauth/token"
 DEFAULT_NOTION_VERSION = "2022-06-28"
 
 
+def _normalize_email(value: str | None) -> str | None:
+    if not value or not isinstance(value, str):
+        return None
+    s = value.strip().lower()
+    return s or None
+
+
+def notion_owner_person_email_from_token_payload(payload: dict[str, Any]) -> str | None:
+    """
+    Notion token response may include owner.type == "user" with person.email.
+    Workspace installs use owner.type == "workspace" — no person email to compare.
+    """
+    owner = payload.get("owner")
+    if not isinstance(owner, dict) or owner.get("type") != "user":
+        return None
+    inner = owner.get("user")
+    if not isinstance(inner, dict):
+        return None
+    person = inner.get("person")
+    if isinstance(person, dict):
+        em = person.get("email")
+        if isinstance(em, str) and em.strip():
+            return em.strip()
+    return None
+
+
+def _notion_oauth_strict_app_email() -> bool:
+    v = (env("NOTION_OAUTH_STRICT_APP_EMAIL", "true") or "true").lower()
+    return v not in ("0", "false", "no", "off")
+
+
 def _notion_credentials() -> tuple[str, str]:
     cid = env("NOTION_CLIENT_ID")
     csec = env("NOTION_CLIENT_SECRET")
@@ -149,6 +180,29 @@ class NotionConnector:
         if not access_token:
             db.mark_connector_error(user_id, self.provider_key, "missing_access_token")
             return self._failure_redirect(return_to, "missing_access_token"), False, "missing_access_token"
+
+        if _notion_oauth_strict_app_email():
+            app_email = _normalize_email(db.get_user_email_by_auth_id(user_id))
+            notion_email = _normalize_email(notion_owner_person_email_from_token_payload(token_payload))
+            if app_email and notion_email and app_email != notion_email:
+                logger.warning(
+                    "Notion OAuth email mismatch: app=%s notion=%s user_id=%s",
+                    app_email,
+                    notion_email,
+                    user_id,
+                )
+                db.mark_connector_error(user_id, self.provider_key, "notion_account_email_mismatch")
+                return (
+                    self._failure_redirect(return_to, "notion_account_email_mismatch"),
+                    False,
+                    "notion_account_email_mismatch",
+                )
+            if app_email and not notion_email:
+                logger.warning(
+                    "Notion OAuth: strict email enabled but token has no person email (workspace owner?); "
+                    "allowing connection user_id=%s",
+                    user_id,
+                )
 
         expires_at = None
         if expires_in is not None:

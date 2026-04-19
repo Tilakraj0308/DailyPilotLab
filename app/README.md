@@ -176,6 +176,8 @@ Flow (all connectors):
 
 **Consent UX:** Calendar, Tasks, and Gmail are **separate** connector providers but use the **same** Google OAuth Web client. The API usually **does not** send `prompt=consent` so Google can use **incremental authorization** when you connect another Google product (often a shorter step). It **does** send `prompt=consent` when that connector is already in `reauth_required` or `error` so you get a full re-approval. Google still hosts the consent screen; it cannot be replaced for these APIs.
 
+**Notion vs Google:** Notion OAuth is independent of Google. The backend enforces that the **Notion account’s primary person email** (from Notion’s token response, when present) matches the **email on your app account** (`public.users`, synced from Supabase when the app calls `/auth/profile`). On iOS, connecting Notion uses an **ephemeral in-app browser session** when possible to reduce picking up another Notion login from Safari.
+
 **Google Cloud:** Enable **Google Calendar API**, **Google Tasks API**, and **Gmail API** for the project. Under the OAuth client’s **Authorized redirect URIs**, add every URI you use:
 
 - `GOOGLE_CONNECTOR_REDIRECT_URI` — e.g. `http://127.0.0.1:8000/connectors/google_calendar/callback`

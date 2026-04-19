@@ -192,6 +192,8 @@ Calendar, Tasks, and **Gmail** use separate provider keys but the **same** `GOOG
 
 Notion uses a **separate** OAuth client (`NOTION_CLIENT_ID` / `NOTION_CLIENT_SECRET` from [Notion integrations](https://www.notion.so/my-integrations)). Register the **exact** redirect URI **`NOTION_CONNECTOR_REDIRECT_URI`** (for example `http://127.0.0.1:8000/connectors/notion/callback`). Token exchange uses Notion’s `POST /v1/oauth/token` with HTTP Basic auth; there is no Google-style remote revoke URL — **disconnect** clears tokens locally. Optional **`NOTION_API_VERSION`** defaults to `2022-06-28` and should match Notion REST calls.
 
+**Same email as app sign-in:** Notion’s authorize URL cannot take a Google `login_hint`. By default, after the code is exchanged, the API compares **`owner.user.person.email`** from Notion’s token response to **`public.users.email`** (kept in sync from the Supabase JWT via `GET /auth/profile`). If both are present and they differ (case-insensitive), the connection fails with `notion_account_email_mismatch` and tokens are not stored. Set **`NOTION_OAUTH_STRICT_APP_EMAIL=false`** only if you need to disable that check (e.g. local testing). Workspace-only token payloads without a person email skip the comparison and are allowed (with a server log).
+
 If Chrome shows **`ERR_SSL_PROTOCOL_ERROR`** on the callback: the browser is opening **`https://`** to `127.0.0.1:8000`, but the dev server only speaks **`http://`**. Use **`http://`** in the address bar, ensure Notion’s redirect URI is **`http://...`** (not `https://`), and remove any HSTS entry for `127.0.0.1` in `chrome://net-internals/#hsts` if you previously forced HTTPS for loopback.
 
 ---

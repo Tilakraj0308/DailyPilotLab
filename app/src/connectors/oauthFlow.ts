@@ -15,14 +15,27 @@ export function getConnectorReturnUrl(): string {
   return Linking.createURL("connectors/callback");
 }
 
+export type OpenConnectorAuthOptions = {
+  /**
+   * iOS: prefer an ephemeral web session so a prior Notion login in Safari
+   * is less likely to auto-approve the wrong account (no effect on Android/web).
+   */
+  preferEphemeralSession?: boolean;
+};
+
 /**
- * Open Google's consent screen. On web, full-page navigation; on native, in-app browser.
+ * Open the provider consent screen. On web, full-page navigation; on native, in-app browser.
  */
-export async function openConnectorAuthorizationUrl(authorizationUrl: string): Promise<void> {
+export async function openConnectorAuthorizationUrl(
+  authorizationUrl: string,
+  options?: OpenConnectorAuthOptions
+): Promise<void> {
   if (Platform.OS === "web") {
     window.location.href = authorizationUrl;
     return;
   }
   const returnUrl = getConnectorReturnUrl();
-  await WebBrowser.openAuthSessionAsync(authorizationUrl, returnUrl);
+  await WebBrowser.openAuthSessionAsync(authorizationUrl, returnUrl, {
+    preferEphemeralSession: options?.preferEphemeralSession === true,
+  });
 }

@@ -53,11 +53,29 @@ def _format_tools_for_openai(tools_def: list[dict]) -> list[dict]:
                 p_type = "object"
             elif p_type == "list":
                 p_type = "array"
-            
-            props[p_name] = {
+
+            prop: dict[str, Any] = {
                 "type": p_type,
-                "description": p_def.get("description", "")
+                "description": p_def.get("description", ""),
             }
+            # OpenAI requires JSON Schema "items" for array-valued parameters.
+            if p_type == "array":
+                raw_items = p_def.get("items")
+                if isinstance(raw_items, dict) and raw_items.get("type"):
+                    it = raw_items["type"]
+                    if it == "int":
+                        it = "integer"
+                    elif it == "bool":
+                        it = "boolean"
+                    elif it == "str":
+                        it = "string"
+                    elif it == "float":
+                        it = "number"
+                    prop["items"] = {"type": it}
+                else:
+                    prop["items"] = {"type": "string"}
+
+            props[p_name] = prop
             if p_def.get("required"):
                 required.append(p_name)
                 
