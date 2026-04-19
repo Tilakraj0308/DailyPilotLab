@@ -15,3 +15,10 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     type: Literal["token", "transcription", "done", "error"]
     content: str
+
+class ChatSessionSummary(BaseModel):
+    id: str
+    updated_at: str
+    created_at: str
+    title: str | None = None
+

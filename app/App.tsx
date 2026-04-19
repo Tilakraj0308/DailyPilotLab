@@ -21,10 +21,11 @@ import { supabase } from "./src/lib/supabase";
 import * as Linking from "expo-linking";
 import * as QueryParams from "expo-auth-session/build/QueryParams";
 
-const Stack = createNativeStackNavigator();
+import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
+import { MaterialIcons } from "@expo/vector-icons";
 
-/** Used to navigate after OAuth returns with ?connector_status= on web */
-export const navigationRef = createNavigationContainerRef();
+const Stack = createNativeStackNavigator();
+const Tab = createBottomTabNavigator();
 
 // Keep splash screen visible while we load fonts and auth state
 SplashScreen.preventAutoHideAsync();
@@ -65,6 +66,45 @@ class ErrorBoundary extends React.Component<
     }
     return this.props.children;
   }
+}
+
+function MainTabs() {
+  return (
+    <Tab.Navigator
+      screenOptions={({ route }) => ({
+        headerShown: false,
+        tabBarIcon: ({ color, size }) => {
+          let iconName: string = 'home';
+          if (route.name === 'Home') iconName = 'home';
+          else if (route.name === 'Tasks') iconName = 'check-circle';
+          else if (route.name === 'Chat') iconName = 'chat-bubble';
+          else if (route.name === 'Library') iconName = 'auto-stories';
+          else if (route.name === 'Me') iconName = 'person';
+          return <MaterialIcons name={iconName as any} size={size} color={color} />;
+        },
+        tabBarActiveTintColor: '#4e45e4',
+        tabBarInactiveTintColor: '#586064',
+        tabBarHideOnKeyboard: true,
+        tabBarLabelStyle: {
+          fontFamily: 'Inter_500Medium',
+          fontSize: 10,
+        },
+        tabBarStyle: {
+          backgroundColor: '#f8f9fa',
+          borderTopWidth: 1,
+          borderTopColor: 'rgba(171, 179, 183, 0.1)',
+          paddingBottom: Platform.OS === 'ios' ? 24 : 24,
+          height: Platform.OS === 'ios' ? 80 : 64,
+        },
+      })}
+    >
+      <Tab.Screen name="Home" component={HomeScreen} />
+      <Tab.Screen name="Tasks" component={HomeScreen} />
+      <Tab.Screen name="Chat" component={ChatScreen} />
+      <Tab.Screen name="Library" component={HomeScreen} />
+      <Tab.Screen name="Me" component={HomeScreen} />
+    </Tab.Navigator>
+  );
 }
 
 function AppNavigator() {
@@ -139,21 +179,14 @@ function AppNavigator() {
   }
 
   return (
-    <NavigationContainer ref={navigationRef}>
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
-        {session ? (
-          <>
-            <Stack.Screen name="Home" component={HomeScreen} />
-            <Stack.Screen name="Chat" component={ChatScreen} />
-            <Stack.Screen name="Profile" component={ProfileScreen} />
-            <Stack.Screen name="Settings" component={SettingsScreen} />
-            <Stack.Screen name="ToolAccess" component={ToolAccessScreen} />
-            <Stack.Screen name="GmailConnector" component={GmailConnectorScreen} />
-          </>
-        ) : (
+    <NavigationContainer>
+      {session ? (
+        <MainTabs />
+      ) : (
+        <Stack.Navigator screenOptions={{ headerShown: false }}>
           <Stack.Screen name="Login" component={LoginScreen} />
-        )}
-      </Stack.Navigator>
+        </Stack.Navigator>
+      )}
     </NavigationContainer>
   );
 }
@@ -170,10 +203,13 @@ export default function App() {
               width: '100%',
               marginHorizontal: 'auto',
               backgroundColor: '#f8f9fa',
-              boxShadow: '0 25px 50px -12px rgb(0 0 0 / 0.25)', // Tailwind shadow-2xl equivalent loosely
+              boxShadow: '0 25px 50px -12px rgb(0 0 0 / 0.25)',
               borderLeftWidth: 1,
               borderRightWidth: 1,
-              borderColor: 'rgba(171, 179, 183, 0.2)' // outline-variant/20 loosely
+              borderColor: 'rgba(171, 179, 183, 0.2)',
+              // Clip the sliding sidebar so it doesn't escape into the gray background
+              overflow: 'hidden',
+              position: 'relative',
             }
           ]}>
             <AppNavigator />

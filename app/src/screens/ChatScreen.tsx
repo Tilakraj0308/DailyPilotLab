@@ -10,13 +10,16 @@ import {
     ActivityIndicator,
     Keyboard,
     Alert,
+    Animated as RNAnimated,
+    NativeSyntheticEvent,
+    NativeScrollEvent,
 } from 'react-native';
 import { universalAlert } from '../lib/alerts';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import * as FileSystem from 'expo-file-system/legacy';
-import { useChat, ChatMessage } from '../hooks/useChat';
+import { useChat, ChatMessage, ChatSessionSummary } from '../hooks/useChat';
 import { useAudioRecorder, requestRecordingPermissionsAsync, setAudioModeAsync } from 'expo-audio';
 import Animated, { useSharedValue, withTiming, FadeIn, FadeOut, withRepeat, withSequence, withDelay } from 'react-native-reanimated';
 import SoundBarsEqualizer from '../components/SoundBarsEqualizer';
@@ -114,10 +117,147 @@ const TypingWave = () => {
     );
 };
 
+// Skeleton loader for history sidebar — pulsing placeholder rows
+const SKELETON_COUNT = 5;
+const HistorySkeleton = () => {
+    if (Platform.OS === 'web') {
+        // Inject CSS once for pulse animation
+        if (typeof document !== 'undefined' && !document.getElementById('skeleton-pulse-style')) {
+            const style = document.createElement('style');
+            style.id = 'skeleton-pulse-style';
+            style.textContent = `
+                @keyframes skeletonPulse {
+                    0%, 100% { opacity: 0.3; }
+                    50% { opacity: 0.7; }
+                }
+                .skeleton-bar {
+                    background-color: #d1d5db;
+                    border-radius: 8px;
+                    animation: skeletonPulse 1.2s ease-in-out infinite;
+                }
+            `;
+            document.head.appendChild(style);
+        }
+        return (
+            <View style={{ padding: 8 }}>
+                {Array.from({ length: SKELETON_COUNT }).map((_, i) => (
+                    <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12, paddingHorizontal: 12, paddingVertical: 12 }}>
+                        {/* @ts-ignore */}
+                        <div className="skeleton-bar" style={{ width: 20, height: 20, borderRadius: '50%', flexShrink: 0 }} />
+                        {/* @ts-ignore */}
+                        <div className="skeleton-bar" style={{ height: 14, flex: 1, animationDelay: `${i * 0.1}s` }} />
+                    </View>
+                ))}
+            </View>
+        );
+    }
+
+    // Native: use RN Animated for pulse
+    const pulseAnim = useRef(new RNAnimated.Value(0.3)).current;
+    useEffect(() => {
+        const loop = RNAnimated.loop(
+            RNAnimated.sequence([
+                RNAnimated.timing(pulseAnim, { toValue: 0.7, duration: 600, useNativeDriver: true }),
+                RNAnimated.timing(pulseAnim, { toValue: 0.3, duration: 600, useNativeDriver: true }),
+            ])
+        );
+        loop.start();
+        return () => loop.stop();
+    }, []);
+
+    return (
+        <View style={{ padding: 8 }}>
+            {Array.from({ length: SKELETON_COUNT }).map((_, i) => (
+                <RNAnimated.View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12, paddingHorizontal: 12, paddingVertical: 12, opacity: pulseAnim }}>
+                    <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: '#d1d5db' }} />
+                    <View style={{ height: 14, flex: 1, borderRadius: 8, backgroundColor: '#d1d5db' }} />
+                </RNAnimated.View>
+            ))}
+        </View>
+    );
+};
+
+const SESSIONS_PAGE_SIZE = 15;
+
 export default function ChatScreen() {
     const navigation = useNavigation<any>();
-    const { messages, status, sendText, sendAudio, clearSession, isWaitingForResponse } = useChat();
+    const { messages, status, sendText, sendAudio, clearSession, isWaitingForResponse, isLoadingHistory, getSessions, loadSession } = useChat();
     const [inputText, setInputText] = useState('');
+
+    const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+    const sidebarX = useSharedValue(-300);
+    const [sessionsGrouped, setSessionsGrouped] = useState<{ title: string, data: ChatSessionSummary[] }[]>([]);
+    const [isLoadingSessions, setIsLoadingSessions] = useState(false);
+    const [sessionOffset, setSessionOffset] = useState(0);
+    const [hasMoreSessions, setHasMoreSessions] = useState(true);
+    const allSessionsRef = useRef<ChatSessionSummary[]>([]);
+    const hasFetchedSessionsRef = useRef(false);
+
+    const groupSessions = (sessions: ChatSessionSummary[]) => {
+        const now = new Date();
+        const today: ChatSessionSummary[] = [];
+        const yesterday: ChatSessionSummary[] = [];
+        const previous7Days: ChatSessionSummary[] = [];
+        const older: ChatSessionSummary[] = [];
+
+        sessions.forEach(s => {
+            const date = new Date(s.updated_at);
+            const diffTime = Math.abs(now.getTime() - date.getTime());
+            const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+
+            if (diffDays === 0 && now.getDate() === date.getDate()) {
+                today.push(s);
+            } else if (diffDays === 1 || (diffDays === 0 && now.getDate() !== date.getDate())) {
+                yesterday.push(s);
+            } else if (diffDays <= 7) {
+                previous7Days.push(s);
+            } else {
+                older.push(s);
+            }
+        });
+
+        const groups = [];
+        if (today.length) groups.push({ title: 'Today', data: today });
+        if (yesterday.length) groups.push({ title: 'Yesterday', data: yesterday });
+        if (previous7Days.length) groups.push({ title: 'Previous 7 Days', data: previous7Days });
+        if (older.length) groups.push({ title: 'Older', data: older });
+        return groups;
+    };
+
+    const fetchAndGroupSessions = async (offset: number = 0, append: boolean = false) => {
+        setIsLoadingSessions(true);
+        const sessions = await getSessions(SESSIONS_PAGE_SIZE, offset);
+
+        if (sessions.length < SESSIONS_PAGE_SIZE) {
+            setHasMoreSessions(false);
+        }
+
+        const updated = append ? [...allSessionsRef.current, ...sessions] : sessions;
+        allSessionsRef.current = updated;
+        setSessionsGrouped(groupSessions(updated));
+        setSessionOffset(offset + sessions.length);
+        setIsLoadingSessions(false);
+    };
+
+    const loadMoreSessions = () => {
+        if (!isLoadingSessions && hasMoreSessions) {
+            fetchAndGroupSessions(sessionOffset, true);
+        }
+    };
+
+    const toggleSidebar = () => {
+        const nextState = !isSidebarOpen;
+        setIsSidebarOpen(nextState);
+        sidebarX.value = withTiming(nextState ? 0 : -300, { duration: 250 });
+        if (nextState && !hasFetchedSessionsRef.current) {
+            // First open: fetch from server, show skeleton
+            fetchAndGroupSessions(0, false).then(() => {
+                hasFetchedSessionsRef.current = true;
+            });
+        }
+        // Subsequent opens: cached data is already in sessionsGrouped, shown instantly
+    };
+
 
     // Audio recording state
     const [isRecording, setIsRecording] = useState(false);
@@ -377,12 +517,15 @@ export default function ChatScreen() {
 
     // Manual keyboard height tracking to avoid residual padding
     const [keyboardHeight, setKeyboardHeight] = useState(0);
+    const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
     useEffect(() => {
         const showSub = Keyboard.addListener('keyboardDidShow', (e) => {
             setKeyboardHeight(e.endCoordinates.height);
+            setIsKeyboardVisible(true);
         });
         const hideSub = Keyboard.addListener('keyboardDidHide', () => {
             setKeyboardHeight(0);
+            setIsKeyboardVisible(false);
         });
         return () => {
             showSub.remove();
@@ -391,46 +534,175 @@ export default function ChatScreen() {
     }, []);
 
     return (
-        <SafeAreaView className="flex-1 bg-background" edges={['top', 'bottom']}>
+        <SafeAreaView className="flex-1 bg-background" edges={['top']}>
+            {/* Sidebar Overlay */}
+            {isSidebarOpen && (
+                <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 40, backgroundColor: 'rgba(0,0,0,0.5)' }}>
+                    <TouchableOpacity
+                        style={{ flex: 1 }}
+                        activeOpacity={1}
+                        onPress={toggleSidebar}
+                    />
+                </View>
+            )}
+
+            {/* Sidebar — Platform-aware animation */}
+            {Platform.OS === 'web' ? (
+                // Web: CSS transition on transform so it actually animates in the browser
+                <View
+                    style={{
+                        position: 'absolute', top: 0, left: 0, bottom: 0,
+                        width: 300, zIndex: 50,
+                        backgroundColor: '#ffffff',
+                        boxShadow: '4px 0 20px rgba(0,0,0,0.12)',
+                        transform: `translateX(${isSidebarOpen ? '0px' : '-300px'})`,
+                        transition: 'transform 250ms cubic-bezier(0.4, 0, 0.2, 1)',
+                    } as any}
+                >
+                    <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
+                        <View className="flex-row items-center justify-between p-4 border-b border-outline-variant/10">
+                            <Text className="text-lg font-bold text-on-surface" style={{ fontFamily: "Manrope_700Bold" }}>Recents</Text>
+                            <TouchableOpacity onPress={toggleSidebar} className="p-1">
+                                <MaterialIcons name="close" size={24} color="#586064" />
+                            </TouchableOpacity>
+                        </View>
+                        <TouchableOpacity
+                            onPress={() => { toggleSidebar(); clearSession(); }}
+                            className="flex-row items-center gap-3 mx-2 mt-3 mb-1 px-3 py-3 rounded-lg bg-secondary/10 border border-secondary/20"
+                        >
+                            <MaterialIcons name="add-comment" size={20} color="#4e45e4" />
+                            <Text className="text-sm font-medium text-secondary" style={{ fontFamily: "Inter_500Medium" }}>New Chat</Text>
+                        </TouchableOpacity>
+                        {isLoadingSessions && sessionsGrouped.length === 0 ? (
+                            <HistorySkeleton />
+                        ) : (
+                            <ScrollView
+                                style={{ flex: 1, padding: 8 }}
+                                showsVerticalScrollIndicator={false}
+                                onScroll={(e: NativeSyntheticEvent<NativeScrollEvent>) => {
+                                    const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
+                                    if (layoutMeasurement.height + contentOffset.y >= contentSize.height - 40) {
+                                        loadMoreSessions();
+                                    }
+                                }}
+                                scrollEventThrottle={400}
+                            >
+                                {sessionsGrouped.map(group => (
+                                    <View key={group.title} style={{ marginBottom: 16 }}>
+                                        <Text className="text-xs font-bold text-on-surface-variant mb-2 px-2" style={{ fontFamily: "Inter_500Medium" }}>{group.title}</Text>
+                                        {group.data.map(session => (
+                                            <TouchableOpacity
+                                                key={session.id}
+                                                className="px-3 py-3 rounded-lg flex-row items-center gap-3 mb-1 bg-surface-container/30"
+                                                onPress={() => { toggleSidebar(); loadSession(session.id); }}
+                                            >
+                                                <MaterialIcons name="chat-bubble-outline" size={18} color="#586064" />
+                                                <Text className="text-sm text-on-surface flex-1" numberOfLines={1} style={{ fontFamily: "Inter_400Regular" }}>
+                                                    {session.title || "New Chat"}
+                                                </Text>
+                                            </TouchableOpacity>
+                                        ))}
+                                    </View>
+                                ))}
+                                {sessionsGrouped.length === 0 && !isLoadingSessions && (
+                                    <Text className="text-sm text-on-surface-variant p-4 text-center" style={{ fontFamily: "Inter_400Regular" }}>No history found.</Text>
+                                )}
+                                {isLoadingSessions && sessionsGrouped.length > 0 && <HistorySkeleton />}
+                            </ScrollView>
+                        )}
+                    </SafeAreaView>
+                </View>
+            ) : (
+                // Native: Reanimated translateX
+                <Animated.View style={{ transform: [{ translateX: sidebarX }], position: 'absolute', top: 0, left: 0, bottom: 0, width: 300, zIndex: 50, backgroundColor: '#ffffff', shadowColor: '#000', shadowOffset: { width: 4, height: 0 }, shadowOpacity: 0.1, shadowRadius: 10, elevation: 10 }}>
+                    <SafeAreaView className="flex-1" edges={['top', 'bottom']}>
+                        <View className="flex-row items-center justify-between p-4 border-b border-outline-variant/10">
+                            <Text className="text-lg font-bold text-on-surface" style={{ fontFamily: "Manrope_700Bold" }}>Recents</Text>
+                            <TouchableOpacity onPress={toggleSidebar} className="p-1">
+                                <MaterialIcons name="close" size={24} color="#586064" />
+                            </TouchableOpacity>
+                        </View>
+                        <TouchableOpacity
+                            onPress={() => { toggleSidebar(); clearSession(); }}
+                            className="flex-row items-center gap-3 mx-2 mt-3 mb-1 px-3 py-3 rounded-lg bg-secondary/10 border border-secondary/20"
+                        >
+                            <MaterialIcons name="add-comment" size={20} color="#4e45e4" />
+                            <Text className="text-sm font-medium text-secondary" style={{ fontFamily: "Inter_500Medium" }}>New Chat</Text>
+                        </TouchableOpacity>
+                        {isLoadingSessions && sessionsGrouped.length === 0 ? (
+                            <HistorySkeleton />
+                        ) : (
+                            <ScrollView
+                                className="flex-1 p-2"
+                                showsVerticalScrollIndicator={false}
+                                onScroll={(e: NativeSyntheticEvent<NativeScrollEvent>) => {
+                                    const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
+                                    if (layoutMeasurement.height + contentOffset.y >= contentSize.height - 40) {
+                                        loadMoreSessions();
+                                    }
+                                }}
+                                scrollEventThrottle={400}
+                            >
+                                {sessionsGrouped.map(group => (
+                                    <View key={group.title} className="mb-4">
+                                        <Text className="text-xs font-bold text-on-surface-variant mb-2 px-2" style={{ fontFamily: "Inter_500Medium" }}>{group.title}</Text>
+                                        {group.data.map(session => (
+                                            <TouchableOpacity
+                                                key={session.id}
+                                                className="px-3 py-3 rounded-lg flex-row items-center gap-3 mb-1 bg-surface-container/30"
+                                                onPress={() => { toggleSidebar(); loadSession(session.id); }}
+                                            >
+                                                <MaterialIcons name="chat-bubble-outline" size={18} color="#586064" />
+                                                <Text className="text-sm text-on-surface flex-1" numberOfLines={1} style={{ fontFamily: "Inter_400Regular" }}>
+                                                    {session.title || "New Chat"}
+                                                </Text>
+                                            </TouchableOpacity>
+                                        ))}
+                                    </View>
+                                ))}
+                                {sessionsGrouped.length === 0 && !isLoadingSessions && (
+                                    <Text className="text-sm text-on-surface-variant p-4 text-center" style={{ fontFamily: "Inter_400Regular" }}>No history found.</Text>
+                                )}
+                                {isLoadingSessions && sessionsGrouped.length > 0 && <HistorySkeleton />}
+                            </ScrollView>
+                        )}
+                    </SafeAreaView>
+                </Animated.View>
+            )}
+
             {/* Header */}
             <View className="flex-row items-center justify-between px-5 py-3 border-b border-outline-variant/10 bg-background">
                 <View className="flex-row items-center gap-3">
-                    <TouchableOpacity onPress={() => navigation.goBack()} className="p-1">
-                        <MaterialIcons name="arrow-back" size={24} color="#2b3437" />
+                    <TouchableOpacity onPress={toggleSidebar} className="p-1">
+                        <MaterialIcons name={isSidebarOpen ? "close" : "menu"} size={24} color="#2b3437" />
                     </TouchableOpacity>
                     <Text className="text-lg font-bold text-on-surface" style={{ fontFamily: "Manrope_700Bold" }}>
                         DailyPilot Chat
                     </Text>
                 </View>
-                <TouchableOpacity onPress={clearSession} className="p-2 ml-auto" accessibilityLabel="New Chat">
-                    <MaterialIcons name="add-comment" size={22} color="#4e45e4" />
-                </TouchableOpacity>
             </View>
 
-            {/* Connection Status Banner (if not connected) */}
-            {status !== 'connected' && (
-                <View className="bg-error-container/20 px-4 py-1 flex-row justify-center items-center gap-2">
-                    {status === 'connecting' || status === 'reconnecting' ? (
-                        <>
-                            <ActivityIndicator size="small" color="#ef4444" />
-                            <Text className="text-xs text-error" style={{ fontFamily: "Inter_500Medium" }}>Reconnecting...</Text>
-                        </>
-                    ) : (
-                        <Text className="text-xs text-error" style={{ fontFamily: "Inter_500Medium" }}>Disconnected. Features limited.</Text>
-                    )}
-                </View>
-            )}
+
 
             {/* Main Content */}
-            <View style={{ flex: 1, paddingBottom: keyboardHeight }}>
+            <KeyboardAvoidingView
+                style={{ flex: 1 }}
+                behavior="padding"
+            >
                 <View className="flex-1">
-                    {/* Chat Messages ScrollView */}
+                    {isLoadingHistory ? (
+                        <View className="flex-1 justify-center items-center bg-background">
+                            <ActivityIndicator size="large" color="#4e45e4" />
+                            <Text className="text-sm mt-3 text-on-surface-variant" style={{ fontFamily: "Inter_400Regular" }}>Loading conversation...</Text>
+                        </View>
+                    ) : (
                     <ScrollView
                         ref={scrollViewRef}
                         className="flex-1 bg-background"
                         contentContainerStyle={{ paddingVertical: 16, paddingHorizontal: 16 }}
                         onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
                         showsVerticalScrollIndicator={false}
+                        keyboardShouldPersistTaps="handled"
                     >
                         {messages.length === 0 ? (
                             <View className="flex-1 justify-center items-center py-32 opacity-50">
@@ -454,6 +726,7 @@ export default function ChatScreen() {
                             </View>
                         )}
                     </ScrollView>
+                    )}
 
                     {/* Input Bar - Fixed at bottom, NOT inside scroll view */}
                     <View className="bg-surface border-t border-outline-variant/10 px-4 py-3">
@@ -525,7 +798,7 @@ export default function ChatScreen() {
 
                     </View>
                 </View>
-            </View>
+            </KeyboardAvoidingView>
         </SafeAreaView>
     );
 }

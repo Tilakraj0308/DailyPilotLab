@@ -32,7 +32,7 @@ export default function HomeScreen() {
     };
 
     return (
-        <SafeAreaView className="flex-1 bg-background">
+        <SafeAreaView className="flex-1 bg-background" edges={['top']}>
             {/* 1. Top App Bar (Fixed) */}
             <View className="flex-row items-center justify-between px-5 py-4 border-b border-outline-variant/10 bg-background z-10">
                 <TouchableOpacity>
@@ -291,7 +291,6 @@ export default function HomeScreen() {
                 </View>
             </KeyboardAvoidingView>
 
-            <MainBottomNav active="home" />
         </SafeAreaView>
     );
 }
