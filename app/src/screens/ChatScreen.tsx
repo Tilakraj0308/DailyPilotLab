@@ -23,8 +23,6 @@ import { useChat, ChatMessage, ChatSessionSummary } from '../hooks/useChat';
 import { useAudioRecorder, requestRecordingPermissionsAsync, setAudioModeAsync } from 'expo-audio';
 import Animated, { useSharedValue, withTiming, FadeIn, FadeOut, withRepeat, withSequence, withDelay } from 'react-native-reanimated';
 import SoundBarsEqualizer from '../components/SoundBarsEqualizer';
-import SidebarDrawer from '../components/SidebarDrawer';
-
 // Safely imported expo-audio
 const isAudioAvailable = true;
 
@@ -184,8 +182,8 @@ export default function ChatScreen() {
     const navigation = useNavigation<any>();
     const { messages, status, sendText, sendAudio, clearSession, isWaitingForResponse, isLoadingHistory, getSessions, loadSession } = useChat();
     const [inputText, setInputText] = useState('');
+    const [isComposing, setIsComposing] = useState(false);
 
-    const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [sessionsGrouped, setSessionsGrouped] = useState<{ title: string, data: ChatSessionSummary[] }[]>([]);
     const [isLoadingSessions, setIsLoadingSessions] = useState(false);
     const [sessionOffset, setSessionOffset] = useState(0);
@@ -245,17 +243,13 @@ export default function ChatScreen() {
         }
     };
 
-    const toggleSidebar = () => {
-        const nextState = !isSidebarOpen;
-        setIsSidebarOpen(nextState);
-        if (nextState && !hasFetchedSessionsRef.current) {
-            // First open: fetch from server, show skeleton
+    useEffect(() => {
+        if (!hasFetchedSessionsRef.current) {
             fetchAndGroupSessions(0, false).then(() => {
                 hasFetchedSessionsRef.current = true;
             });
         }
-        // Subsequent opens: cached data is already in sessionsGrouped, shown instantly
-    };
+    }, []);
 
 
     // Audio recording state
@@ -512,6 +506,7 @@ export default function ChatScreen() {
         );
     };
 
+    const showLandingPage = messages.length === 0 && !isComposing;
     const isStreaming = messages.length > 0 && messages[messages.length - 1].role === 'assistant' && status === 'connected';
 
     // Manual keyboard height tracking to avoid residual padding
@@ -534,68 +529,18 @@ export default function ChatScreen() {
 
     return (
         <SafeAreaView className="flex-1 bg-background" edges={['top']}>
-            <SidebarDrawer isOpen={isSidebarOpen} onClose={toggleSidebar} width={300}>
-                <SafeAreaView className="flex-1 bg-white" edges={['top', 'bottom']}>
-                    <View className="flex-1 px-4 py-2">
-                        <View className="flex-row items-center justify-between p-4 border-b border-outline-variant/10">
-                            <Text className="text-lg font-bold text-on-surface" style={{ fontFamily: "Manrope_700Bold" }}>Recents</Text>
-                            <TouchableOpacity onPress={toggleSidebar} className="p-1">
-                                <MaterialIcons name="close" size={24} color="#586064" />
-                            </TouchableOpacity>
-                        </View>
-                        <TouchableOpacity
-                            onPress={() => { toggleSidebar(); clearSession(); }}
-                            className="flex-row items-center gap-3 mx-2 mt-3 mb-1 px-3 py-3 rounded-lg bg-secondary/10 border border-secondary/20"
-                        >
-                            <MaterialIcons name="add-comment" size={20} color="#4e45e4" />
-                            <Text className="text-sm font-medium text-secondary" style={{ fontFamily: "Inter_500Medium" }}>New Chat</Text>
-                        </TouchableOpacity>
-                        {isLoadingSessions && sessionsGrouped.length === 0 ? (
-                            <HistorySkeleton />
-                        ) : (
-                            <ScrollView
-                                className="flex-1 p-2 mt-2"
-                                showsVerticalScrollIndicator={false}
-                                onScroll={(e: NativeSyntheticEvent<NativeScrollEvent>) => {
-                                    const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
-                                    if (layoutMeasurement.height + contentOffset.y >= contentSize.height - 40) {
-                                        loadMoreSessions();
-                                    }
-                                }}
-                                scrollEventThrottle={400}
-                            >
-                                {sessionsGrouped.map(group => (
-                                    <View key={group.title} className="mb-4">
-                                        <Text className="text-xs font-bold text-on-surface-variant mb-2 px-2" style={{ fontFamily: "Inter_500Medium" }}>{group.title}</Text>
-                                        {group.data.map(session => (
-                                            <TouchableOpacity
-                                                key={session.id}
-                                                className="px-3 py-3 rounded-lg flex-row items-center gap-3 mb-1 bg-surface-container/30"
-                                                onPress={() => { toggleSidebar(); loadSession(session.id); }}
-                                            >
-                                                <MaterialIcons name="chat-bubble-outline" size={18} color="#586064" />
-                                                <Text className="text-sm text-on-surface flex-1" numberOfLines={1} style={{ fontFamily: "Inter_400Regular" }}>
-                                                    {session.title || "New Chat"}
-                                                </Text>
-                                            </TouchableOpacity>
-                                        ))}
-                                    </View>
-                                ))}
-                                {sessionsGrouped.length === 0 && !isLoadingSessions && (
-                                    <Text className="text-sm text-on-surface-variant p-4 text-center" style={{ fontFamily: "Inter_400Regular" }}>No history found.</Text>
-                                )}
-                                {isLoadingSessions && sessionsGrouped.length > 0 && <HistorySkeleton />}
-                            </ScrollView>
-                        )}
-                    </View>
-                </SafeAreaView>
-            </SidebarDrawer>
-
             {/* Header */}
             <View className="flex-row items-center justify-between px-5 py-3 border-b border-outline-variant/10 bg-background">
                 <View className="flex-row items-center gap-3">
-                    <TouchableOpacity onPress={toggleSidebar} className="p-1">
-                        <MaterialIcons name={isSidebarOpen ? "close" : "menu"} size={24} color="#2b3437" />
+                    <TouchableOpacity onPress={() => {
+                        if (!showLandingPage) {
+                            clearSession();
+                            setIsComposing(false);
+                        } else {
+                            navigation.goBack();
+                        }
+                    }} className="p-1">
+                        <MaterialIcons name="arrow-back" size={24} color="#2b3437" />
                     </TouchableOpacity>
                     <Text className="text-lg font-bold text-on-surface" style={{ fontFamily: "Manrope_700Bold" }}>
                         DailyPilot Chat
@@ -624,8 +569,77 @@ export default function ChatScreen() {
                         onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
                         showsVerticalScrollIndicator={false}
                         keyboardShouldPersistTaps="handled"
+                        onScroll={(e: NativeSyntheticEvent<NativeScrollEvent>) => {
+                            if (showLandingPage) {
+                                const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
+                                if (layoutMeasurement.height + contentOffset.y >= contentSize.height - 40) {
+                                    loadMoreSessions();
+                                }
+                            }
+                        }}
+                        scrollEventThrottle={400}
                     >
-                        {messages.length === 0 ? (
+                        {showLandingPage ? (
+                            <View className="flex-1">
+                                {/* Action Buttons Row */}
+                                <View className="flex-row items-center gap-3 mb-6">
+                                    <TouchableOpacity
+                                        onPress={() => {
+                                            clearSession();
+                                            setIsComposing(true);
+                                        }}
+                                        className="flex-1 flex-row items-center justify-center gap-2 py-4 rounded-xl bg-secondary/10 border border-secondary/20"
+                                    >
+                                        <MaterialIcons name="add-comment" size={20} color="#4e45e4" />
+                                        <Text className="text-sm font-bold text-secondary" style={{ fontFamily: "Inter_600SemiBold" }}>New Chat</Text>
+                                    </TouchableOpacity>
+
+                                    <TouchableOpacity
+                                        onPress={() => { /* Incognito placeholder */ }}
+                                        className="flex-1 flex-row items-center justify-center gap-2 py-4 rounded-xl bg-surface-container/50 border border-outline-variant/20"
+                                    >
+                                        <MaterialIcons name="visibility-off" size={20} color="#586064" />
+                                        <Text className="text-sm font-bold text-on-surface-variant" style={{ fontFamily: "Inter_600SemiBold" }}>Incognito</Text>
+                                    </TouchableOpacity>
+                                </View>
+
+                                {/* Recents Header */}
+                                <View className="mb-4 px-1">
+                                    <Text className="text-lg font-bold text-on-surface" style={{ fontFamily: "Manrope_700Bold" }}>Recents</Text>
+                                </View>
+
+                                {/* History Items */}
+                                {isLoadingSessions && sessionsGrouped.length === 0 ? (
+                                    <HistorySkeleton />
+                                ) : (
+                                    <View className="flex-1">
+                                        {sessionsGrouped.map(group => (
+                                            <View key={group.title} className="mb-6">
+                                                <Text className="text-xs font-bold text-on-surface-variant mb-2 px-1" style={{ fontFamily: "Inter_500Medium" }}>{group.title}</Text>
+                                                {group.data.map(session => (
+                                                    <TouchableOpacity
+                                                        key={session.id}
+                                                        className="px-4 py-3 rounded-xl flex-row items-center gap-3 mb-2 bg-surface-container/30 border border-outline-variant/5"
+                                                        onPress={() => loadSession(session.id)}
+                                                    >
+                                                        <View className="w-8 h-8 rounded-full bg-secondary/5 items-center justify-center">
+                                                            <MaterialIcons name="chat-bubble-outline" size={16} color="#586064" />
+                                                        </View>
+                                                        <Text className="text-[15px] text-on-surface flex-1" numberOfLines={1} style={{ fontFamily: "Inter_500Medium" }}>
+                                                            {session.title || "New Chat"}
+                                                        </Text>
+                                                    </TouchableOpacity>
+                                                ))}
+                                            </View>
+                                        ))}
+                                        {sessionsGrouped.length === 0 && !isLoadingSessions && (
+                                            <Text className="text-sm text-on-surface-variant p-4 text-center" style={{ fontFamily: "Inter_400Regular" }}>No history found.</Text>
+                                        )}
+                                        {isLoadingSessions && sessionsGrouped.length > 0 && <HistorySkeleton />}
+                                    </View>
+                                )}
+                            </View>
+                        ) : messages.length === 0 ? (
                             <View className="flex-1 justify-center items-center py-32 opacity-50">
                                 <MaterialIcons name="forum" size={64} color="#586064" />
                                 <Text className="text-lg mt-4 text-on-surface-variant" style={{ fontFamily: "Inter_500Medium" }}>Start a conversation</Text>
@@ -650,74 +664,76 @@ export default function ChatScreen() {
                     )}
 
                     {/* Input Bar - Fixed at bottom, NOT inside scroll view */}
-                    <View className="bg-surface border-t border-outline-variant/10 px-4 py-3">
-                        <View className="flex-row items-end gap-3">
-                            {/* Main Input Area */}
-                            {!isRecording ? (
-                                <View className="flex-1 flex-row items-end rounded-3xl bg-surface-container px-4 min-h-[48px] py-1 border border-outline-variant/20">
-                                    <TextInput
-                                        className="flex-1 max-h-[120px] text-sm text-on-surface"
-                                        placeholder="Message DailyPilot..."
-                                        placeholderTextColor="#586064"
-                                        value={inputText}
-                                        onChangeText={setInputText}
-                                        onSubmitEditing={handleSendText}
-                                        multiline
-                                        style={{ fontFamily: "Inter_400Regular", minHeight: 40, paddingTop: 10, paddingBottom: 10, textAlignVertical: 'top' }}
-                                        returnKeyType="send"
-                                        editable={status === 'connected'}
-                                    />
+                    {!showLandingPage && (
+                        <View className="bg-surface border-t border-outline-variant/10 px-4 py-3">
+                            <View className="flex-row items-end gap-3">
+                                {/* Main Input Area */}
+                                {!isRecording ? (
+                                    <View className="flex-1 flex-row items-end rounded-3xl bg-surface-container px-4 min-h-[48px] py-1 border border-outline-variant/20">
+                                        <TextInput
+                                            className="flex-1 max-h-[120px] text-sm text-on-surface"
+                                            placeholder="Message DailyPilot..."
+                                            placeholderTextColor="#586064"
+                                            value={inputText}
+                                            onChangeText={setInputText}
+                                            onSubmitEditing={handleSendText}
+                                            multiline
+                                            style={{ fontFamily: "Inter_400Regular", minHeight: 40, paddingTop: 10, paddingBottom: 10, textAlignVertical: 'top' }}
+                                            returnKeyType="send"
+                                            editable={status === 'connected'}
+                                        />
 
-                                    {/* Mic and Send Buttons */}
-                                    <View className="ml-2 flex-row items-center">
-                                        {/* Microphone Recording Button */}
-                                        {isUploadingAudio ? (
-                                            <View className="w-10 h-10 items-center justify-center rounded-full">
-                                                <ActivityIndicator size={22} color="#4e45e4" />
-                                            </View>
-                                        ) : !isAudioAvailable ? (
-                                            <View className="w-10 h-10 items-center justify-center rounded-full bg-gray-400 opacity-50">
-                                                <MaterialIcons name="mic-off" size={22} color="#FFFFFF" />
-                                            </View>
-                                        ) : (
-                                            <TouchableOpacity
-                                                onPress={() => startRecording()}
-                                                className="w-10 h-10 items-center justify-center rounded-full bg-surface-variant"
-                                                disabled={status !== 'connected'}
-                                            >
-                                                <MaterialIcons name="mic-none" size={22} color="#9CA4AA" />
-                                            </TouchableOpacity>
-                                        )}
-
-                                        {inputText.trim().length > 0 && (
-                                            <Animated.View entering={FadeIn.duration(200)} exiting={FadeOut.duration(150)}>
+                                        {/* Mic and Send Buttons */}
+                                        <View className="ml-2 flex-row items-center">
+                                            {/* Microphone Recording Button */}
+                                            {isUploadingAudio ? (
+                                                <View className="w-10 h-10 items-center justify-center rounded-full">
+                                                    <ActivityIndicator size={22} color="#4e45e4" />
+                                                </View>
+                                            ) : !isAudioAvailable ? (
+                                                <View className="w-10 h-10 items-center justify-center rounded-full bg-gray-400 opacity-50">
+                                                    <MaterialIcons name="mic-off" size={22} color="#FFFFFF" />
+                                                </View>
+                                            ) : (
                                                 <TouchableOpacity
-                                                    onPress={handleSendText}
-                                                    className="w-10 h-10 items-center justify-center bg-surface-variant rounded-full ml-1"
+                                                    onPress={() => startRecording()}
+                                                    className="w-10 h-10 items-center justify-center rounded-full bg-surface-variant"
                                                     disabled={status !== 'connected'}
                                                 >
-                                                    <MaterialIcons name="arrow-upward" size={22} color="#9CA4AA" />
+                                                    <MaterialIcons name="mic-none" size={22} color="#9CA4AA" />
                                                 </TouchableOpacity>
-                                            </Animated.View>
-                                        )}
+                                            )}
+
+                                            {inputText.trim().length > 0 && (
+                                                <Animated.View entering={FadeIn.duration(200)} exiting={FadeOut.duration(150)}>
+                                                    <TouchableOpacity
+                                                        onPress={handleSendText}
+                                                        className="w-10 h-10 items-center justify-center bg-surface-variant rounded-full ml-1"
+                                                        disabled={status !== 'connected'}
+                                                    >
+                                                        <MaterialIcons name="arrow-upward" size={22} color="#9CA4AA" />
+                                                    </TouchableOpacity>
+                                                </Animated.View>
+                                            )}
+                                        </View>
                                     </View>
-                                </View>
-                            ) : (
-                                <View className="flex-1 flex-row items-center justify-center rounded-3xl bg-surface-container overflow-hidden h-12 relative border border-outline-variant/20">
-                                    <SoundBarsEqualizer volumeLevel={rawVolumeAnim} noiseFloorLevel={noiseFloorAnim} />
-                                    {/* <SoundBarsEqualizer volumeLevel={volumeAnim} /> */}
-                                    <TouchableOpacity
-                                        onPress={() => stopRecording()}
-                                        className="absolute right-1 z-10 w-10 h-10 items-center justify-center bg-surface-variant rounded-full"
-                                    >
-                                        <MaterialIcons name="stop" size={24} color="#9CA4AA" />
-                                    </TouchableOpacity>
-                                </View>
-                            )}
+                                ) : (
+                                    <View className="flex-1 flex-row items-center justify-center rounded-3xl bg-surface-container overflow-hidden h-12 relative border border-outline-variant/20">
+                                        <SoundBarsEqualizer volumeLevel={rawVolumeAnim} noiseFloorLevel={noiseFloorAnim} />
+                                        {/* <SoundBarsEqualizer volumeLevel={volumeAnim} /> */}
+                                        <TouchableOpacity
+                                            onPress={() => stopRecording()}
+                                            className="absolute right-1 z-10 w-10 h-10 items-center justify-center bg-surface-variant rounded-full"
+                                        >
+                                            <MaterialIcons name="stop" size={24} color="#9CA4AA" />
+                                        </TouchableOpacity>
+                                    </View>
+                                )}
+                            </View>
+
+
                         </View>
-
-
-                    </View>
+                    )}
                 </View>
             </KeyboardAvoidingView>
         </SafeAreaView>
