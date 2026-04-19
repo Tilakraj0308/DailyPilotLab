@@ -10,11 +10,15 @@ def get_or_create_session(session_id: str, user_id: str) -> str:
     return session_id
 
 def save_message(session_id: str, role: str, content: str):
-    """Save a chat message to the database."""
+    """Save a chat message to the database and update session updated_at."""
     with get_dict_cursor() as cur:
         cur.execute(
             "INSERT INTO public.chat_messages (session_id, role, content) VALUES (%s, %s, %s)",
             (session_id, role, content)
+        )
+        cur.execute(
+            "UPDATE public.chat_sessions SET updated_at = now() WHERE id = %s",
+            (session_id,)
         )
 
 def load_history(session_id: str) -> list[dict]:
@@ -25,3 +29,29 @@ def load_history(session_id: str) -> list[dict]:
             (session_id,)
         )
         return cur.fetchall()
+
+def get_user_sessions(user_id: str, limit: int = 15, offset: int = 0) -> list[dict]:
+    """Fetch paginated chat sessions for a user, including the first message as title."""
+    with get_dict_cursor() as cur:
+        cur.execute(
+            '''
+            SELECT 
+                s.id, 
+                s.updated_at,
+                s.created_at,
+                (
+                    SELECT content 
+                    FROM public.chat_messages m 
+                    WHERE m.session_id = s.id AND m.role = 'user' 
+                    ORDER BY created_at ASC 
+                    LIMIT 1
+                ) as title
+            FROM public.chat_sessions s
+            WHERE s.user_id = %s
+            ORDER BY s.updated_at DESC
+            LIMIT %s OFFSET %s
+            ''',
+            (user_id, limit, offset)
+        )
+        return cur.fetchall()
+

@@ -15,7 +15,8 @@ from typing import List
 from dotenv import load_dotenv
 from utils.topic_manager import update_topic_recency
 from services.chat_service import transcribe_audio, stream_chat
-from services.chat_db import get_or_create_session, save_message, load_history
+from services.chat_db import get_or_create_session, save_message, load_history, get_user_sessions
+from models.chat import ChatSessionSummary
 
 load_dotenv()
 app = FastAPI()
@@ -83,32 +84,6 @@ async def transcribe_endpoint(file: UploadFile = File(...)):
 
 
 # ─── Authentication ─────────────────────────────────────────────────────────
-
-# @app.post("/auth/google", response_model=AuthResponse)
-# def google_auth(payload: GoogleAuthRequest):
-#     """
-#     Authenticate via Google OAuth.
-#     The client sends the Google ID token obtained from Google Sign-In.
-#     """
-#     # 1. Verify the Google ID token
-#     google_info = verify_google_token(payload.id_token)
-
-#     # 2. Get or create user in our DB
-#     user = get_or_create_user(
-#         google_id=google_info["sub"],
-#         email=google_info.get("email", ""),
-#         display_name=google_info.get("name"),
-#         avatar_url=google_info.get("picture"),
-#     )
-
-#     # 3. Issue our own JWT
-#     access_token = create_access_token(user["id"])
-
-#     # 4. Return JWT + user info
-#     return AuthResponse(
-#         access_token=access_token,
-#         user=UserOut(**user),
-#     )
 
 @app.get("/auth/profile")
 def sync_profile(payload: dict = Depends(get_current_user)):
@@ -228,4 +203,24 @@ async def chat_stream(req: ChatStreamRequest, payload: dict = Depends(get_curren
         yield f'data: {json.dumps({"type": "done", "content": ""})}\n\n'
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+@app.get("/chat/sessions", response_model=List[ChatSessionSummary])
+def get_chat_sessions(limit: int = 15, offset: int = 0, payload: dict = Depends(get_current_user)):
+    user_id = payload.get("sub", "")
+    sessions = get_user_sessions(user_id, limit=limit, offset=offset)
+    return [
+        ChatSessionSummary(
+            id=str(s["id"]),
+            updated_at=str(s["updated_at"]),
+            created_at=str(s["created_at"]),
+            title=s["title"]
+        ) for s in sessions
+    ]
+
+@app.get("/chat/sessions/{session_id}/history")
+def get_chat_session_history(session_id: str, payload: dict = Depends(get_current_user)):
+    user_id = payload.get("sub", "")
+    history_rows = load_history(session_id)
+    history = [{"role": r["role"], "content": r["content"]} for r in history_rows]
+    return {"history": history}
 

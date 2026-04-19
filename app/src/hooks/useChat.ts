@@ -13,6 +13,14 @@ export type ChatMessage = {
     content: string;
 };
 
+export type ChatSessionSummary = {
+    id: string;
+    updated_at: string;
+    created_at: string;
+    title: string | null;
+};
+
+
 const STORE_KEY = '@chat_session_id';
 
 /**
@@ -45,17 +53,43 @@ export function useChat() {
     const [status, setStatus] = useState<'connecting' | 'connected' | 'reconnecting' | 'error'>('connecting');
     const [sessionId, setSessionId] = useState<string | null>(null);
     const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
+    const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+
+    const fetchHistory = async (id: string) => {
+        try {
+            const apiUrl = getApiUrl();
+            const { data } = await supabase.auth.getSession();
+            const token = data?.session?.access_token;
+            const res = await fetch(`${apiUrl}/chat/sessions/${id}/history`, {
+                headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+            });
+            if (res.ok) {
+                const json = await res.json();
+                if (json.history) {
+                    setMessages(json.history.map((m: any) => ({
+                        id: Crypto.randomUUID(),
+                        role: m.role,
+                        content: m.content
+                    })));
+                } else {
+                    setMessages([]);
+                }
+            } else {
+                setMessages([]);
+            }
+        } catch (e) {
+            console.error("Failed to fetch history:", e);
+            setMessages([]);
+        }
+    };
 
     useEffect(() => {
+        // Always start with a fresh new chat session
         const initSession = async () => {
-            const saved = await AsyncStorage.getItem(STORE_KEY);
-            if (saved) {
-                setSessionId(saved);
-            } else {
-                const newId = Crypto.randomUUID();
-                await AsyncStorage.setItem(STORE_KEY, newId);
-                setSessionId(newId);
-            }
+            const newId = Crypto.randomUUID();
+            await AsyncStorage.setItem(STORE_KEY, newId);
+            setSessionId(newId);
+            setMessages([]);
             setStatus('connected');
         };
         initSession();
@@ -188,5 +222,31 @@ export function useChat() {
         setSessionId(newId);
     };
 
-    return { messages, status, sendText, sendAudio, clearSession, isWaitingForResponse };
+    const getSessions = async (limit: number = 15, offset: number = 0): Promise<ChatSessionSummary[]> => {
+        try {
+            const apiUrl = getApiUrl();
+            const { data } = await supabase.auth.getSession();
+            const token = data?.session?.access_token;
+            const res = await fetch(`${apiUrl}/chat/sessions?limit=${limit}&offset=${offset}`, {
+                headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+            });
+            if (res.ok) {
+                return await res.json();
+            }
+        } catch (e) {
+            console.error("Failed to fetch sessions:", e);
+        }
+        return [];
+    };
+
+    const loadSession = async (id: string) => {
+        setIsLoadingHistory(true);
+        await AsyncStorage.setItem(STORE_KEY, id);
+        setSessionId(id);
+        setMessages([]);
+        await fetchHistory(id);
+        setIsLoadingHistory(false);
+    };
+
+    return { messages, status, sendText, sendAudio, clearSession, isWaitingForResponse, isLoadingHistory, getSessions, loadSession };
 }
