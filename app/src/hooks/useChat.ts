@@ -219,10 +219,8 @@ export function useChat() {
     };
 
     const clearSession = async () => {
-        if (!user?.id) return;
-        const key = sessionStorageKey(user.id);
         const newId = Crypto.randomUUID();
-        await AsyncStorage.setItem(key, newId);
+        await AsyncStorage.setItem(STORE_KEY, newId);
         setMessages([]);
         setSessionId(newId);
     };
