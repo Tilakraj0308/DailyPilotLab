@@ -396,53 +396,72 @@ def get_tool_permissions(user_id: str, provider_key: str) -> dict[str, bool]:
     with get_dict_cursor() as cur:
         cur.execute(
             """
-            SELECT crud_type, enabled
+            SELECT allowed_cruds
             FROM public.connector_tool_permissions
             WHERE user_id = %s AND provider_key = %s
             """,
             (user_id, provider_key),
         )
-        rows = cur.fetchall()
+        row = cur.fetchone()
 
-    if not rows:
-        return {"create": True, "read": True, "update": True, "delete": True}
+    # Default fallback if no row exists
+    defaults = {"create": True, "read": True, "update": True, "delete": True}
+    if not row:
+        return defaults
 
-    return {row["crud_type"]: bool(row["enabled"]) for row in rows}
+    allowed = row.get("allowed_cruds") or []
+    # Convert list of strings/enums to the dict format expected by callers
+    return {
+        "create": "create" in allowed,
+        "read": "read" in allowed,
+        "update": "update" in allowed,
+        "delete": "delete" in allowed,
+    }
 
 
 def update_tool_permission(
     user_id: str, provider_key: str, crud_type: str, enabled: bool
 ) -> None:
-    """Upsert a single CRUD permission toggle."""
+    """Add or remove a single CRUD permission from the array."""
     with get_dict_cursor() as cur:
-        cur.execute(
-            """
-            INSERT INTO public.connector_tool_permissions
-                (user_id, provider_key, crud_type, enabled)
-            VALUES (%s, %s, %s, %s)
-            ON CONFLICT (user_id, provider_key, crud_type)
-            DO UPDATE SET enabled = EXCLUDED.enabled, updated_at = now()
-            """,
-            (user_id, provider_key, crud_type, enabled),
-        )
+        if enabled:
+            # Add to array uniquely
+            cur.execute(
+                """
+                INSERT INTO public.connector_tool_permissions (user_id, provider_key, allowed_cruds)
+                VALUES (%s, %s, ARRAY[%s]::public.tool_crud_type[])
+                ON CONFLICT (user_id, provider_key)
+                DO UPDATE SET 
+                    allowed_cruds = ARRAY(
+                        SELECT DISTINCT e FROM unnest(array_append(public.connector_tool_permissions.allowed_cruds, %s::public.tool_crud_type)) e
+                    ),
+                    updated_at = now()
+                """,
+                (user_id, provider_key, crud_type, crud_type),
+            )
+        else:
+            # Remove from array
+            cur.execute(
+                """
+                UPDATE public.connector_tool_permissions
+                SET allowed_cruds = array_remove(allowed_cruds, %s::public.tool_crud_type),
+                    updated_at = now()
+                WHERE user_id = %s AND provider_key = %s
+                """,
+                (crud_type, user_id, provider_key),
+            )
 
 
 def init_default_permissions(user_id: str, provider_key: str) -> None:
     """Seed default CRUD permissions after a successful OAuth connection."""
-    defaults = [
-        ("read", True),
-        ("create", True),
-        ("update", True),
-        ("delete", False),  # Delete disabled by default for safety
-    ]
+    # Delete disabled by default for safety
+    defaults = ["read", "create", "update"]
     with get_dict_cursor() as cur:
-        for crud_type, enabled in defaults:
-            cur.execute(
-                """
-                INSERT INTO public.connector_tool_permissions
-                    (user_id, provider_key, crud_type, enabled)
-                VALUES (%s, %s, %s, %s)
-                ON CONFLICT (user_id, provider_key, crud_type) DO NOTHING
-                """,
-                (user_id, provider_key, crud_type, enabled),
-            )
+        cur.execute(
+            """
+            INSERT INTO public.connector_tool_permissions (user_id, provider_key, allowed_cruds)
+            VALUES (%s, %s, %s::public.tool_crud_type[])
+            ON CONFLICT (user_id, provider_key) DO NOTHING
+            """,
+            (user_id, provider_key, defaults),
+        )
