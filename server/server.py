@@ -7,7 +7,7 @@ import time
 from fastapi.middleware.cors import CORSMiddleware
 from utils.idea_manager import get_ideas, create_idea, create_ideas, update_idea, delete_idea, delete_ideas, delete_all_ideas, raw_to_refined_ideas
 from models.ideas import IdeaCreateInput, IdeaOut, IdeaUpdateInput, IdeaDeleteInput
-from models.users import GoogleAuthRequest, AuthResponse, UserOut
+# from models.users import GoogleAuthRequest, AuthResponse, UserOut
 from utils.helpers import assign_idea_to_topic, semantic_search_memories, update_traits
 from services.auth_service import get_or_create_user
 from utils.auth_middleware import get_current_user
@@ -15,8 +15,9 @@ from typing import List
 from dotenv import load_dotenv
 from utils.topic_manager import update_topic_recency
 from services.chat_service import transcribe_audio, stream_chat
-from services.chat_db import ChatSessionAccessError, get_or_create_session, save_message, load_history, get_user_sessions
-from models.chat import ChatSessionSummary
+# from services.chat_db import ChatSessionAccessError, get_or_create_session, save_message, load_history, get_user_sessions
+from services.chat_db import save_message, load_history
+# from models.chat import ChatSessionSummary
 from connectors import router as connectors_router
 
 load_dotenv()
@@ -188,18 +189,59 @@ class ChatStreamRequest(BaseModel):
 
 @app.post("/chat/stream")
 async def chat_stream(req: ChatStreamRequest, payload: dict = Depends(get_current_user)):
-    session_id = req.session_id
     user_text = req.content
     user_id = payload.get("sub", "")
 
-    try:
-        await asyncio.to_thread(get_or_create_session, session_id, user_id)
-    except ChatSessionAccessError as e:
-        raise HTTPException(status_code=403, detail=str(e)) from e
-    await asyncio.to_thread(save_message, session_id, "user", user_text)
+    # Save user message
+    await asyncio.to_thread(save_message, user_id, "user", user_text)
 
-    history_rows = await asyncio.to_thread(load_history, session_id)
-    history = [{"role": r["role"], "content": r["content"]} for r in history_rows]
+    # Context Assembly: Working Memory
+    history_rows = await asyncio.to_thread(load_history, user_id, limit=10, offset=0)
+    # The history comes DESC from load_history, we need it ASC for streaming context
+    history_rows = list(reversed(history_rows))
+    
+    # Context Assembly: System Persona, Long-Term Traits, Personal State, Short-Term Ideas
+    from services.trait_service import TraitsService
+    from utils.idea_manager import get_raw_ideas
+    from services.ideas_service import IdeaService
+    import os
+    
+    # Base instructions could be fetched from config, using a placeholder for now
+    persona = "You are DailyPilot, an advanced personal companion and assistant."
+    
+    # Traits
+    traits_data = ""
+    try:
+        ts = TraitsService()
+        traits = ts.get_user_traits(user_id)
+        if traits:
+            traits_str = "\n".join([f"- {t['trait_text']} (Type: {t['trait_type']})" for t in traits])
+            traits_data = f"User Traits:\n{traits_str}"
+    except:
+        pass
+        
+    # Personal State
+    personal_state_data = ""
+    ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+    ps_path = os.path.join(ROOT_DIR, "config", "memory", "personal_state.json")
+    if os.path.exists(ps_path):
+        with open(ps_path, "r") as f:
+            personal_state_data = f"Personal State:\n{f.read().strip()}"
+            
+    # Short-Term Memory (Active Ideas)
+    active_ideas_data = ""
+    try:
+        active_ideas = get_raw_ideas(user_id)
+        if active_ideas:
+            ideas_str = "\n".join([f"- {i['content']}" for i in active_ideas])
+            active_ideas_data = f"Recent Thoughts & Ideas:\n{ideas_str}"
+    except:
+        pass
+
+    system_content = f"{persona}\n\n{traits_data}\n\n{personal_state_data}\n\n{active_ideas_data}".strip()
+
+    history = [{"role": "system", "content": system_content}]
+    history.extend([{"role": r["role"], "content": r["content"]} for r in history_rows])
 
     async def event_stream():
         full_response = ""
@@ -207,28 +249,18 @@ async def chat_stream(req: ChatStreamRequest, payload: dict = Depends(get_curren
             full_response += token
             yield f'data: {json.dumps({"type": "token", "content": token})}\n\n'
         
-        await asyncio.to_thread(save_message, session_id, "assistant", full_response)
+        await asyncio.to_thread(save_message, user_id, "assistant", full_response)
         yield f'data: {json.dumps({"type": "done", "content": ""})}\n\n'
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
-@app.get("/chat/sessions", response_model=List[ChatSessionSummary])
-def get_chat_sessions(limit: int = 15, offset: int = 0, payload: dict = Depends(get_current_user)):
-    user_id = payload.get("sub", "")
-    sessions = get_user_sessions(user_id, limit=limit, offset=offset)
-    return [
-        ChatSessionSummary(
-            id=str(s["id"]),
-            updated_at=str(s["updated_at"]),
-            created_at=str(s["created_at"]),
-            title=s["title"]
-        ) for s in sessions
-    ]
+import uuid
 
-@app.get("/chat/sessions/{session_id}/history")
-def get_chat_session_history(session_id: str, payload: dict = Depends(get_current_user)):
+@app.get("/chat/history")
+def get_chat_user_history(limit: int = 15, offset: int = 0, payload: dict = Depends(get_current_user)):
     user_id = payload.get("sub", "")
-    history_rows = load_history(session_id)
-    history = [{"role": r["role"], "content": r["content"]} for r in history_rows]
+    history_rows = load_history(user_id, limit=limit, offset=offset)
+    # History rows are DESC (newest first). Let the frontend keep it DESC if used in Inverted FlatList.
+    history = [{"id": str(uuid.uuid4()) if 'id' not in r else str(r['id']), "role": r["role"], "content": r["content"], "created_at": r.get('created_at')} for r in history_rows]
     return {"history": history}
 

@@ -4,15 +4,13 @@ import {
     Text,
     TextInput,
     TouchableOpacity,
-    ScrollView,
+    FlatList,
     KeyboardAvoidingView,
     Platform,
     ActivityIndicator,
     Keyboard,
     Alert,
     Animated as RNAnimated,
-    NativeSyntheticEvent,
-    NativeScrollEvent,
 } from 'react-native';
 import { universalAlert } from '../lib/alerts';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -176,80 +174,20 @@ const HistorySkeleton = () => {
     );
 };
 
-const SESSIONS_PAGE_SIZE = 15;
-
 export default function ChatScreen() {
     const navigation = useNavigation<any>();
-    const { messages, status, sendText, sendAudio, clearSession, isWaitingForResponse, isLoadingHistory, getSessions, loadSession } = useChat();
+    const { messages, status, sendText, sendAudio, isWaitingForResponse, isLoadingHistory, fetchHistory } = useChat();
     const [inputText, setInputText] = useState('');
-    const [isComposing, setIsComposing] = useState(false);
+    const [isFetchingMore, setIsFetchingMore] = useState(false);
 
-    const [sessionsGrouped, setSessionsGrouped] = useState<{ title: string, data: ChatSessionSummary[] }[]>([]);
-    const [isLoadingSessions, setIsLoadingSessions] = useState(false);
-    const [sessionOffset, setSessionOffset] = useState(0);
-    const [hasMoreSessions, setHasMoreSessions] = useState(true);
-    const allSessionsRef = useRef<ChatSessionSummary[]>([]);
-    const hasFetchedSessionsRef = useRef(false);
-
-    const groupSessions = (sessions: ChatSessionSummary[]) => {
-        const now = new Date();
-        const today: ChatSessionSummary[] = [];
-        const yesterday: ChatSessionSummary[] = [];
-        const previous7Days: ChatSessionSummary[] = [];
-        const older: ChatSessionSummary[] = [];
-
-        sessions.forEach(s => {
-            const date = new Date(s.updated_at);
-            const diffTime = Math.abs(now.getTime() - date.getTime());
-            const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-
-            if (diffDays === 0 && now.getDate() === date.getDate()) {
-                today.push(s);
-            } else if (diffDays === 1 || (diffDays === 0 && now.getDate() !== date.getDate())) {
-                yesterday.push(s);
-            } else if (diffDays <= 7) {
-                previous7Days.push(s);
-            } else {
-                older.push(s);
-            }
-        });
-
-        const groups = [];
-        if (today.length) groups.push({ title: 'Today', data: today });
-        if (yesterday.length) groups.push({ title: 'Yesterday', data: yesterday });
-        if (previous7Days.length) groups.push({ title: 'Previous 7 Days', data: previous7Days });
-        if (older.length) groups.push({ title: 'Older', data: older });
-        return groups;
-    };
-
-    const fetchAndGroupSessions = async (offset: number = 0, append: boolean = false) => {
-        setIsLoadingSessions(true);
-        const sessions = await getSessions(SESSIONS_PAGE_SIZE, offset);
-
-        if (sessions.length < SESSIONS_PAGE_SIZE) {
-            setHasMoreSessions(false);
-        }
-
-        const updated = append ? [...allSessionsRef.current, ...sessions] : sessions;
-        allSessionsRef.current = updated;
-        setSessionsGrouped(groupSessions(updated));
-        setSessionOffset(offset + sessions.length);
-        setIsLoadingSessions(false);
-    };
-
-    const loadMoreSessions = () => {
-        if (!isLoadingSessions && hasMoreSessions) {
-            fetchAndGroupSessions(sessionOffset, true);
+    const loadMoreMessages = async () => {
+        if (!isLoadingHistory && !isFetchingMore) {
+            setIsFetchingMore(true);
+            await fetchHistory(messages.length, 30, true);
+            setIsFetchingMore(false);
         }
     };
 
-    useEffect(() => {
-        if (!hasFetchedSessionsRef.current) {
-            fetchAndGroupSessions(0, false).then(() => {
-                hasFetchedSessionsRef.current = true;
-            });
-        }
-    }, []);
 
 
     // Audio recording state
@@ -264,7 +202,7 @@ export default function ChatScreen() {
     const volumeHistoryRef = useRef<number[]>([]);
     const hasSpokenRef = useRef<boolean>(false);
     const silenceTicksRef = useRef<number>(0);
-    const scrollViewRef = useRef<ScrollView>(null);
+    const flatListRef = useRef<FlatList>(null);
     const volumeAnim = useSharedValue(-60);
     const rawVolumeAnim = useSharedValue(-60); // Always-updated raw metering for equalizer
     const noiseFloorAnim = useSharedValue(-60); // Dynamic noise floor for equalizer normalization
@@ -484,30 +422,80 @@ export default function ChatScreen() {
         const s = Math.floor(seconds % 60);
         return `${m}:${s.toString().padStart(2, '0')}`;
     };
+    const renderDateDivider = (currentDateStr: string, prevDateStr: string | undefined) => {
+        if (!currentDateStr) return null;
+        const current = new Date(currentDateStr);
+        const prev = prevDateStr ? new Date(prevDateStr) : null;
+        
+        let showDivider = false;
+        if (!prev) {
+            showDivider = true; // Last item in array (oldest overall)
+        } else if (current.getDate() !== prev.getDate() || current.getMonth() !== prev.getMonth() || current.getFullYear() !== prev.getFullYear()) {
+            showDivider = true;
+        }
+
+        if (showDivider) {
+            // Formatting exactly like WhatsApp (Today, Yesterday, April 18)
+            const now = new Date();
+            let label = "";
+            const diffMs = now.getTime() - current.getTime();
+            const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+            if (diffDays === 0 && now.getDate() === current.getDate()) {
+                label = "Today";
+            } else if (diffDays === 1 || (diffDays === 0 && now.getDate() !== current.getDate())) {
+                label = "Yesterday";
+            } else {
+                label = current.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: current.getFullYear() !== now.getFullYear() ? 'numeric' : undefined });
+            }
+
+            return (
+                <View className="items-center my-4">
+                    <View className="bg-surface-variant/50 px-3 py-1 rounded-full border border-outline-variant/10">
+                        <Text className="text-xs text-on-surface-variant font-medium" style={{ fontFamily: "Inter_500Medium" }}>{label}</Text>
+                    </View>
+                </View>
+            );
+        }
+        return null;
+    };
+
     const renderMessage = ({ item, index }: { item: ChatMessage, index: number }) => {
         if (!item.content && item.role === 'assistant') return null;
         const isUser = item.role === 'user';
+        const isTyping = item.content === '' && item.role === 'assistant' && isWaitingForResponse;
+        
+        // In descending list, messages[index + 1] is the older message.
+        const prevMessage = messages[index + 1];
+        const dateDivider = renderDateDivider(item.created_at || new Date().toISOString(), prevMessage?.created_at);
+
         return (
-            <View key={item.id || index} className={`w-full flex-col mb-4 ${isUser ? 'items-end' : 'items-start'}`}>
-                <View className={`flex-row gap-2 items-end max-w-[85%] ${isUser ? 'flex-row-reverse' : ''}`} style={{ flexShrink: 1 }}>
-                    <View className={`w-8 h-8 rounded-full items-center justify-center -mb-2 flex-shrink-0 ${isUser ? 'bg-surface-variant' : 'bg-secondary-container'}`}>
-                        <MaterialIcons name={isUser ? "person" : "smart-toy"} size={18} color={isUser ? "#586064" : "#4e45e4"} />
-                    </View>
-                    <View className={`p-4 rounded-2xl ${isUser ? 'bg-secondary rounded-br-sm' : 'bg-surface-container rounded-bl-sm'}`} style={{ flexShrink: 1 }}>
-                        <Text
-                            className={`text-sm leading-relaxed ${isUser ? 'text-white' : 'text-on-surface'}`}
-                            style={{ fontFamily: isUser ? "Inter_500Medium" : "Inter_400Regular", flexWrap: 'wrap' }}
-                        >
-                            {item.content}
-                        </Text>
+            <View key={item.id || index}>
+                {dateDivider}
+                <View className={`w-full flex-col mb-4 ${isUser ? 'items-end' : 'items-start'}`}>
+                    <View className={`flex-row gap-2 items-end max-w-[85%] ${isUser ? 'flex-row-reverse' : ''}`} style={{ flexShrink: 1 }}>
+                        <View className={`w-8 h-8 rounded-full items-center justify-center -mb-2 flex-shrink-0 ${isUser ? 'bg-surface-variant' : 'bg-secondary-container'}`}>
+                            <MaterialIcons name={isUser ? "person" : "smart-toy"} size={18} color={isUser ? "#586064" : "#4e45e4"} />
+                        </View>
+                        <View className={`p-4 rounded-2xl ${isUser ? 'bg-secondary rounded-br-sm' : 'bg-surface-container rounded-bl-sm'} ${isTyping ? 'py-5' : ''}`} style={{ flexShrink: 1, minWidth: isTyping ? 50 : 'auto' }}>
+                            {isTyping ? (
+                                <TypingWave />
+                            ) : (
+                                <Text
+                                    className={`text-sm leading-relaxed ${isUser ? 'text-white' : 'text-on-surface'}`}
+                                    style={{ fontFamily: isUser ? "Inter_500Medium" : "Inter_400Regular", flexWrap: 'wrap' }}
+                                >
+                                    {item.content}
+                                </Text>
+                            )}
+                        </View>
                     </View>
                 </View>
             </View>
         );
     };
 
-    const showLandingPage = messages.length === 0 && !isComposing;
-    const isStreaming = messages.length > 0 && messages[messages.length - 1].role === 'assistant' && status === 'connected';
+    const isStreaming = messages.length > 0 && messages[0].role === 'assistant' && status === 'connected';
 
     // Manual keyboard height tracking to avoid residual padding
     const [keyboardHeight, setKeyboardHeight] = useState(0);
@@ -533,12 +521,7 @@ export default function ChatScreen() {
             <View className="flex-row items-center justify-between px-5 py-3 border-b border-outline-variant/10 bg-background">
                 <View className="flex-row items-center gap-3">
                     <TouchableOpacity onPress={() => {
-                        if (!showLandingPage) {
-                            clearSession();
-                            setIsComposing(false);
-                        } else {
-                            navigation.goBack();
-                        }
+                        navigation.goBack();
                     }} className="p-1">
                         <MaterialIcons name="arrow-back" size={24} color="#2b3437" />
                     </TouchableOpacity>
@@ -548,124 +531,41 @@ export default function ChatScreen() {
                 </View>
             </View>
 
-
-
             {/* Main Content */}
             <KeyboardAvoidingView
                 style={{ flex: 1 }}
                 behavior="padding"
             >
                 <View className="flex-1">
-                    {isLoadingHistory ? (
-                        <View className="flex-1 justify-center items-center bg-background">
-                            <ActivityIndicator size="large" color="#4e45e4" />
-                            <Text className="text-sm mt-3 text-on-surface-variant" style={{ fontFamily: "Inter_400Regular" }}>Loading conversation...</Text>
+                    {messages.length === 0 && !isLoadingHistory ? (
+                        <View className="flex-1 justify-center items-center py-32 opacity-50">
+                            <MaterialIcons name="forum" size={64} color="#586064" />
+                            <Text className="text-lg mt-4 text-on-surface-variant" style={{ fontFamily: "Inter_500Medium" }}>Start a conversation</Text>
+                            <Text className="text-sm mt-1 text-center px-10 text-on-surface-variant" style={{ fontFamily: "Inter_400Regular" }}>
+                                Type a message and press Enter or click send to chat.
+                            </Text>
                         </View>
                     ) : (
-                    <ScrollView
-                        ref={scrollViewRef}
-                        className="flex-1 bg-background"
-                        contentContainerStyle={{ paddingVertical: 16, paddingHorizontal: 16 }}
-                        onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
-                        showsVerticalScrollIndicator={false}
-                        keyboardShouldPersistTaps="handled"
-                        onScroll={(e: NativeSyntheticEvent<NativeScrollEvent>) => {
-                            if (showLandingPage) {
-                                const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
-                                if (layoutMeasurement.height + contentOffset.y >= contentSize.height - 40) {
-                                    loadMoreSessions();
-                                }
-                            }
-                        }}
-                        scrollEventThrottle={400}
-                    >
-                        {showLandingPage ? (
-                            <View className="flex-1">
-                                {/* Action Buttons Row */}
-                                <View className="flex-row items-center gap-3 mb-6">
-                                    <TouchableOpacity
-                                        onPress={() => {
-                                            clearSession();
-                                            setIsComposing(true);
-                                        }}
-                                        className="flex-1 flex-row items-center justify-center gap-2 py-4 rounded-xl bg-secondary/10 border border-secondary/20"
-                                    >
-                                        <MaterialIcons name="add-comment" size={20} color="#4e45e4" />
-                                        <Text className="text-sm font-bold text-secondary" style={{ fontFamily: "Inter_600SemiBold" }}>New Chat</Text>
-                                    </TouchableOpacity>
-
-                                    <TouchableOpacity
-                                        onPress={() => { /* Incognito placeholder */ }}
-                                        className="flex-1 flex-row items-center justify-center gap-2 py-4 rounded-xl bg-surface-container/50 border border-outline-variant/20"
-                                    >
-                                        <MaterialIcons name="visibility-off" size={20} color="#586064" />
-                                        <Text className="text-sm font-bold text-on-surface-variant" style={{ fontFamily: "Inter_600SemiBold" }}>Incognito</Text>
-                                    </TouchableOpacity>
-                                </View>
-
-                                {/* Recents Header */}
-                                <View className="mb-4 px-1">
-                                    <Text className="text-lg font-bold text-on-surface" style={{ fontFamily: "Manrope_700Bold" }}>Recents</Text>
-                                </View>
-
-                                {/* History Items */}
-                                {isLoadingSessions && sessionsGrouped.length === 0 ? (
-                                    <HistorySkeleton />
-                                ) : (
-                                    <View className="flex-1">
-                                        {sessionsGrouped.map(group => (
-                                            <View key={group.title} className="mb-6">
-                                                <Text className="text-xs font-bold text-on-surface-variant mb-2 px-1" style={{ fontFamily: "Inter_500Medium" }}>{group.title}</Text>
-                                                {group.data.map(session => (
-                                                    <TouchableOpacity
-                                                        key={session.id}
-                                                        className="px-4 py-3 rounded-xl flex-row items-center gap-3 mb-2 bg-surface-container/30 border border-outline-variant/5"
-                                                        onPress={() => loadSession(session.id)}
-                                                    >
-                                                        <View className="w-8 h-8 rounded-full bg-secondary/5 items-center justify-center">
-                                                            <MaterialIcons name="chat-bubble-outline" size={16} color="#586064" />
-                                                        </View>
-                                                        <Text className="text-[15px] text-on-surface flex-1" numberOfLines={1} style={{ fontFamily: "Inter_500Medium" }}>
-                                                            {session.title || "New Chat"}
-                                                        </Text>
-                                                    </TouchableOpacity>
-                                                ))}
-                                            </View>
-                                        ))}
-                                        {sessionsGrouped.length === 0 && !isLoadingSessions && (
-                                            <Text className="text-sm text-on-surface-variant p-4 text-center" style={{ fontFamily: "Inter_400Regular" }}>No history found.</Text>
-                                        )}
-                                        {isLoadingSessions && sessionsGrouped.length > 0 && <HistorySkeleton />}
-                                    </View>
-                                )}
-                            </View>
-                        ) : messages.length === 0 ? (
-                            <View className="flex-1 justify-center items-center py-32 opacity-50">
-                                <MaterialIcons name="forum" size={64} color="#586064" />
-                                <Text className="text-lg mt-4 text-on-surface-variant" style={{ fontFamily: "Inter_500Medium" }}>Start a conversation</Text>
-                                <Text className="text-sm mt-1 text-center px-10 text-on-surface-variant" style={{ fontFamily: "Inter_400Regular" }}>
-                                    Type a message and press Enter or click send to chat.
-                                </Text>
-                            </View>
-                        ) : (
-                            messages.map((item, index) => renderMessage({ item, index }))
-                        )}
-
-                        {/* Typing Indicator - Show while waiting for response */}
-                        {isWaitingForResponse && (
-                            <View className="py-2 flex-row items-center gap-2">
-                                <View className="w-8 h-8 rounded-full items-center justify-center bg-secondary-container">
-                                    <MaterialIcons name="smart-toy" size={16} color="#4e45e4" />
-                                </View>
-                                <TypingWave />
-                            </View>
-                        )}
-                    </ScrollView>
+                        <FlatList
+                            ref={flatListRef}
+                            className="flex-1 bg-background"
+                            contentContainerStyle={{ paddingVertical: 16, paddingHorizontal: 16 }}
+                            data={messages}
+                            keyExtractor={(item, index) => item.id || index.toString()}
+                            renderItem={renderMessage}
+                            inverted={true}
+                            showsVerticalScrollIndicator={false}
+                            keyboardShouldPersistTaps="handled"
+                            onEndReached={loadMoreMessages}
+                            onEndReachedThreshold={0.5}
+                            ListFooterComponent={isFetchingMore || isLoadingHistory ? (
+                                <ActivityIndicator size="small" color="#4e45e4" style={{ marginVertical: 10 }} />
+                            ) : null}
+                        />
                     )}
 
                     {/* Input Bar - Fixed at bottom, NOT inside scroll view */}
-                    {!showLandingPage && (
-                        <View className="bg-surface border-t border-outline-variant/10 px-4 py-3">
+                    <View className="bg-surface border-t border-outline-variant/10 px-4 py-3">
                             <View className="flex-row items-end gap-3">
                                 {/* Main Input Area */}
                                 {!isRecording ? (
@@ -730,10 +630,7 @@ export default function ChatScreen() {
                                     </View>
                                 )}
                             </View>
-
-
                         </View>
-                    )}
                 </View>
             </KeyboardAvoidingView>
         </SafeAreaView>

@@ -3,8 +3,18 @@ from models.traits import TraitCandidate
 from typing import List
 
 class TraitsService:
-    def __init__(self, openai_client):
+    def __init__(self, openai_client=None):
         self.openai_client = openai_client
+
+    def get_user_traits(self, user_id: str) -> List[dict]:
+        with get_dict_cursor() as cur:
+            cur.execute("""
+                SELECT id, trait_text, trait_type, confidence, created_at, last_evidenced_at
+                FROM trait
+                WHERE user_id = %s
+                ORDER BY confidence DESC
+            """, (user_id,))
+            return cur.fetchall()
 
     def process_and_upsert_traits(self, new_traits: List[TraitCandidate], user_id: str):
         """
