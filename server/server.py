@@ -1,7 +1,6 @@
 from fastapi import FastAPI, Response, UploadFile, File, Depends, HTTPException, Request
-from fastapi.responses import StreamingResponse, RedirectResponse
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
-import json
 import asyncio
 import time
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,11 +11,18 @@ from utils.helpers import assign_idea_to_topic, semantic_search_memories, update
 from services.auth_service import get_or_create_user
 from utils.auth_middleware import get_current_user
 from typing import List 
+from uuid import UUID
 from dotenv import load_dotenv
 from utils.topic_manager import update_topic_recency
 from services.chat_service import transcribe_audio, stream_chat
 from services.chat_db import ChatSessionAccessError, get_or_create_session, save_message, load_history, get_user_sessions
+from services.agent_chat_db import (
+    AgentSessionAccessError,
+    ensure_default_agent,
+)
 from models.chat import ChatSessionSummary
+from models.agent_chat import AgentChatStreamRequest
+from utils.agent_chat_manager import stream_agent_chat
 from connectors import router as connectors_router
 
 load_dotenv()
@@ -183,34 +189,39 @@ def updateTraits(response: Response, payload: dict = Depends(get_current_user)):
 # ─── Chat ────────────────────────────────────────────────────────────────────
 
 class ChatStreamRequest(BaseModel):
-    session_id: str
+    session_id: UUID
     content: str
+
+@app.post("/agent-chat/stream")
+async def agent_chat_stream(
+    req: AgentChatStreamRequest, payload: dict = Depends(get_current_user)
+):
+    user_id = payload.get("sub", "")
+    try:
+        return await stream_agent_chat(req=req, user_id=user_id)
+    except AgentSessionAccessError as e:
+        raise HTTPException(status_code=403, detail=str(e)) from e
+
+
+@app.post("/agents/default/ensure")
+def ensure_default_agent_endpoint(payload: dict = Depends(get_current_user)):
+    user_id = payload.get("sub", "")
+    return ensure_default_agent(user_id)
+
 
 @app.post("/chat/stream")
 async def chat_stream(req: ChatStreamRequest, payload: dict = Depends(get_current_user)):
-    session_id = req.session_id
-    user_text = req.content
     user_id = payload.get("sub", "")
-
+    default_agent = await asyncio.to_thread(ensure_default_agent, user_id)
+    wrapped = AgentChatStreamRequest(
+        agent_id=str(default_agent["id"]),
+        session_id=str(req.session_id),
+        content=req.content,
+    )
     try:
-        await asyncio.to_thread(get_or_create_session, session_id, user_id)
-    except ChatSessionAccessError as e:
+        return await stream_agent_chat(req=wrapped, user_id=user_id)
+    except AgentSessionAccessError as e:
         raise HTTPException(status_code=403, detail=str(e)) from e
-    await asyncio.to_thread(save_message, session_id, "user", user_text)
-
-    history_rows = await asyncio.to_thread(load_history, session_id)
-    history = [{"role": r["role"], "content": r["content"]} for r in history_rows]
-
-    async def event_stream():
-        full_response = ""
-        async for token in stream_chat(history, user_id):
-            full_response += token
-            yield f'data: {json.dumps({"type": "token", "content": token})}\n\n'
-        
-        await asyncio.to_thread(save_message, session_id, "assistant", full_response)
-        yield f'data: {json.dumps({"type": "done", "content": ""})}\n\n'
-
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 @app.get("/chat/sessions", response_model=List[ChatSessionSummary])
 def get_chat_sessions(limit: int = 15, offset: int = 0, payload: dict = Depends(get_current_user)):

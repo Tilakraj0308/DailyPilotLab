@@ -38,6 +38,12 @@
 - [x] LLM-based personal info extraction
 - [x] JSON file persistence for user profile
 
+### Agent-First Chat (2026-04-23)
+- [x] Agent-scoped persistence (`agents`, `agent_sessions`, `agent_messages`, `chat_summaries`)
+- [x] Agent-aware chat APIs with `/chat/*` compatibility mapping to default agent
+- [x] 10-exchange summary windowing with retry-capable status transitions
+- [x] Coverage added for DB contract, summary window logic, and route behaviors
+
 ## Infrastructure
 - [x] FastAPI server with 12 endpoints
 - [x] Supabase Postgres + pgvector
@@ -52,4 +58,4 @@
 - [ ] Pagination for `GET /ideas`
 - [ ] WebSocket or SSE for long-running operations (refinement, topic assign)
 - [ ] Rate limiting for LLM calls
-- [ ] Tests (unit + integration)
+- [ ] End-to-end DB-backed verification in CI/runtime environment with Postgres available
