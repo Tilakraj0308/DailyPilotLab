@@ -176,12 +176,12 @@ const HistorySkeleton = () => {
 
 export default function ChatScreen() {
     const navigation = useNavigation<any>();
-    const { messages, status, sendText, sendAudio, isWaitingForResponse, isLoadingHistory, fetchHistory } = useChat();
+    const { messages, status, sendText, sendAudio, isWaitingForResponse, isLoadingHistory, fetchHistory, hasMoreHistory } = useChat();
     const [inputText, setInputText] = useState('');
     const [isFetchingMore, setIsFetchingMore] = useState(false);
 
     const loadMoreMessages = async () => {
-        if (!isLoadingHistory && !isFetchingMore) {
+        if (!isLoadingHistory && !isFetchingMore && hasMoreHistory) {
             setIsFetchingMore(true);
             await fetchHistory(messages.length, 30, true);
             setIsFetchingMore(false);
@@ -461,9 +461,10 @@ export default function ChatScreen() {
     };
 
     const renderMessage = ({ item, index }: { item: ChatMessage, index: number }) => {
-        if (!item.content && item.role === 'assistant') return null;
         const isUser = item.role === 'user';
         const isTyping = item.content === '' && item.role === 'assistant' && isWaitingForResponse;
+        
+        if (!item.content && item.role === 'assistant' && !isTyping) return null;
         
         // In descending list, messages[index + 1] is the older message.
         const prevMessage = messages[index + 1];
@@ -537,7 +538,12 @@ export default function ChatScreen() {
                 behavior="padding"
             >
                 <View className="flex-1">
-                    {messages.length === 0 && !isLoadingHistory ? (
+                    {messages.length === 0 && isLoadingHistory ? (
+                        <View className="flex-1 justify-center items-center bg-background">
+                            <ActivityIndicator size="large" color="#4e45e4" />
+                            <Text className="text-sm mt-3 text-on-surface-variant" style={{ fontFamily: "Inter_400Regular" }}>Loading conversation...</Text>
+                        </View>
+                    ) : messages.length === 0 && !isLoadingHistory ? (
                         <View className="flex-1 justify-center items-center py-32 opacity-50">
                             <MaterialIcons name="forum" size={64} color="#586064" />
                             <Text className="text-lg mt-4 text-on-surface-variant" style={{ fontFamily: "Inter_500Medium" }}>Start a conversation</Text>

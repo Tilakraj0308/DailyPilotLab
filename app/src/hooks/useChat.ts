@@ -57,10 +57,13 @@ export function useChat() {
     const [status, setStatus] = useState<'connecting' | 'connected' | 'reconnecting' | 'error'>('connecting');
     const [sessionId, setSessionId] = useState<string | null>(null);
     const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
-    const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+    const [isLoadingHistory, setIsLoadingHistory] = useState(true); // default true 
+    const [hasMoreHistory, setHasMoreHistory] = useState(true);
 
     const fetchHistory = async (offset: number = 0, limit: number = 15, append: boolean = false) => {
-        setIsLoadingHistory(true);
+        if (!append) {
+            setIsLoadingHistory(true);
+        }
         try {
             const apiUrl = getApiUrl();
             const { data } = await supabase.auth.getSession();
@@ -77,9 +80,10 @@ export function useChat() {
                         content: m.content,
                         created_at: m.created_at
                     }));
-                    // The backend returns DESC (newest first).
+                    if (newMessages.length < limit) {
+                        setHasMoreHistory(false);
+                    }
                     if (append) {
-                        // appending older messages means adding them to the end
                         setMessages(prev => [...prev, ...newMessages]);
                     } else {
                         setMessages(newMessages);
@@ -87,9 +91,12 @@ export function useChat() {
                     setIsLoadingHistory(false);
                     return json.history.length;
                 }
+            } else {
+                setHasMoreHistory(false);
             }
         } catch (e) {
             console.error("Failed to fetch history:", e);
+            setHasMoreHistory(false);
         }
         setIsLoadingHistory(false);
         return 0;
@@ -223,5 +230,5 @@ export function useChat() {
         }
     };
 
-    return { messages, status, sendText, sendAudio, isWaitingForResponse, isLoadingHistory, fetchHistory };
+    return { messages, status, sendText, sendAudio, isWaitingForResponse, isLoadingHistory, fetchHistory, hasMoreHistory };
 }
