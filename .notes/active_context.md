@@ -3,8 +3,8 @@
 > **Last Updated**: 2026-04-23
 
 ## Current Focus
-- Agent-first chat integration is implemented in this worktree and Task 6 verification/doc sync is complete.
-- Test signal is strong for pure/unit paths; DB-coupled agent-chat tests need a Postgres-backed run to close environment gap.
+- Main rebase alignment for agent-first chat is complete, including connector/auth contract parity and verification closure.
+- Current focus is integration handoff: decide PR/merge path and watch first runtime window after deploy.
 
 ## Recent Sessions
 - **2026-04-23**: Agent-first chat Task 6 — ran target suite (`test_agent_chat_db.py`, `test_chat_summary_windows.py`, `test_agent_chat_routes.py`), ran smoke regressions (`test_gmail_routes.py`, `test_gmail_tools.py` as substitution for missing `test_chat_tool_schema.py`), updated feature spec + memory bank.
@@ -22,6 +22,6 @@
 - Nested **`server/AGENTS.md`** and **`app/AGENTS.md`** when working only in those packages.
 
 ## Open questions / next steps
-- [ ] Run DB-backed verification for `tests/test_agent_chat_db.py` with reachable Postgres and expected env vars.
-- [ ] Add custom-agent CRUD/list APIs to move beyond default-agent-only operation.
-- [ ] Add dead-letter/operational recovery tooling for summaries that reach terminal failure.
+- [ ] Open PR or merge locally for the rebased `feat/agent-first-chat-integration` branch.
+- [ ] Monitor connector and summary runtime behavior after deployment.
+- [ ] Begin custom-agent UI integration workstream.

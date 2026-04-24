@@ -43,6 +43,7 @@
 - [x] Agent-aware chat APIs with `/chat/*` compatibility mapping to default agent
 - [x] 10-exchange summary windowing with retry-capable status transitions
 - [x] Coverage added for DB contract, summary window logic, and route behaviors
+- [x] Main rebase alignment complete with connector/auth contract parity (`allowed_cruds`) and post-rebase verification matrix pass
 
 ## Infrastructure
 - [x] FastAPI server with 12 endpoints

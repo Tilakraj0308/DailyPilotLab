@@ -4,6 +4,7 @@ from utils.agent_chat_manager import (
     compute_closed_windows,
     mark_summary_retryable,
     process_post_assistant_message,
+    resolve_summary_cycle,
 )
 
 
@@ -15,6 +16,17 @@ def test_window_index_after_10_exchanges() -> None:
 
 def test_no_window_before_boundary() -> None:
     assert compute_closed_windows(total_messages=18, exchange_size=2, window_exchanges=10) == []
+
+
+def test_resolve_summary_cycle_from_env(monkeypatch) -> None:
+    monkeypatch.setenv("summary_cycle", "3")
+    assert resolve_summary_cycle() == 3
+
+    monkeypatch.setenv("summary_cycle", "0")
+    assert resolve_summary_cycle() == 10
+
+    monkeypatch.setenv("summary_cycle", "invalid")
+    assert resolve_summary_cycle() == 10
 
 
 def test_process_post_assistant_message_enqueues_all_missing_closed_windows(

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 
 from fastapi.responses import StreamingResponse
 
@@ -32,6 +33,23 @@ def compute_closed_windows(
     messages_per_window = exchange_size * window_exchanges
     completed_windows = total_messages // messages_per_window
     return list(range(completed_windows))
+
+
+def resolve_summary_cycle(default_cycle: int = 10) -> int:
+    """
+    Resolve summary cycle from env key `summary_cycle`.
+    Falls back to default when missing/invalid/non-positive.
+    """
+    raw_value = os.getenv("summary_cycle")
+    if raw_value is None:
+        return default_cycle
+    try:
+        cycle = int(raw_value)
+    except (TypeError, ValueError):
+        return default_cycle
+    if cycle <= 0:
+        return default_cycle
+    return cycle
 
 
 def mark_summary_retryable(summary_id: str) -> dict | None:
@@ -98,7 +116,10 @@ def process_post_assistant_message(*, user_id: str, agent_id: str, session_id: s
         user_id=user_id,
         agent_id=agent_id,
     )
-    closed_windows = compute_closed_windows(total_messages=len(messages))
+    closed_windows = compute_closed_windows(
+        total_messages=len(messages),
+        window_exchanges=resolve_summary_cycle(),
+    )
     if not closed_windows:
         return
 
