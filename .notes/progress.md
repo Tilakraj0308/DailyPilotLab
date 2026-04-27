@@ -45,6 +45,11 @@
 - [x] YAML prompt templates
 - [x] Pydantic models for all I/O
 - [x] Connectors: Google Calendar, Google Tasks, **Notion** (OAuth + encrypted tokens + tool registry CRUD for Notion pages)
+- [x] DB connection pooling (`ThreadedConnectionPool`) + pool close on app shutdown
+- [x] Chat SSE + connector request backpressure (env-tunable semaphores)
+- [x] Background worker telemetry (claim/job duration, queue snapshot logging, heartbeat fields)
+- [x] Connector routes split under `connectors/routes/`; helpers split into focused modules + `chat_facade` for chat DB access from routes
+- [x] `IdeaService` filter-column allowlist + fixed `remove_idea_topic_relation` SQL clause joining
 
 ## Pending / Ideas
 - [ ] Error handling improvements (currently swallows errors with 200 status)
@@ -52,4 +57,4 @@
 - [ ] Pagination for `GET /ideas`
 - [ ] WebSocket or SSE for long-running operations (refinement, topic assign)
 - [ ] Rate limiting for LLM calls
-- [ ] Tests (unit + integration)
+- [ ] Expand automated tests (integration + broader unit) and widen `ruff` to full `server/` tree

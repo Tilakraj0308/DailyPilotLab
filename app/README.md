@@ -194,7 +194,7 @@ Ensure `EXPO_PUBLIC_API_URL` points at your API for device testing.
 
 | Endpoint | Role |
 |----------|------|
-| `GET /connectors` | Connector status row for `gmail` (with other providers) |
+| `GET /connectors` | Connector status (307 redirect to `/connectors/`; both work) |
 | `POST /connectors/gmail/start` | Start Gmail OAuth (same JSON body as other `…/start` routes) |
 | `GET /connectors/gmail/priority` | Priority thread list for the inbox UI |
 | `GET /connectors/gmail/threads/{thread_id}` | Thread detail for read / draft context |

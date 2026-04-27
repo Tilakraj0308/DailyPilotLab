@@ -78,11 +78,16 @@ All endpoints follow: **Route → Manager → Helper/Service → DB/LLM**
 
 Third-party OAuth and tool execution live under **`server/connectors/`** (mounted at `/connectors`).
 
+- **HTTP routes:** `connectors/routes/` — `gmail_routes`, `google_tasks_routes`, `oauth_routes` (list at `GET /connectors/`; `GET /connectors` redirects with 307), `tool_meta_routes`; composed in `connectors/routes/__init__.py`. `connectors/router.py` re-exports the same `APIRouter` for imports like `from connectors import router`.
 - **Registry:** `connectors/providers/__init__.py` maps `provider_key` → connector class (`google_calendar`, `google_tasks`, `notion`).
 - **Google:** `GoogleOAuthConnector` in `connectors/base_connector.py` — Google OAuth PKCE, token refresh, revoke.
 - **Notion:** `NotionConnector` in `connectors/providers/notion/` — Notion OAuth token endpoint (HTTP Basic), refresh, local-only disconnect.
 - **Tools:** Each provider can expose `tools/` with `TOOL_DEFINITIONS`; `tool_registry.py` and `tool_executor.py` resolve tools and enforce CRUD permissions + history.
 - **Client:** Expo app `app/src/connectors/` — Profile integrations, OAuth return handling, Tool Access screen.
+
+## Database access
+
+- **`db/dbConnection.py`** — `ThreadedConnectionPool` (env `DB_POOL_MIN_CONN`, `DB_POOL_MAX_CONN`); `close_connection_pool()` on app shutdown. `get_dict_cursor()` commits on success and rolls back on error.
 
 ## Database Schema (4 Tables)
 | Table | Purpose |

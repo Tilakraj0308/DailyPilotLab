@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import base64
-import importlib
 from email import message_from_bytes
 from unittest.mock import Mock
 
@@ -12,13 +11,14 @@ from fastapi.testclient import TestClient
 
 import utils.openAi as openai_utils
 
+import connectors.db as connectors_db
+import connectors.history as connectors_history
+import connectors.providers as connectors_providers
+import connectors.providers.gmail.gmail_api as gmail_api_mod
+
 from connectors.models import GmailAiDraftSuggestionOut
 from connectors.router import router
 from utils.auth_middleware import get_current_user
-
-# `connectors/__init__.py` binds `connectors.router` to the APIRouter instance;
-# patch the actual module object via importlib.
-router_module = importlib.import_module("connectors.router")
 
 
 class FakeGmailConnector:
@@ -30,12 +30,12 @@ class FakeGmailConnector:
 @pytest.fixture
 def gmail_client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     monkeypatch.setitem(
-        router_module.PROVIDER_MAP,
+        connectors_providers.PROVIDER_MAP,
         "gmail",
         lambda: FakeGmailConnector(),
     )
     monkeypatch.setattr(
-        router_module.db,
+        connectors_db,
         "get_tool_permissions",
         lambda user_id, provider_key: {
             "create": True,
@@ -44,7 +44,7 @@ def gmail_client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
             "delete": True,
         },
     )
-    monkeypatch.setattr(router_module.db, "connector_provider_exists", lambda _pk: True)
+    monkeypatch.setattr(connectors_db, "connector_provider_exists", lambda _pk: True)
     app = FastAPI()
     app.include_router(router, prefix="/connectors")
     app.dependency_overrides[get_current_user] = lambda: {
@@ -145,8 +145,8 @@ def test_gmail_priority_hydrates_threads(
             ],
         }
 
-    monkeypatch.setattr(router_module.gmail_api, "list_inbox_messages", fake_list)
-    monkeypatch.setattr(router_module.gmail_api, "get_thread", fake_get_thread)
+    monkeypatch.setattr(gmail_api_mod, "list_inbox_messages", fake_list)
+    monkeypatch.setattr(gmail_api_mod, "get_thread", fake_get_thread)
 
     r = gmail_client.get("/connectors/gmail/priority")
     assert r.status_code == 200
@@ -179,9 +179,9 @@ def test_gmail_priority_max_results_passed_through(
         captured["max_results"] = max_results
         return {"messages": []}
 
-    monkeypatch.setattr(router_module.gmail_api, "list_inbox_messages", fake_list)
+    monkeypatch.setattr(gmail_api_mod, "list_inbox_messages", fake_list)
     monkeypatch.setattr(
-        router_module.gmail_api,
+        gmail_api_mod,
         "get_thread",
         lambda **kwargs: (_ for _ in ()).throw(AssertionError("no threads")),
     )
@@ -220,7 +220,7 @@ def test_gmail_ai_suggest_reply_uses_thread_and_openai(
         assert "draft" in system_prompt.lower()
         return GmailAiDraftSuggestionOut(subject="Re: Hello", body_text="Thanks for your note.")
 
-    monkeypatch.setattr(router_module.gmail_api, "get_thread", fake_get_thread)
+    monkeypatch.setattr(gmail_api_mod, "get_thread", fake_get_thread)
     monkeypatch.setattr(openai_utils.openai_client, "get_chat_completion", fake_completion)
 
     r = gmail_client.post("/connectors/gmail/ai/suggest-reply", json={"thread_id": "thr-ai"})
@@ -234,7 +234,7 @@ def test_gmail_ai_suggest_reply_rejects_empty_body(
     gmail_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
-        router_module.gmail_api,
+        gmail_api_mod,
         "get_thread",
         lambda **kwargs: {"id": "t", "messages": []},
     )
@@ -273,7 +273,7 @@ def test_gmail_thread_detail_normalized(gmail_client: TestClient, monkeypatch: p
             ],
         }
 
-    monkeypatch.setattr(router_module.gmail_api, "get_thread", fake_get_thread)
+    monkeypatch.setattr(gmail_api_mod, "get_thread", fake_get_thread)
 
     r = gmail_client.get("/connectors/gmail/threads/thr99")
     assert r.status_code == 200
@@ -302,7 +302,7 @@ def test_gmail_create_draft_encodes_rfc822_and_thread(
             "message": {"id": "msg-new", "threadId": "th-reply"},
         }
 
-    monkeypatch.setattr(router_module.gmail_api, "create_draft", fake_create)
+    monkeypatch.setattr(gmail_api_mod, "create_draft", fake_create)
 
     r = gmail_client.post(
         "/connectors/gmail/drafts",
@@ -334,7 +334,7 @@ def test_gmail_send_draft(gmail_client: TestClient, monkeypatch: pytest.MonkeyPa
         assert draft_id == "draft-xyz"
         return {"id": "sent-msg-id", "labelIds": ["SENT"]}
 
-    monkeypatch.setattr(router_module.gmail_api, "send_draft", fake_send)
+    monkeypatch.setattr(gmail_api_mod, "send_draft", fake_send)
 
     r = gmail_client.post("/connectors/gmail/drafts/draft-xyz/send")
     assert r.status_code == 200
@@ -349,12 +349,12 @@ def test_gmail_create_draft_logs_history(
     def capture_log(**kwargs):
         logged.append(kwargs)
 
-    monkeypatch.setattr(router_module.history, "log_tool_call", capture_log)
+    monkeypatch.setattr(connectors_history, "log_tool_call", capture_log)
 
     def fake_create(*, access_token: str, body: dict):
         return {"id": "draft-1", "message": {"id": "msg-new", "threadId": "th-reply"}}
 
-    monkeypatch.setattr(router_module.gmail_api, "create_draft", fake_create)
+    monkeypatch.setattr(gmail_api_mod, "create_draft", fake_create)
 
     r = gmail_client.post(
         "/connectors/gmail/drafts",
@@ -393,12 +393,12 @@ def test_gmail_send_draft_logs_history(
     def capture_log(**kwargs):
         logged.append(kwargs)
 
-    monkeypatch.setattr(router_module.history, "log_tool_call", capture_log)
+    monkeypatch.setattr(connectors_history, "log_tool_call", capture_log)
 
     def fake_send(*, access_token: str, draft_id: str):
         return {"id": "sent-msg-id", "threadId": "th-1", "labelIds": ["SENT"]}
 
-    monkeypatch.setattr(router_module.gmail_api, "send_draft", fake_send)
+    monkeypatch.setattr(gmail_api_mod, "send_draft", fake_send)
 
     r = gmail_client.post("/connectors/gmail/drafts/draft-xyz/send")
     assert r.status_code == 200
@@ -417,7 +417,7 @@ def test_gmail_thread_detail_maps_404(
         resp.status_code = 404
         raise requests.exceptions.HTTPError(response=resp)
 
-    monkeypatch.setattr(router_module.gmail_api, "get_thread", fake_get_thread)
+    monkeypatch.setattr(gmail_api_mod, "get_thread", fake_get_thread)
 
     r = gmail_client.get("/connectors/gmail/threads/missing")
     assert r.status_code == 404
@@ -432,7 +432,7 @@ def test_gmail_create_draft_maps_404(
         resp.status_code = 404
         raise requests.exceptions.HTTPError(response=resp)
 
-    monkeypatch.setattr(router_module.gmail_api, "create_draft", fake_create)
+    monkeypatch.setattr(gmail_api_mod, "create_draft", fake_create)
 
     r = gmail_client.post(
         "/connectors/gmail/drafts",
@@ -449,7 +449,7 @@ def test_gmail_send_draft_maps_404(
         resp.status_code = 404
         raise requests.exceptions.HTTPError(response=resp)
 
-    monkeypatch.setattr(router_module.gmail_api, "send_draft", fake_send)
+    monkeypatch.setattr(gmail_api_mod, "send_draft", fake_send)
 
     r = gmail_client.post("/connectors/gmail/drafts/bad-draft/send")
     assert r.status_code == 404
@@ -459,7 +459,7 @@ def test_gmail_priority_forbidden_without_read(
     gmail_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
-        router_module.db,
+        connectors_db,
         "get_tool_permissions",
         lambda uid, pk: {
             "create": True,
@@ -477,7 +477,7 @@ def test_gmail_thread_detail_forbidden_without_read(
     gmail_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
-        router_module.db,
+        connectors_db,
         "get_tool_permissions",
         lambda uid, pk: {
             "create": True,
@@ -494,7 +494,7 @@ def test_gmail_create_draft_forbidden_without_create(
     gmail_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
-        router_module.db,
+        connectors_db,
         "get_tool_permissions",
         lambda uid, pk: {
             "create": False,
@@ -515,7 +515,7 @@ def test_gmail_send_draft_forbidden_without_update(
     gmail_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
-        router_module.db,
+        connectors_db,
         "get_tool_permissions",
         lambda uid, pk: {
             "create": True,
@@ -533,7 +533,7 @@ def test_gmail_ai_suggest_reply_forbidden_without_create(
     gmail_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
-        router_module.db,
+        connectors_db,
         "get_tool_permissions",
         lambda uid, pk: {
             "create": False,
@@ -564,7 +564,7 @@ def test_gmail_thread_detail_maps_upstream_401_short_detail(
         resp.text = "B" * 8000
         raise requests.exceptions.HTTPError(response=resp)
 
-    monkeypatch.setattr(router_module.gmail_api, "get_thread", fake_get_thread)
+    monkeypatch.setattr(gmail_api_mod, "get_thread", fake_get_thread)
 
     r = gmail_client.get("/connectors/gmail/threads/t")
     assert r.status_code == 401
@@ -581,7 +581,7 @@ def test_gmail_thread_detail_maps_upstream_403_as_401(
         resp.text = "forbidden-payload"
         raise requests.exceptions.HTTPError(response=resp)
 
-    monkeypatch.setattr(router_module.gmail_api, "get_thread", fake_get_thread)
+    monkeypatch.setattr(gmail_api_mod, "get_thread", fake_get_thread)
 
     r = gmail_client.get("/connectors/gmail/threads/t")
     assert r.status_code == 401
@@ -591,7 +591,7 @@ def test_gmail_thread_detail_maps_upstream_403_as_401(
 def test_gmail_start_returns_503_when_provider_row_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(router_module.db, "connector_provider_exists", lambda _pk: False)
+    monkeypatch.setattr(connectors_db, "connector_provider_exists", lambda _pk: False)
     app = FastAPI()
     app.include_router(router, prefix="/connectors")
     app.dependency_overrides[get_current_user] = lambda: {

@@ -56,7 +56,14 @@
 ### Google-specific vs provider-neutral connector base
 **Decision**: Rename the former generic `BaseConnector` to `GoogleOAuthConnector`; keep `BaseConnector` as an alias for Google connectors only. Add `NotionConnector` as a separate class with Notion OAuth/token semantics.
 **Why**: The previous `BaseConnector` was entirely Google-coupled (URLs, env vars, consent, revoke). Pretending it was generic would force `if provider == "notion"` branches or silent wrong behavior.
-**Trade-off**: Slightly more files; new providers either subclass Google (if ever justified) or implement their own connector class with the same public methods expected by `router.py`.
+**Trade-off**: Slightly more files; new providers either subclass Google (if ever justified) or implement their own connector class with the same public methods expected by the connector HTTP layer (`connectors/routes/`).
+
+---
+
+### DB connection pool + connector route split (2026-04-27)
+**Decision**: Use `psycopg2.pool.ThreadedConnectionPool` in `db/dbConnection.py` (env `DB_POOL_MIN_CONN` / `DB_POOL_MAX_CONN`); call `close_connection_pool()` on app shutdown. Split monolithic `connectors/router.py` into `connectors/routes/*`; canonical connector list is `GET /connectors/` with `GET /connectors` → 307. Split LLM helpers out of `utils/helpers.py` into focused modules; add `utils/chat_facade.py` so `server.py` does not import `services/agent_chat_db` directly.
+**Why**: Cuts connection churn under concurrency; reduces merge hotspots; enforces clearer boundaries without changing product behavior.
+**Trade-off**: Slightly more files; clients should follow redirects for `/connectors` (or call `/connectors/`).
 
 ---
 

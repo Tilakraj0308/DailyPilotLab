@@ -1,5 +1,5 @@
 from psycopg2.extras import RealDictRow
-from tracemalloc import start
+
 from services.ideas_service import IdeaService
 from models.ideas import IdeaCreateInput, IdeaUpdateInput, IdeaUpdateInput, IdeaDeleteInput
 from utils.openAi import openai_client
@@ -45,7 +45,7 @@ def create_idea(idea: IdeaCreateInput, user_id: str):
         service = IdeaService()
         new_idea_id = service.create_idea(insert_data, user_id)
         raw_idea_refinement_threshold = int(os.getenv("TOPIC_AUTO_REFINEMENT_THRESHOLD", 10))
-        raw_ideas_count = service.get_ideas_count(user_id, 'raw', 'TRUE')
+        raw_ideas_count = service.get_ideas_count(user_id, "raw", True)
         if raw_ideas_count > raw_idea_refinement_threshold:
             return raw_to_refined_ideas(user_id=user_id)
                 
@@ -94,7 +94,7 @@ def create_ideas(ideas_input: List[IdeaCreateInput], user_id: str):
     if len(ideas) > 0:
         service = IdeaService()
         service.bulk_create_ideas(ideas, user_id)
-        raw_ideas_count = service.get_ideas_count(user_id, 'raw', 'TRUE')
+        raw_ideas_count = service.get_ideas_count(user_id, "raw", True)
         if raw_ideas_count > raw_idea_refinement_threshold:
             return raw_to_refined_ideas(user_id=user_id)
 

@@ -1,8 +1,18 @@
+from typing import Any, Dict, List
 
-
-from typing import List, Dict, Any
 from psycopg2.extras import execute_values
+
 from db.dbConnection import get_dict_cursor
+
+# Allowlisted columns for dynamic WHERE fragments (avoid SQL injection).
+_RAW_IDEA_FILTER_COLUMNS = frozenset({"raw", "content", "id"})
+
+
+def _validate_idea_filter_column(filter_column: str) -> str:
+    if filter_column not in _RAW_IDEA_FILTER_COLUMNS:
+        raise ValueError(f"Invalid raw_idea filter column: {filter_column!r}")
+    return filter_column
+
 
 class IdeaService:
     def __init__(self):
@@ -20,19 +30,29 @@ class IdeaService:
             return cur.fetchone()
     
     def get_ideas_with_filter(self, filter_column: str, filter_value: Any, user_id: str):
+        col = _validate_idea_filter_column(filter_column)
         with get_dict_cursor() as cur:
-            cur.execute(f"SELECT * FROM raw_idea WHERE {filter_column} = %s AND user_id = %s", (filter_value, user_id))
+            cur.execute(
+                f"SELECT * FROM raw_idea WHERE {col} = %s AND user_id = %s",
+                (filter_value, user_id),
+            )
             return cur.fetchall()
-    
-    def get_ideas_count(self, user_id: str, filter_column: str = None, filter_value: Any = None) -> int:
+
+    def get_ideas_count(
+        self, user_id: str, filter_column: str | None = None, filter_value: Any = None
+    ) -> int:
         with get_dict_cursor() as cur:
-            q = f"SELECT COUNT(*) AS total_count FROM raw_idea WHERE user_id = %s"
             if filter_column:
-                q = f"{q} AND {filter_column} = %s"
-                cur.execute(q, (user_id, filter_value))
-                data = cur.fetchall()
-                return data[0]["total_count"]
-            cur.execute(q, (user_id,))
+                col = _validate_idea_filter_column(filter_column)
+                cur.execute(
+                    f"SELECT COUNT(*) AS total_count FROM raw_idea WHERE user_id = %s AND {col} = %s",
+                    (user_id, filter_value),
+                )
+            else:
+                cur.execute(
+                    "SELECT COUNT(*) AS total_count FROM raw_idea WHERE user_id = %s",
+                    (user_id,),
+                )
             data = cur.fetchall()
             return data[0]["total_count"]
 
@@ -50,17 +70,20 @@ class IdeaService:
         with get_dict_cursor() as cur:
             cur.execute("INSERT INTO idea_topics (idea_id, topic_id) VALUES (%s, %s) ON CONFLICT DO NOTHING", (idea_id, topic_id))
 
-    def remove_idea_topic_relation(self, idea_id: int=None, topic_id: int=None):
-        query = "DELETE FROM idea_topics WHERE"
-        values = ()
+    def remove_idea_topic_relation(self, idea_id: int | None = None, topic_id: int | None = None):
+        if idea_id is None and topic_id is None:
+            return
+        clauses: list[str] = []
+        values: list[Any] = []
         if idea_id is not None:
-            query += " idea_id = %s"
-            values += (idea_id,)
+            clauses.append("idea_id = %s")
+            values.append(idea_id)
         if topic_id is not None:
-            query += " topic_id = %s"
-            values += (topic_id,)
+            clauses.append("topic_id = %s")
+            values.append(topic_id)
+        query = "DELETE FROM idea_topics WHERE " + " AND ".join(clauses)
         with get_dict_cursor() as cur:
-            cur.execute(query, values)
+            cur.execute(query, tuple(values))
 
     def get_topics_for_idea(self, idea_id: int):
         with get_dict_cursor() as cur:

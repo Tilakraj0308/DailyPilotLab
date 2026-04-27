@@ -1,24 +1,22 @@
 from contextlib import asynccontextmanager
 import logging
-from fastapi import FastAPI, Response, UploadFile, File, Depends, HTTPException, Request
-from fastapi.responses import StreamingResponse, RedirectResponse
+from fastapi import FastAPI, Response, UploadFile, File, Depends, HTTPException
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
-import json
 import asyncio
 import time
 from uuid import UUID
 from fastapi.middleware.cors import CORSMiddleware
 from utils.idea_manager import get_ideas, create_idea, create_ideas, update_idea, delete_idea, delete_ideas, delete_all_ideas, raw_to_refined_ideas
 from models.ideas import IdeaCreateInput, IdeaOut, IdeaUpdateInput, IdeaDeleteInput
-from models.users import GoogleAuthRequest, AuthResponse, UserOut
 from models.agent_chat import AgentChatStreamRequest
 from utils.helpers import assign_idea_to_topic, semantic_search_memories, update_traits
 from services.auth_service import get_or_create_user
-from services.agent_chat_db import (
-    AgentSessionAccessError,
-    ensure_default_agent,
-    list_merged_chat_sessions,
-    load_merged_session_history,
+from services.agent_chat_db import AgentSessionAccessError
+from utils.chat_facade import (
+    ensure_user_default_agent,
+    list_chat_sessions_for_user,
+    load_merged_history,
 )
 from utils.auth_middleware import get_current_user
 from typing import List
@@ -30,6 +28,8 @@ from models.chat import ChatSessionSummary
 from utils.agent_chat_manager import stream_agent_chat
 from utils.background_jobs.worker import SummaryBackgroundWorker
 from connectors import router as connectors_router
+from db.dbConnection import close_connection_pool
+from utils.concurrency import ChatStreamCapacityError, http_exception_for_chat_capacity
 
 load_dotenv()
 
@@ -54,6 +54,7 @@ async def _lifespan(_app: FastAPI):
         yield
     finally:
         await _summary_worker.stop()
+        close_connection_pool()
 
 
 app = FastAPI(lifespan=_lifespan)
@@ -67,6 +68,13 @@ app.add_middleware(
 )
 
 app.include_router(connectors_router, prefix="/connectors", tags=["connectors"])
+
+
+@app.get("/connectors", include_in_schema=False)
+def _connectors_list_slash_redirect():
+    """Preserve `GET /connectors` for older clients; list handler lives at `/connectors/`."""
+    return RedirectResponse(url="/connectors/", status_code=307)
+
 
 # ─── Health Check Endpoint ──────────────────────────────────────────────────
 
@@ -230,6 +238,8 @@ async def agent_chat_stream(
     user_id = payload.get("sub", "")
     try:
         return await stream_agent_chat(req=req, user_id=user_id)
+    except ChatStreamCapacityError as e:
+        raise http_exception_for_chat_capacity(e) from e
     except AgentSessionAccessError as e:
         raise HTTPException(status_code=403, detail=str(e)) from e
 
@@ -237,13 +247,13 @@ async def agent_chat_stream(
 @app.post("/agents/default/ensure")
 def ensure_default_agent_endpoint(payload: dict = Depends(get_current_user)):
     user_id = payload.get("sub", "")
-    return ensure_default_agent(user_id)
+    return ensure_user_default_agent(user_id)
 
 
 @app.post("/chat/stream")
 async def chat_stream(req: ChatStreamRequest, payload: dict = Depends(get_current_user)):
     user_id = payload.get("sub", "")
-    default_agent = await asyncio.to_thread(ensure_default_agent, user_id)
+    default_agent = await asyncio.to_thread(ensure_user_default_agent, user_id)
     wrapped = AgentChatStreamRequest(
         agent_id=UUID(str(default_agent["id"])),
         session_id=req.session_id,
@@ -251,6 +261,8 @@ async def chat_stream(req: ChatStreamRequest, payload: dict = Depends(get_curren
     )
     try:
         return await stream_agent_chat(req=wrapped, user_id=user_id)
+    except ChatStreamCapacityError as e:
+        raise http_exception_for_chat_capacity(e) from e
     except AgentSessionAccessError as e:
         raise HTTPException(status_code=403, detail=str(e)) from e
 
@@ -258,7 +270,7 @@ async def chat_stream(req: ChatStreamRequest, payload: dict = Depends(get_curren
 @app.get("/chat/sessions", response_model=List[ChatSessionSummary])
 def get_chat_sessions(limit: int = 15, offset: int = 0, payload: dict = Depends(get_current_user)):
     user_id = payload.get("sub", "")
-    sessions = list_merged_chat_sessions(user_id, limit=limit, offset=offset)
+    sessions = list_chat_sessions_for_user(user_id, limit=limit, offset=offset)
     return [
         ChatSessionSummary(
             id=str(s["id"]),
@@ -271,6 +283,6 @@ def get_chat_sessions(limit: int = 15, offset: int = 0, payload: dict = Depends(
 @app.get("/chat/sessions/{session_id}/history")
 def get_chat_session_history(session_id: str, payload: dict = Depends(get_current_user)):
     user_id = payload.get("sub", "")
-    history, _src = load_merged_session_history(session_id=session_id, user_id=user_id)
+    history, _src = load_merged_history(session_id=session_id, user_id=user_id)
     return {"history": history}
 

@@ -20,6 +20,7 @@ from services.chat_service import stream_chat
 from utils.background_jobs.config import load_summary_worker_config
 from utils.background_jobs.models import chat_summary_idempotency_key
 from utils.background_jobs.repository import enqueue_chat_summary_job
+from utils.concurrency import acquire_chat_stream_slot, release_chat_stream_slot
 
 
 def compute_closed_windows(
@@ -68,47 +69,54 @@ async def stream_agent_chat(req: AgentChatStreamRequest, user_id: str) -> Stream
         len(user_text or ""),
     )
 
-    await asyncio.to_thread(
-        get_or_create_agent_session, session_id, user_id, agent_id
-    )
-    await asyncio.to_thread(
-        save_agent_message,
-        session_id=session_id,
-        user_id=user_id,
-        agent_id=agent_id,
-        role="user",
-        content=user_text,
-    )
-
-    history_rows = await asyncio.to_thread(
-        load_agent_history,
-        session_id=session_id,
-        user_id=user_id,
-        agent_id=agent_id,
-    )
-    history = [{"role": row["role"], "content": row["content"]} for row in history_rows]
+    await acquire_chat_stream_slot()
 
     async def event_stream():
-        full_response = ""
-        async for token in stream_chat(history, user_id):
-            full_response += token
-            yield f'data: {json.dumps({"type": "token", "content": token})}\n\n'
+        try:
+            await asyncio.to_thread(
+                get_or_create_agent_session, session_id, user_id, agent_id
+            )
+            await asyncio.to_thread(
+                save_agent_message,
+                session_id=session_id,
+                user_id=user_id,
+                agent_id=agent_id,
+                role="user",
+                content=user_text,
+            )
 
-        await asyncio.to_thread(
-            save_agent_message,
-            session_id=session_id,
-            user_id=user_id,
-            agent_id=agent_id,
-            role="assistant",
-            content=full_response,
-        )
-        await asyncio.to_thread(
-            process_post_assistant_message,
-            user_id=user_id,
-            agent_id=agent_id,
-            session_id=session_id,
-        )
-        yield f'data: {json.dumps({"type": "done", "content": ""})}\n\n'
+            history_rows = await asyncio.to_thread(
+                load_agent_history,
+                session_id=session_id,
+                user_id=user_id,
+                agent_id=agent_id,
+            )
+            history = [
+                {"role": row["role"], "content": row["content"]} for row in history_rows
+            ]
+
+            full_response = ""
+            async for token in stream_chat(history, user_id):
+                full_response += token
+                yield f'data: {json.dumps({"type": "token", "content": token})}\n\n'
+
+            await asyncio.to_thread(
+                save_agent_message,
+                session_id=session_id,
+                user_id=user_id,
+                agent_id=agent_id,
+                role="assistant",
+                content=full_response,
+            )
+            await asyncio.to_thread(
+                process_post_assistant_message,
+                user_id=user_id,
+                agent_id=agent_id,
+                session_id=session_id,
+            )
+            yield f'data: {json.dumps({"type": "done", "content": ""})}\n\n'
+        finally:
+            release_chat_stream_slot()
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 

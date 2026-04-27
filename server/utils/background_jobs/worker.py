@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from datetime import UTC, datetime
 from typing import Any
 
@@ -12,6 +13,7 @@ from utils.background_jobs.models import JobType
 from utils.background_jobs.registry import get_job_handler
 from utils.background_jobs.repository import (
     claim_next_job,
+    get_queue_debug_snapshot,
     mark_job_done,
     mark_job_failure,
 )
@@ -23,6 +25,11 @@ _heartbeat: dict[str, Any] = {
     "last_poll_at": None,
     "last_error": None,
     "config": None,
+    "last_claim_duration_ms": None,
+    "last_job_duration_ms": None,
+    "jobs_completed": 0,
+    "jobs_failed": 0,
+    "last_queue_snapshot": None,
 }
 
 
@@ -76,6 +83,7 @@ class SummaryBackgroundWorker:
         sem = asyncio.Semaphore(self._config.concurrency)
         poll_sec = self._config.poll_interval_ms / 1000.0
 
+        poll_count = 0
         while not self._stop.is_set():
             _heartbeat["last_poll_at"] = datetime.now(UTC).isoformat()
             batch: list[asyncio.Task[None]] = []
@@ -83,17 +91,34 @@ class SummaryBackgroundWorker:
                 for _ in range(self._config.batch_size):
                     if self._stop.is_set():
                         break
+                    t_claim = time.perf_counter()
                     job = await asyncio.to_thread(
                         claim_next_job,
                         lease_seconds=self._config.lease_seconds,
+                    )
+                    _heartbeat["last_claim_duration_ms"] = round(
+                        (time.perf_counter() - t_claim) * 1000.0, 2
                     )
                     if not job:
                         break
                     batch.append(asyncio.create_task(self._process_with_sem(sem, job)))
 
                 if batch:
+                    poll_count = 0
                     await asyncio.gather(*batch)
                 else:
+                    poll_count += 1
+                    if poll_count % 20 == 0:
+                        try:
+                            snap = await asyncio.to_thread(get_queue_debug_snapshot)
+                            _heartbeat["last_queue_snapshot"] = snap
+                            logger.info(
+                                "background_jobs queue_snapshot poll=%s snapshot=%s",
+                                poll_count,
+                                snap,
+                            )
+                        except Exception as snap_e:
+                            logger.debug("queue snapshot failed: %s", snap_e)
                     try:
                         await asyncio.wait_for(self._stop.wait(), timeout=poll_sec)
                     except asyncio.TimeoutError:
@@ -112,6 +137,7 @@ class SummaryBackgroundWorker:
     def _execute_job(self, job: dict) -> None:
         job_id = str(job["id"])
         job_type = str(job["job_type"])
+        t0 = time.perf_counter()
         try:
             logger.info(
                 "SummaryBackgroundWorker execute_start id=%s type=%s", job_id, job_type
@@ -119,13 +145,22 @@ class SummaryBackgroundWorker:
             handler = get_job_handler(job_type)
             result = handler(job)
             mark_job_done(job_id=job_id, result=result)
-            logger.info("SummaryBackgroundWorker execute_ok id=%s", job_id)
+            elapsed_ms = round((time.perf_counter() - t0) * 1000.0, 2)
+            _heartbeat["last_job_duration_ms"] = elapsed_ms
+            _heartbeat["jobs_completed"] = int(_heartbeat.get("jobs_completed") or 0) + 1
+            logger.info(
+                "SummaryBackgroundWorker execute_ok id=%s duration_ms=%s", job_id, elapsed_ms
+            )
         except Exception as e:
             _heartbeat["last_error"] = str(e)
+            elapsed_ms = round((time.perf_counter() - t0) * 1000.0, 2)
+            _heartbeat["last_job_duration_ms"] = elapsed_ms
+            _heartbeat["jobs_failed"] = int(_heartbeat.get("jobs_failed") or 0) + 1
             logger.warning(
-                "Job %s type=%s failed: %s",
+                "Job %s type=%s failed after %sms: %s",
                 job_id,
                 job_type,
+                elapsed_ms,
                 e,
                 exc_info=logger.isEnabledFor(logging.DEBUG),
             )
