@@ -1,26 +1,62 @@
+from contextlib import asynccontextmanager
+import logging
 from fastapi import FastAPI, Response, UploadFile, File, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse, RedirectResponse
 from pydantic import BaseModel
 import json
 import asyncio
 import time
+from uuid import UUID
 from fastapi.middleware.cors import CORSMiddleware
 from utils.idea_manager import get_ideas, create_idea, create_ideas, update_idea, delete_idea, delete_ideas, delete_all_ideas, raw_to_refined_ideas
 from models.ideas import IdeaCreateInput, IdeaOut, IdeaUpdateInput, IdeaDeleteInput
 from models.users import GoogleAuthRequest, AuthResponse, UserOut
+from models.agent_chat import AgentChatStreamRequest
 from utils.helpers import assign_idea_to_topic, semantic_search_memories, update_traits
 from services.auth_service import get_or_create_user
+from services.agent_chat_db import (
+    AgentSessionAccessError,
+    ensure_default_agent,
+    list_merged_chat_sessions,
+    load_merged_session_history,
+)
 from utils.auth_middleware import get_current_user
-from typing import List 
+from typing import List
 from dotenv import load_dotenv
 from utils.topic_manager import update_topic_recency
-from services.chat_service import transcribe_audio, stream_chat
-from services.chat_db import ChatSessionAccessError, get_or_create_session, save_message, load_history, get_user_sessions
+from services.chat_service import transcribe_audio
+from utils.background_jobs.config import load_summary_worker_config
 from models.chat import ChatSessionSummary
+from utils.agent_chat_manager import stream_agent_chat
+from utils.background_jobs.worker import SummaryBackgroundWorker
 from connectors import router as connectors_router
 
 load_dotenv()
-app = FastAPI()
+
+log = logging.getLogger("server")
+_summary_worker = SummaryBackgroundWorker()
+
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    wcfg = load_summary_worker_config()
+    log.info(
+        "Lifespan: summary worker enabled=%s poll_ms=%s batch=%s concurrency=%s lease_s=%s max_retries=%s",
+        wcfg.enabled,
+        wcfg.poll_interval_ms,
+        wcfg.batch_size,
+        wcfg.concurrency,
+        wcfg.lease_seconds,
+        wcfg.max_job_retries,
+    )
+    _summary_worker.start()
+    try:
+        yield
+    finally:
+        await _summary_worker.stop()
+
+
+app = FastAPI(lifespan=_lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -183,39 +219,46 @@ def updateTraits(response: Response, payload: dict = Depends(get_current_user)):
 # ─── Chat ────────────────────────────────────────────────────────────────────
 
 class ChatStreamRequest(BaseModel):
-    session_id: str
+    session_id: UUID
     content: str
+
+
+@app.post("/agent-chat/stream")
+async def agent_chat_stream(
+    req: AgentChatStreamRequest, payload: dict = Depends(get_current_user)
+):
+    user_id = payload.get("sub", "")
+    try:
+        return await stream_agent_chat(req=req, user_id=user_id)
+    except AgentSessionAccessError as e:
+        raise HTTPException(status_code=403, detail=str(e)) from e
+
+
+@app.post("/agents/default/ensure")
+def ensure_default_agent_endpoint(payload: dict = Depends(get_current_user)):
+    user_id = payload.get("sub", "")
+    return ensure_default_agent(user_id)
+
 
 @app.post("/chat/stream")
 async def chat_stream(req: ChatStreamRequest, payload: dict = Depends(get_current_user)):
-    session_id = req.session_id
-    user_text = req.content
     user_id = payload.get("sub", "")
-
+    default_agent = await asyncio.to_thread(ensure_default_agent, user_id)
+    wrapped = AgentChatStreamRequest(
+        agent_id=UUID(str(default_agent["id"])),
+        session_id=req.session_id,
+        content=req.content,
+    )
     try:
-        await asyncio.to_thread(get_or_create_session, session_id, user_id)
-    except ChatSessionAccessError as e:
+        return await stream_agent_chat(req=wrapped, user_id=user_id)
+    except AgentSessionAccessError as e:
         raise HTTPException(status_code=403, detail=str(e)) from e
-    await asyncio.to_thread(save_message, session_id, "user", user_text)
 
-    history_rows = await asyncio.to_thread(load_history, session_id)
-    history = [{"role": r["role"], "content": r["content"]} for r in history_rows]
-
-    async def event_stream():
-        full_response = ""
-        async for token in stream_chat(history, user_id):
-            full_response += token
-            yield f'data: {json.dumps({"type": "token", "content": token})}\n\n'
-        
-        await asyncio.to_thread(save_message, session_id, "assistant", full_response)
-        yield f'data: {json.dumps({"type": "done", "content": ""})}\n\n'
-
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 @app.get("/chat/sessions", response_model=List[ChatSessionSummary])
 def get_chat_sessions(limit: int = 15, offset: int = 0, payload: dict = Depends(get_current_user)):
     user_id = payload.get("sub", "")
-    sessions = get_user_sessions(user_id, limit=limit, offset=offset)
+    sessions = list_merged_chat_sessions(user_id, limit=limit, offset=offset)
     return [
         ChatSessionSummary(
             id=str(s["id"]),
@@ -228,7 +271,6 @@ def get_chat_sessions(limit: int = 15, offset: int = 0, payload: dict = Depends(
 @app.get("/chat/sessions/{session_id}/history")
 def get_chat_session_history(session_id: str, payload: dict = Depends(get_current_user)):
     user_id = payload.get("sub", "")
-    history_rows = load_history(session_id)
-    history = [{"role": r["role"], "content": r["content"]} for r in history_rows]
+    history, _src = load_merged_session_history(session_id=session_id, user_id=user_id)
     return {"history": history}
 

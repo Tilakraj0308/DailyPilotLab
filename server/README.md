@@ -93,6 +93,10 @@ TOPIC_SIMILARITY_THRESHOLD=0.2
 IDEA_SIMILARITY_THRESHOLD=0.4
 TOPIC_AUTO_REFINEMENT_THRESHOLD=3
 BULK_IDEA_INSERTION_THRESHOLD=4
+
+# Agent chat: summary window in exchanges; background summarization (see Background worker)
+summary_cycle=10
+SUMMARY_WORKER_ENABLED=false
 ```
 
 > **Never commit `.env`** — it is already listed in `.gitignore`.
@@ -131,6 +135,7 @@ The database schema is managed via **Supabase migration files** in `supabase/mig
 | `20260417_google_tasks_connector_resources.sql` | Seeds `google_tasks` provider; `user_connector_resources` for selected task list metadata              |
 | `20260418_notion_connector_provider.sql`        | Seeds `notion` provider row                                                                           |
 | `20260418150000_gmail_connector_provider.sql`   | Seeds `gmail` provider row (timestamp distinct from `20260418_notion_*`; see note below)               |
+| `20260427_agent_chat_and_background_jobs.sql`  | `agents`, `agent_sessions`, `agent_messages`, `chat_summaries`; generic `background_jobs` queue     |
 
 **1. Install the Supabase CLI(if you don't already have)** by following the [official install guide](https://supabase.com/docs/guides/cli/getting-started).
 
@@ -198,6 +203,18 @@ If Chrome shows **`ERR_SSL_PROTOCOL_ERROR`** on the callback: the browser is ope
 
 ---
 
+## Agent chat and background summarization
+
+Apply migration **`20260427_agent_chat_and_background_jobs.sql`** (via `npx supabase db push`) so `agents`, `agent_sessions`, `agent_messages`, `chat_summaries`, and **`background_jobs`** exist.
+
+- **`/chat/stream`** and **`/agent-chat/stream`** store turns in **`agent_messages`**. The legacy **`chat_sessions` / `chat_messages`** tables remain for list/history routes until migrated.
+- When a window boundary is reached, **`summary_cycle`** (in `.env`, user+assistant **exchanges** per window) triggers a `chat_summaries` row and a **`background_jobs`** row with `job_type=chat_summary` (idempotent per user/agent/session/window).
+- Set **`SUMMARY_WORKER_ENABLED=true`** so the API process runs a built-in poller (see `utils/background_jobs/worker.py`) that claims jobs, calls OpenAI, and updates **`chat_summaries`**. If disabled, `chat_summaries` stays `pending` and queue rows are not processed.
+- Operational queries: `SELECT status, count(*) FROM public.background_jobs GROUP BY status;` — stale **`in_progress`** jobs are reclaimed after **`SUMMARY_WORKER_LEASE_SECONDS`**.
+- In-process status: `get_worker_heartbeat()` in `utils/background_jobs/worker.py` (`last_poll_at`, `last_error`).
+
+---
+
 ## API Endpoints
 
 | Method   | Path                          | Description                                |
@@ -228,4 +245,6 @@ If Chrome shows **`ERR_SSL_PROTOCOL_ERROR`** on the callback: the browser is ope
 | `POST` | `/connectors/google_tasks/tasks` | Create task in selected list (auth) |
 | `PATCH` | `/connectors/google_tasks/tasks/{task_id}` | Update task (e.g. `completed`) (auth) |
 | `DELETE` | `/connectors/google_tasks/tasks/{task_id}` | Delete task (auth) |
-| `POST` | `/chat/stream`              | SSE chat (auth)                            |
+| `POST` | `/chat/stream`              | SSE agent chat (default agent) (auth)      |
+| `POST` | `/agent-chat/stream`        | SSE agent chat (explicit `agent_id`) (auth) |
+| `POST` | `/agents/default/ensure`    | Ensure default agent row (auth)            |

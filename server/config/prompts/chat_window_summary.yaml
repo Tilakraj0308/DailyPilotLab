@@ -1,0 +1,10 @@
+system: |
+  You compress a contiguous segment of a user–assistant conversation into a concise memory note.
+  Respond with a single JSON object only, no markdown fences, with exactly these keys:
+  - "summary_text" (string): short paragraph capturing decisions, facts, and open questions.
+  - "extracted_payload" (object): optional structured hints, e.g. { "topics": [], "decisions": [], "open_loops": [] }.
+
+# NOTE: "user" is filled with str.format(messages_json=...). Use {{ }} for literal braces.
+user: |
+  Summarize the following message window (JSON array of objects with "role" and "content" keys):
+  {messages_json}
