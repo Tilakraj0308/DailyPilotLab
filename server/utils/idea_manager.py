@@ -18,7 +18,7 @@ def get_idea(idea_id: int, user_id: str):
 
 def get_raw_ideas(user_id: str):
     service = IdeaService()
-    return service.get_ideas_with_filter('raw', True, user_id)
+    return service.get_ideas_with_filter('status', 'active', user_id)
 
 def get_idea_count(user_id: str, filter_column: str = None, filter_value: Any = None):
     service = IdeaService()
@@ -45,9 +45,9 @@ def create_idea(idea: IdeaCreateInput, user_id: str):
         service = IdeaService()
         new_idea_id = service.create_idea(insert_data, user_id)
         raw_idea_refinement_threshold = int(os.getenv("TOPIC_AUTO_REFINEMENT_THRESHOLD", 10))
-        raw_ideas_count = service.get_ideas_count(user_id, 'raw', 'TRUE')
-        if raw_ideas_count > raw_idea_refinement_threshold:
-            return raw_to_refined_ideas(user_id=user_id)
+        active_ideas_count = service.get_ideas_count(user_id, 'status', 'active')
+        # if active_ideas_count > raw_idea_refinement_threshold:
+        #     return raw_to_refined_ideas(user_id=user_id)
                 
         return {'status': 200, 'message': f'Added idea ID - {new_idea_id} successfully'}
     return {'status': 200, 'message': 'No text to add'}
@@ -94,9 +94,9 @@ def create_ideas(ideas_input: List[IdeaCreateInput], user_id: str):
     if len(ideas) > 0:
         service = IdeaService()
         service.bulk_create_ideas(ideas, user_id)
-        raw_ideas_count = service.get_ideas_count(user_id, 'raw', 'TRUE')
-        if raw_ideas_count > raw_idea_refinement_threshold:
-            return raw_to_refined_ideas(user_id=user_id)
+        active_ideas_count = service.get_ideas_count(user_id, 'status', 'active')
+        # if active_ideas_count > raw_idea_refinement_threshold:
+        #     return raw_to_refined_ideas(user_id=user_id)
 
     
     return {'status': 200, 'message': f'Added {len(ideas)} ideas and updated {len(personal_info)} personal information'}

@@ -21,6 +21,8 @@ class IdeaService:
     
     def get_ideas_with_filter(self, filter_column: str, filter_value: Any, user_id: str):
         with get_dict_cursor() as cur:
+            # Additionally filter by status='active' for active ideas usually,
+            # but this is a generic filter.
             cur.execute(f"SELECT * FROM raw_idea WHERE {filter_column} = %s AND user_id = %s", (filter_value, user_id))
             return cur.fetchall()
     
@@ -156,7 +158,7 @@ class IdeaService:
 
     def delete_raw_ideas(self, user_id: str):
         with get_dict_cursor() as cur:
-            cur.execute("DELETE FROM raw_idea WHERE raw = TRUE AND user_id = %s", (user_id,))
+            cur.execute("DELETE FROM raw_idea WHERE status = 'active' AND user_id = %s", (user_id,))
 
     def bulk_delete_ideas(self, idea_ids: List[int], user_id: str):
         # Topics reference would be deleted using cascade option set.

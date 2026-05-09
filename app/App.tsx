@@ -14,6 +14,7 @@ import HomeScreen from "./src/screens/HomeScreen";
 import ChatScreen from "./src/screens/ChatScreen";
 import SettingsScreen from "./src/screens/SettingsScreen";
 import ProfileScreen from "./src/screens/ProfileScreen";
+import MemoriesScreen from "./src/screens/MemoriesScreen";
 import ToolAccessScreen from "./src/connectors/ToolAccessScreen";
 import GmailConnectorScreen from "./src/connectors/GmailConnectorScreen";
 import GlobalAlertUI from "./src/components/GlobalAlertUI";
@@ -146,6 +147,7 @@ function AppNavigator() {
         <Stack.Navigator screenOptions={{ headerShown: false }}>
           <Stack.Screen name="Home" component={HomeScreen} />
           <Stack.Screen name="Chat" component={ChatScreen} />
+          <Stack.Screen name="Memories" component={MemoriesScreen} />
           <Stack.Screen name="Profile" component={ProfileScreen} />
           <Stack.Screen name="Settings" component={SettingsScreen} />
           <Stack.Screen name="ToolAccess" component={ToolAccessScreen} />
