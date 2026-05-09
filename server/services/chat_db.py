@@ -49,7 +49,7 @@ def mark_messages_processed(message_ids: list[str]):
         return
     with get_dict_cursor() as cur:
         cur.execute(
-            "UPDATE public.chat_messages SET processed_for_ideas = true WHERE id = ANY(%s)",
+            "UPDATE public.chat_messages SET processed_for_ideas = true WHERE id = ANY(%s::uuid[])",
             (message_ids,)
         )
 

@@ -89,7 +89,7 @@ def extract_ideas_from_recent_chats():
             # Mark processed
             with get_dict_cursor() as cur:
                 cur.execute(
-                    "UPDATE public.chat_messages SET processed_for_ideas = true WHERE id = ANY(%s)",
+                    "UPDATE public.chat_messages SET processed_for_ideas = true WHERE id = ANY(%s::uuid[])",
                     (message_ids,)
                 )
         except Exception as e:
