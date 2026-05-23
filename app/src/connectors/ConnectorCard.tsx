@@ -61,10 +61,8 @@ export default function ConnectorCard({
                         </View>
                     </View>
 
-                    {isBusy ? (
-                        <ActivityIndicator color="#4e45e4" size="small" />
-                    ) : (
-                        <View className="flex-row items-center gap-2">
+                    <View className="flex-row items-center gap-2">
+                        {(isConnected || isReauth || isError) && (
                             <View className={`px-2.5 py-1 rounded-full ${pill.bg}`}>
                                 <Text
                                     className={`text-[10px] font-semibold ${pill.text}`}
@@ -73,11 +71,11 @@ export default function ConnectorCard({
                                     {pill.label}
                                 </Text>
                             </View>
-                            {showChevron && (
-                                <MaterialIcons name="chevron-right" size={20} color="#94a3b8" />
-                            )}
-                        </View>
-                    )}
+                        )}
+                        {showChevron && (
+                            <MaterialIcons name="chevron-right" size={20} color="#94a3b8" />
+                        )}
+                    </View>
                 </View>
 
                 {(isReauth || isError || isConnecting) && errorMessage ? (
@@ -89,11 +87,15 @@ export default function ConnectorCard({
                     </Text>
                 ) : null}
 
-                {(!isConnected || isReauth) && !isBusy && (
-                    <View className="w-full mt-4 py-3 px-4 rounded-xl bg-secondary flex-row items-center justify-center gap-2 shadow-sm">
-                        <MaterialIcons name="link" size={20} color="#ffffff" />
+                {(!isConnected || isReauth) && (
+                    <View className={`w-full mt-4 py-3 px-4 rounded-xl flex-row items-center justify-center gap-2 shadow-sm ${isBusy ? 'bg-secondary/70' : 'bg-secondary'}`}>
+                        {isBusy ? (
+                            <ActivityIndicator size="small" color="#ffffff" />
+                        ) : (
+                            <MaterialIcons name="link" size={20} color="#ffffff" />
+                        )}
                         <Text className="text-white text-sm" style={{ fontFamily: "Inter_600SemiBold" }}>
-                            {isReauth || isError || isConnecting ? "Reconnect" : "Connect"}
+                            {isBusy ? "Connecting..." : "Connect"}
                         </Text>
                     </View>
                 )}
