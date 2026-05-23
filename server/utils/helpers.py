@@ -12,19 +12,16 @@ from services.topics_service import TopicsService
 from services.trait_service import TraitsService
 from utils.topic_manager import get_all_topics, update_topics, create_topics
 
-def classify_ideas(user_input_text: list[Tuple[str, str]]):
+from services.user_service import get_personal_state, update_personal_state_db
+
+def classify_ideas(user_input_text: list[Tuple[str, str]], user_id: str):
     ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-    personal_state_path = os.path.join(ROOT_DIR, "config", "memory", "personal_state.json")
-
-    if os.path.exists(personal_state_path):
-        with open(personal_state_path, "r") as f:
-            personal_state_data = f.read().strip()
-        
-        if not personal_state_data:
-            personal_state_data = "{}"
-    else:
-        personal_state_data = "{}"
+    personal_state_data = "{}"
+    if user_id:
+        state_dict = get_personal_state(user_id)
+        if state_dict:
+            personal_state_data = json.dumps(state_dict)
 
     idea_filter_prompt_path = os.path.join(ROOT_DIR, "config", "prompts", "ideaFiltering.yaml")
     with open(idea_filter_prompt_path, "r") as f:
@@ -37,19 +34,14 @@ def classify_ideas(user_input_text: list[Tuple[str, str]]):
 
     return completion
 
-def update_personal_state(user_input_text: list[str]):
+def update_personal_state(user_input_text: list[str], user_id: str):
+    if not user_id:
+        return
+
     ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-    personal_state_path = os.path.join(ROOT_DIR, "config", "memory", "personal_state.json")
-
-    if os.path.exists(personal_state_path):
-        with open(personal_state_path, "r") as f:
-            personal_state_data = f.read().strip()
-        
-        if not personal_state_data:
-            personal_state_data = "{}"
-    else:
-        personal_state_data = "{}"
+    personal_state_dict = get_personal_state(user_id)
+    personal_state_data = json.dumps(personal_state_dict)
 
     personal_info_updater_prompt_path = os.path.join(ROOT_DIR, "config", "prompts", "personal_info_updater.yaml")
     with open(personal_info_updater_prompt_path, "r") as f:
@@ -66,9 +58,9 @@ def update_personal_state(user_input_text: list[str]):
         data_store[item.key].append(item.value)
     
     final_dict = {k: (v[0] if len(v) == 1 else v) for k, v in data_store.items()}
+    merged_dict = {**personal_state_dict, **final_dict}
 
-    with open(personal_state_path, "w") as f:
-        json.dump(final_dict, f, indent=2)
+    update_personal_state_db(user_id, merged_dict)
 
 # assign input parameters type
 def organize_ideas_into_topics(ideas: any, existing_topics: any) -> TopicsList:

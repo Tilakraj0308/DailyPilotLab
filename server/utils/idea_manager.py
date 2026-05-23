@@ -26,7 +26,7 @@ def get_idea_count(user_id: str, filter_column: str = None, filter_value: Any = 
 
 def create_idea(idea: IdeaCreateInput, user_id: str):
     if idea.content != "":
-        classification = classify_ideas([("1", idea.content)])
+        classification = classify_ideas([("1", idea.content)], user_id)
         classification = classification.classification_results[0]
         category = classification.category
         if category == 'idea':
@@ -74,7 +74,7 @@ def create_ideas(ideas_input: List[IdeaCreateInput], user_id: str):
 
     
     ideas_with_id = [(str(i), idea) for i, idea in enumerate(ideas_filtered, start=1)]
-    classification_data = classify_ideas([(idea[0], idea[1].content) for idea in ideas_with_id])
+    classification_data = classify_ideas([(idea[0], idea[1].content) for idea in ideas_with_id], user_id)
     classification_data = classification_data.classification_results
     ideas, personal_info = [], []
     for classification in classification_data:

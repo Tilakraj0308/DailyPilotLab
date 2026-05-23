@@ -221,12 +221,14 @@ async def chat_stream(req: ChatStreamRequest, payload: dict = Depends(get_curren
         pass
         
     # Personal State
+    from services.user_service import get_personal_state
     personal_state_data = ""
-    ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
-    ps_path = os.path.join(ROOT_DIR, "config", "memory", "personal_state.json")
-    if os.path.exists(ps_path):
-        with open(ps_path, "r") as f:
-            personal_state_data = f"Personal State:\n{f.read().strip()}"
+    try:
+        state_dict = get_personal_state(user_id)
+        if state_dict:
+            personal_state_data = f"Personal State:\n{json.dumps(state_dict)}"
+    except:
+        pass
             
     # Short-Term Memory (Active Ideas)
     active_ideas_data = ""
