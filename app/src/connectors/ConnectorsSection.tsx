@@ -106,6 +106,13 @@ export default function ConnectorsSection() {
             if (url.includes("connector_status=success")) {
                 load();
                 universalAlert("Connected", connectedSuccessLabel(p));
+                if (p) {
+                    if (p === GMAIL_PROVIDER) {
+                        navigation.navigate("GmailConnector");
+                    } else {
+                        navigation.navigate("ToolAccess", { provider_key: p });
+                    }
+                }
             } else if (url.includes("connector_status=error")) {
                 load();
                 const reason =
@@ -129,11 +136,15 @@ export default function ConnectorsSection() {
                 await openConnectorAuthorizationUrl(authorization_url, {
                     preferEphemeralSession: providerKey === NOTION_PROVIDER,
                 });
+
+                // On native, we wait for the browser to close. On web, we are redirecting.
+                if (Platform.OS !== "web") {
+                    setBusyId(null);
+                }
             } catch (e: any) {
                 universalAlert("Error", e?.message || "Could not start connection.");
-                await load();
-            } finally {
                 setBusyId(null);
+                await load();
             }
         };
 

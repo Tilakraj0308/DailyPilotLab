@@ -15,6 +15,7 @@ import ChatScreen from "./src/screens/ChatScreen";
 import SettingsScreen from "./src/screens/SettingsScreen";
 import ProfileScreen from "./src/screens/ProfileScreen";
 import MemoriesScreen from "./src/screens/MemoriesScreen";
+import ConnectorsScreen from "./src/screens/ConnectorsScreen";
 import ToolAccessScreen from "./src/connectors/ToolAccessScreen";
 import GmailConnectorScreen from "./src/connectors/GmailConnectorScreen";
 import GlobalAlertUI from "./src/components/GlobalAlertUI";
@@ -112,24 +113,47 @@ function AppNavigator() {
     }
   }, [fontsLoaded, fontError, isLoading]);
 
-  // OAuth return on web: land on Profile so ConnectorsSection mounts and shows alerts
+  // OAuth return on web: land on ToolAccess or Connectors screen
   useEffect(() => {
     if (!session || Platform.OS !== "web" || typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
-    if (!params.get("connector_status")) return;
+    const status = params.get("connector_status");
+    const provider = params.get("provider");
+    if (!status) return;
+
     const id = requestAnimationFrame(() => {
       if (navigationRef.isReady()) {
-        navigationRef.navigate("Profile" as never);
+        if (status === "success" && provider) {
+          if (provider === "gmail") {
+            (navigationRef as any).navigate("GmailConnector");
+          } else {
+            (navigationRef as any).navigate("ToolAccess", { provider_key: provider });
+          }
+        } else {
+          (navigationRef as any).navigate("Connectors");
+        }
       }
     });
     return () => cancelAnimationFrame(id);
   }, [session]);
 
-  // Native deep link: open Profile when OAuth appends connector_status to URL
+  // Native deep link: open specific tool or Connectors when OAuth appends connector_status to URL
   useEffect(() => {
     if (!session || !incomingUrl || Platform.OS === "web") return;
     if (incomingUrl.includes("connector_status=") && navigationRef.isReady()) {
-      navigationRef.navigate("Profile" as never);
+      const parsed = Linking.parse(incomingUrl);
+      const status = parsed.queryParams?.connector_status;
+      const provider = parsed.queryParams?.provider as string;
+
+      if (status === "success" && provider) {
+        if (provider === "gmail") {
+          (navigationRef as any).navigate("GmailConnector");
+        } else {
+          (navigationRef as any).navigate("ToolAccess", { provider_key: provider });
+        }
+      } else {
+        (navigationRef as any).navigate("Connectors");
+      }
     }
   }, [incomingUrl, session]);
 
@@ -150,6 +174,7 @@ function AppNavigator() {
           <Stack.Screen name="Memories" component={MemoriesScreen} />
           <Stack.Screen name="Profile" component={ProfileScreen} />
           <Stack.Screen name="Settings" component={SettingsScreen} />
+          <Stack.Screen name="Connectors" component={ConnectorsScreen} />
           <Stack.Screen name="ToolAccess" component={ToolAccessScreen} />
           <Stack.Screen name="GmailConnector" component={GmailConnectorScreen} />
         </Stack.Navigator>
