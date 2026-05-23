@@ -18,7 +18,7 @@ export default function HomeScreen() {
     const [drawerOpen, setDrawerOpen] = useState(false);
 
     const closeDrawer = () => setDrawerOpen(false);
-    
+
     const openDrawer = () => setDrawerOpen(true);
 
     const getGreeting = () => {
@@ -40,7 +40,7 @@ export default function HomeScreen() {
                 <TouchableOpacity onPress={openDrawer}>
                     <MaterialIcons name="menu" size={28} color="#2b3437" />
                 </TouchableOpacity>
-                <Text 
+                <Text
                     className="text-xl text-[#2b3437]"
                     style={{ fontFamily: "Inter_600SemiBold" }}
                 >
@@ -58,13 +58,13 @@ export default function HomeScreen() {
                 <View className="px-5 pt-4 pb-6">
                     {/* Greeting Section */}
                     <View className="mb-6">
-                        <Text 
+                        <Text
                             className="text-[32px] text-[#2b3437] leading-tight"
                             style={{ fontFamily: "Inter_600SemiBold", letterSpacing: -0.5 }}
                         >
                             {getGreeting()}, {user?.user_metadata?.full_name?.split(' ')[0] || "Alex"}
                         </Text>
-                        <Text 
+                        <Text
                             className="text-[#586064] text-base mt-1"
                             style={{ fontFamily: "Inter_400Regular" }}
                         >
@@ -75,20 +75,20 @@ export default function HomeScreen() {
                     {/* App Shortcuts */}
                     <View className="flex-row justify-between mb-8">
                         {/* Todos Button */}
-                        <TouchableOpacity 
+                        <TouchableOpacity
                             className="bg-white rounded-[24px] p-5 w-[48%] shadow-sm"
                             onPress={() => { /* Redirect to Todo */ }}
                         >
                             <View className="w-10 h-10 rounded-full bg-[#f1f3f5] items-center justify-center mb-6">
                                 <MaterialIcons name="list-alt" size={20} color="#2b3437" />
                             </View>
-                            <Text 
+                            <Text
                                 className="text-lg text-[#2b3437] mb-1"
                                 style={{ fontFamily: "Inter_600SemiBold" }}
                             >
                                 Todos
                             </Text>
-                            <Text 
+                            <Text
                                 className="text-[#586064] text-xs"
                                 style={{ fontFamily: "Inter_400Regular" }}
                             >
@@ -97,7 +97,7 @@ export default function HomeScreen() {
                         </TouchableOpacity>
 
                         {/* Chat Button */}
-                        <TouchableOpacity 
+                        <TouchableOpacity
                             className="bg-[#35436b] rounded-[24px] p-5 w-[48%] shadow-sm overflow-hidden"
                             onPress={() => navigation.navigate("Chat")}
                         >
@@ -107,13 +107,13 @@ export default function HomeScreen() {
                             <View className="w-10 h-10 rounded-full bg-white/20 items-center justify-center mb-6">
                                 <MaterialIcons name="chat-bubble" size={20} color="#ffffff" />
                             </View>
-                            <Text 
+                            <Text
                                 className="text-lg text-white mb-1"
                                 style={{ fontFamily: "Inter_600SemiBold" }}
                             >
                                 Chat
                             </Text>
-                            <Text 
+                            <Text
                                 className="text-white/80 text-xs"
                                 style={{ fontFamily: "Inter_400Regular" }}
                             >
@@ -124,14 +124,14 @@ export default function HomeScreen() {
 
                     {/* Recent Memories Section */}
                     <View className="mb-4 flex-row justify-between items-center">
-                        <Text 
+                        <Text
                             className="text-xl text-[#2b3437]"
                             style={{ fontFamily: "Inter_600SemiBold" }}
                         >
                             Recent Memories
                         </Text>
                         <TouchableOpacity className="flex-row items-center">
-                            <Text 
+                            <Text
                                 className="text-[#35436b] text-sm mr-1"
                                 style={{ fontFamily: "Inter_500Medium" }}
                             >
@@ -219,9 +219,9 @@ export default function HomeScreen() {
 
                         {/* Top Links */}
                         <View className="flex-1">
-                            <TouchableOpacity 
+                            <TouchableOpacity
                                 className="flex-row items-center mb-8"
-                                onPress={() => { navigation.navigate('ToolAccess'); closeDrawer(); }}
+                                onPress={() => { navigation.navigate('Connectors'); closeDrawer(); }}
                             >
                                 <View className="w-6 items-center mr-4">
                                     <Feather name="share-2" size={22} color="#35436b" />
@@ -231,7 +231,7 @@ export default function HomeScreen() {
                                 </Text>
                             </TouchableOpacity>
 
-                            <TouchableOpacity 
+                            <TouchableOpacity
                                 className="flex-row items-center mb-8"
                                 onPress={() => { navigation.navigate('Settings'); closeDrawer(); }}
                             >
@@ -243,7 +243,7 @@ export default function HomeScreen() {
                                 </Text>
                             </TouchableOpacity>
 
-                            <TouchableOpacity 
+                            <TouchableOpacity
                                 className="flex-row items-center mb-8"
                                 onPress={() => { /* Contact Support */ closeDrawer(); }}
                             >
@@ -258,7 +258,7 @@ export default function HomeScreen() {
 
                         {/* Bottom Links */}
                         <View className="mt-auto border-t border-gray-100 pt-6">
-                            <TouchableOpacity 
+                            <TouchableOpacity
                                 className="flex-row items-center mb-6"
                                 onPress={() => { navigation.navigate('Profile'); closeDrawer(); }}
                             >
@@ -269,8 +269,8 @@ export default function HomeScreen() {
                                     Profile
                                 </Text>
                             </TouchableOpacity>
-                            
-                            <TouchableOpacity 
+
+                            <TouchableOpacity
                                 className="flex-row items-center mb-4"
                                 onPress={() => { /* Pricing */ closeDrawer(); }}
                             >
