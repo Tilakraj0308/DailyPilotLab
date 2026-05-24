@@ -10,6 +10,7 @@ from models.output_schemas import RefinedIdeaList
 from services.ideas_service import IdeaService
 from utils.topic_manager import get_all_topics
 from utils.helpers import update_traits, assign_idea_to_topic
+from services.user_service import get_personal_state, merge_personal_state
 
 def get_all_users():
     with get_dict_cursor() as cur:
@@ -54,11 +55,21 @@ def extract_ideas_from_recent_chats():
 
         print(f"[Memory Pipeline] Extracting ideas for user {user_id} ({len(messages_to_process)} messages)")
         
+        # fetch personal state
+        current_state = get_personal_state(user_id)
+
         # LLM prompt to extract atomic ideas
         chat_context = "\n".join([f"{m['role'].capitalize()}: {m['content']}" for m in messages_to_process])
         
-        system_prompt = "You are a context extractor. Extract discrete, standalone factual statements or preferences about the user from the provided chat logs. Format as concise singular atomic facts."
-        user_prompt = f"Chat logs:\n{chat_context}"
+        system_prompt = (
+            "You are a context extractor. Extract discrete, standalone factual statements or preferences "
+            "about the user from the provided chat logs. Format as concise singular atomic facts.\n\n"
+            "You have access to the user's current personal state. If the user's new inputs reveal new "
+            "long-term personal facts, preferences, or state changes, output a JSON object containing ONLY "
+            "the keys and values to be updated or added. Do not output keys that have not changed. "
+            "Never delete existing information."
+        )
+        user_prompt = f"Current Personal State:\n{json.dumps(current_state, indent=2)}\n\nChat logs:\n{chat_context}"
 
         try:
             completion = openai_client.get_chat_completion(
@@ -68,6 +79,14 @@ def extract_ideas_from_recent_chats():
             )
             
             atomic_ideas = completion.refined_ideas
+            state_delta = completion.personal_state_delta
+            
+            if state_delta:
+                try:
+                    merge_personal_state(user_id, state_delta)
+                    print(f"[Memory Pipeline] Merged personal state delta for user {user_id}: {state_delta}")
+                except Exception as e:
+                    print(f"[Memory Pipeline] Error merging personal state delta: {e}")
             
             if atomic_ideas:
                 texts_to_embed = [idea.refined_statement for idea in atomic_ideas]

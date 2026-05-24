@@ -79,3 +79,7 @@ class RefinedIdeaList(BaseModel):
     refined_ideas: List[RefinedIdea] = Field(
         description="The final deduplicated and condensed list of refined statements."
     )
+    personal_state_delta: Optional[Dict[str, str]] = Field(
+        default=None,
+        description="A JSON object containing ONLY the keys and values to be updated or added to the user's personal state."
+    )

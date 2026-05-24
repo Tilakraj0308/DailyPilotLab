@@ -19,7 +19,6 @@ logger = logging.getLogger(__name__)
 # Cache: provider_key → list of tool definitions
 _TOOL_CACHE: dict[str, list[dict]] = {}
 
-
 def _load_tools_for_provider(provider_key: str) -> list[dict]:
     """Import and cache the TOOL_DEFINITIONS from a provider's tools package."""
     if provider_key in _TOOL_CACHE:
