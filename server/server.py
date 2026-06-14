@@ -243,15 +243,33 @@ async def chat_stream(req: ChatStreamRequest, payload: dict = Depends(get_curren
     system_content = f"{persona}\n\n{traits_data}\n\n{personal_state_data}\n\n{active_ideas_data}".strip()
 
     history = [{"role": "system", "content": system_content}]
-    history.extend([{"role": r["role"], "content": r["content"]} for r in history_rows])
+    for r in history_rows:
+        msg = {"role": r["role"], "content": r["content"]}
+        if r.get("tool_calls"):
+            msg["tool_calls"] = r["tool_calls"]
+        if r.get("tool_call_id"):
+            msg["tool_call_id"] = r["tool_call_id"]
+        history.append(msg)
 
     async def event_stream():
-        full_response = ""
         async for token in stream_chat(history, user_id):
-            full_response += token
+            if isinstance(token, list):
+                # token is the final current_messages list
+                new_messages = token[len(history):]
+                for msg in new_messages:
+                    role = msg.get("role")
+                    content = msg.get("content", "")
+                    tool_calls = msg.get("tool_calls")
+                    tool_call_id = msg.get("tool_call_id")
+                    await asyncio.to_thread(save_message, user_id, role, content, tool_calls, tool_call_id)
+                continue
+
+            if isinstance(token, dict):
+                yield f'data: {json.dumps(token)}\n\n'
+                continue
+
             yield f'data: {json.dumps({"type": "token", "content": token})}\n\n'
         
-        await asyncio.to_thread(save_message, user_id, "assistant", full_response)
         yield f'data: {json.dumps({"type": "done", "content": ""})}\n\n'
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
@@ -262,7 +280,41 @@ import uuid
 def get_chat_user_history(limit: int = 15, offset: int = 0, payload: dict = Depends(get_current_user)):
     user_id = payload.get("sub", "")
     history_rows = load_history(user_id, limit=limit, offset=offset)
-    # History rows are DESC (newest first). Let the frontend keep it DESC if used in Inverted FlatList.
-    history = [{"id": str(uuid.uuid4()) if 'id' not in r else str(r['id']), "role": r["role"], "content": r["content"], "created_at": r.get('created_at')} for r in history_rows]
+    
+    history = []
+    for r in history_rows:
+        if r["role"] == "tool":
+            # Skip raw tool JSON responses in the UI history
+            continue
+
+        tool_calls = r.get("tool_calls")
+        if isinstance(tool_calls, str):
+            try:
+                tool_calls = json.loads(tool_calls)
+            except:
+                pass
+
+        # If it has tool calls, yield a separate toolName chip (newest first, so chip before text)
+        if r["role"] == "assistant" and tool_calls and isinstance(tool_calls, list):
+            for tc in reversed(tool_calls):
+                tc_name = tc.get("function", {}).get("name")
+                if tc_name:
+                    history.append({
+                        "id": str(uuid.uuid4()), 
+                        "role": "assistant",
+                        "content": "",
+                        "toolName": tc_name,
+                        "created_at": r.get('created_at')
+                    })
+                    
+        # If it has content, yield the content message
+        if r["content"]:
+            history.append({
+                "id": str(r.get('id') or uuid.uuid4()), 
+                "role": r["role"], 
+                "content": r["content"], 
+                "created_at": r.get('created_at')
+            })
+
     return {"history": history}
 

@@ -462,13 +462,29 @@ export default function ChatScreen() {
 
     const renderMessage = ({ item, index }: { item: ChatMessage, index: number }) => {
         const isUser = item.role === 'user';
-        const isTyping = item.content === '' && item.role === 'assistant' && isWaitingForResponse;
+        const isTyping = item.content === '' && item.role === 'assistant' && isWaitingForResponse && !item.toolName;
         
-        if (!item.content && item.role === 'assistant' && !isTyping) return null;
+        if (!item.content && item.role === 'assistant' && !isTyping && !item.toolName) return null;
         
         // In descending list, messages[index + 1] is the older message.
         const prevMessage = messages[index + 1];
         const dateDivider = renderDateDivider(item.created_at || new Date().toISOString(), prevMessage?.created_at);
+
+        if (item.toolName) {
+            return (
+                <View key={item.id || index}>
+                    {dateDivider}
+                    <View className="items-start mb-4 ml-10">
+                        <View className="flex-row items-center bg-surface-variant/30 px-3 py-1.5 rounded-full border border-outline-variant/20 gap-2">
+                            <MaterialIcons name="auto-awesome" size={14} color="#4e45e4" />
+                            <Text className="text-xs text-on-surface-variant font-medium" style={{ fontFamily: "Inter_500Medium", textTransform: 'capitalize' }}>
+                                {item.toolName.replace(/_/g, ' ')}...
+                            </Text>
+                        </View>
+                    </View>
+                </View>
+            );
+        }
 
         return (
             <View key={item.id || index}>
