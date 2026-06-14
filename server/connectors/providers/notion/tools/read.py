@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 TOOL_DEFINITIONS = [
     {
         "name": "search_notion_pages",
-        "description": "Search pages and databases in the connected Notion workspace",
+        "description": "Search pages and databases in the connected Notion workspace. Use this when the user asks to find a document, read notes, or search for information in Notion.",
         "crud_type": "read",
         "parameters": {
             "query": {

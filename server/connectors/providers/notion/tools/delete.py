@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 TOOL_DEFINITIONS = [
     {
         "name": "archive_notion_page",
-        "description": "Archive (soft-delete) a Notion page in the workspace",
+        "description": "Archive (soft-delete) a Notion page in the workspace. Use this only when the user explicitly asks to delete or archive a Notion page. Requires the page UUID.",
         "crud_type": "delete",
         "parameters": {
             "page_id": {

@@ -13,7 +13,7 @@ CALENDAR_API_BASE = "https://www.googleapis.com/calendar/v3"
 TOOL_DEFINITIONS = [
     {
         "name": "create_google_calendar_event",
-        "description": "Create a new event in the user's primary Google Calendar. IMPORTANT: Exact start and end date/times are critical. If the user does not provide enough information to determine the exact date and time, you MUST ask them for these details before creating the event.",
+        "description": "Create a new event in the user's primary Google Calendar. Requires start and end times in ISO 8601/RFC3339 format. Use this strictly when the user explicitly asks to schedule or create a calendar event.",
         "crud_type": "create",
         "parameters": {
             "summary": {

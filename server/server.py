@@ -373,41 +373,6 @@ import uuid
 def get_chat_user_history(limit: int = 15, offset: int = 0, payload: dict = Depends(get_current_user)):
     user_id = payload.get("sub", "")
     history_rows = load_history(user_id, limit=limit, offset=offset)
-    
-    history = []
-    for r in history_rows:
-        if r["role"] == "tool":
-            # Skip raw tool JSON responses in the UI history
-            continue
-
-        tool_calls = r.get("tool_calls")
-        if isinstance(tool_calls, str):
-            try:
-                tool_calls = json.loads(tool_calls)
-            except:
-                pass
-
-        # If it has tool calls, yield a separate toolName chip (newest first, so chip before text)
-        if r["role"] == "assistant" and tool_calls and isinstance(tool_calls, list):
-            for tc in reversed(tool_calls):
-                tc_name = tc.get("function", {}).get("name")
-                if tc_name:
-                    history.append({
-                        "id": str(uuid.uuid4()), 
-                        "role": "assistant",
-                        "content": "",
-                        "toolName": tc_name,
-                        "created_at": r.get('created_at')
-                    })
-                    
-        # If it has content, yield the content message
-        if r["content"]:
-            history.append({
-                "id": str(r.get('id') or uuid.uuid4()), 
-                "role": r["role"], 
-                "content": r["content"], 
-                "created_at": r.get('created_at')
-            })
 
     
     history = []
@@ -425,9 +390,13 @@ def get_chat_user_history(limit: int = 15, offset: int = 0, payload: dict = Depe
 
         # If it has tool calls, yield a separate toolName chip (newest first, so chip before text)
         if r["role"] == "assistant" and tool_calls and isinstance(tool_calls, list):
+            seen_tc = set()
             for tc in reversed(tool_calls):
                 tc_name = tc.get("function", {}).get("name")
-                if tc_name:
+                tc_args = tc.get("function", {}).get("arguments", "")
+                sig = f"{tc_name}:{tc_args}"
+                if tc_name and sig not in seen_tc:
+                    seen_tc.add(sig)
                     history.append({
                         "id": str(uuid.uuid4()), 
                         "role": "assistant",
