@@ -346,6 +346,21 @@ async def chat_stream(req: ChatStreamRequest, payload: dict = Depends(get_curren
                 yield f'data: {json.dumps(token)}\n\n'
                 continue
 
+            if isinstance(token, list):
+                # token is the final current_messages list
+                new_messages = token[len(history):]
+                for msg in new_messages:
+                    role = msg.get("role")
+                    content = msg.get("content", "")
+                    tool_calls = msg.get("tool_calls")
+                    tool_call_id = msg.get("tool_call_id")
+                    await asyncio.to_thread(save_message, user_id, role, content, tool_calls, tool_call_id)
+                continue
+
+            if isinstance(token, dict):
+                yield f'data: {json.dumps(token)}\n\n'
+                continue
+
             yield f'data: {json.dumps({"type": "token", "content": token})}\n\n'
         
         yield f'data: {json.dumps({"type": "done", "content": ""})}\n\n'
@@ -358,6 +373,42 @@ import uuid
 def get_chat_user_history(limit: int = 15, offset: int = 0, payload: dict = Depends(get_current_user)):
     user_id = payload.get("sub", "")
     history_rows = load_history(user_id, limit=limit, offset=offset)
+    
+    history = []
+    for r in history_rows:
+        if r["role"] == "tool":
+            # Skip raw tool JSON responses in the UI history
+            continue
+
+        tool_calls = r.get("tool_calls")
+        if isinstance(tool_calls, str):
+            try:
+                tool_calls = json.loads(tool_calls)
+            except:
+                pass
+
+        # If it has tool calls, yield a separate toolName chip (newest first, so chip before text)
+        if r["role"] == "assistant" and tool_calls and isinstance(tool_calls, list):
+            for tc in reversed(tool_calls):
+                tc_name = tc.get("function", {}).get("name")
+                if tc_name:
+                    history.append({
+                        "id": str(uuid.uuid4()), 
+                        "role": "assistant",
+                        "content": "",
+                        "toolName": tc_name,
+                        "created_at": r.get('created_at')
+                    })
+                    
+        # If it has content, yield the content message
+        if r["content"]:
+            history.append({
+                "id": str(r.get('id') or uuid.uuid4()), 
+                "role": r["role"], 
+                "content": r["content"], 
+                "created_at": r.get('created_at')
+            })
+
     
     history = []
     for r in history_rows:

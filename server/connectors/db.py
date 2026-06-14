@@ -431,6 +431,40 @@ def get_tool_permissions(user_id: str, provider_key: str) -> dict[str, bool]:
     }
 
 
+def get_all_connected_permissions(user_id: str) -> dict[str, dict[str, bool]]:
+    """
+    Return CRUD permissions for all connected providers in a single query.
+    Returns: { provider_key: { "create": bool, "read": bool, ... } }
+    """
+    with get_dict_cursor() as cur:
+        cur.execute(
+            """
+            SELECT provider_key, metadata
+            FROM public.user_connectors
+            WHERE user_id = %s AND status = 'connected'
+            """,
+            (user_id,),
+        )
+        rows = cur.fetchall()
+
+    defaults = {"create": True, "read": True, "update": True, "delete": True}
+    result = {}
+    for row in rows:
+        provider_key = row["provider_key"]
+        metadata = row.get("metadata") or {}
+        perms = metadata.get("permissions")
+        if perms is None:
+            result[provider_key] = defaults.copy()
+        else:
+            result[provider_key] = {
+                "create": perms.get("create", False),
+                "read": perms.get("read", False),
+                "update": perms.get("update", False),
+                "delete": perms.get("delete", False),
+            }
+    return result
+
+
 def update_tool_permission(
     user_id: str, provider_key: str, crud_type: str, enabled: bool
 ) -> None:
