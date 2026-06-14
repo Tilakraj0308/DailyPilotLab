@@ -22,7 +22,7 @@ def _as_str_list(value: Any) -> list[str]:
 TOOL_DEFINITIONS = [
     {
         "name": "gmail_create_draft",
-        "description": "Create a Gmail draft (optionally as a reply when thread_id is set)",
+        "description": "Create a Gmail draft. Use this when the user asks to compose, write, or reply to an email. Optionally pass a thread_id to create a draft as a reply.",
         "crud_type": "create",
         "parameters": {
             "subject": {

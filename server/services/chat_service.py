@@ -2,6 +2,9 @@ import os
 import json
 import base64
 import tempfile
+import datetime
+import yaml
+from pathlib import Path
 from typing import AsyncGenerator, Any, Union
 from openai import AsyncOpenAI
 
@@ -106,7 +109,29 @@ async def stream_chat(messages: list[dict], user_id: str) -> AsyncGenerator[Unio
     
     current_messages = list(messages)  # Copy to allow appending during loop
     
+    # Load and format system prompt
+    prompt_path = Path(__file__).parent.parent / "config" / "prompts" / "system_prompt.yaml"
+    if prompt_path.exists():
+        with open(prompt_path, "r") as f:
+            prompt_data = yaml.safe_load(f)
+        system_prompt_text = prompt_data.get("template", "").format(
+            current_date=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        )
+        if current_messages and current_messages[0].get("role") == "system":
+            current_messages[0]["content"] += f"\n\n{system_prompt_text}"
+        else:
+            current_messages.insert(0, {"role": "system", "content": system_prompt_text})
+    
+    iteration_count = 0
+    MAX_ITERATIONS = 5
+
     while True:
+        iteration_count += 1
+        if iteration_count > MAX_ITERATIONS:
+            error_msg = "\n\n*(System: Maximum tool execution iterations reached to prevent token exhaustion.)*"
+            yield error_msg
+            current_messages.append({"role": "assistant", "content": error_msg})
+            break
         kwargs: dict[str, Any] = {
             "model": "gpt-4o-mini",
             "messages": current_messages,
@@ -164,20 +189,30 @@ async def stream_chat(messages: list[dict], user_id: str) -> AsyncGenerator[Unio
         current_messages.append(assistant_msg)
         
         # Execute each tool and append the result
+        executed_calls_cache = {}  # Cache to prevent duplicate simultaneous executions
         for tc in final_tool_calls:
             tool_name = tc["function"]["name"]
             tool_args_str = tc["function"]["arguments"]
+            call_signature = f"{tool_name}:{tool_args_str}"
             
-            # Send a notification to the UI about the tool action
-            yield {"type": "tool_call", "tool_name": tool_name}
+            if call_signature not in executed_calls_cache:
+                # Send a notification to the UI about the tool action only for the first unique call
+                yield {"type": "tool_call", "tool_name": tool_name}
             
-            try:
-                args = json.loads(tool_args_str)
-                result = execute_tool(user_id, tool_name, args, triggered_by="ai_agent")
-                result_str = json.dumps(result)
-            except Exception as e:
-                # Catch tool execution errors securely
-                result_str = json.dumps({"error": str(e)})
+            if call_signature in executed_calls_cache:
+                # We already executed this exact tool call in this iteration. Use the cached result.
+                result_str = executed_calls_cache[call_signature]
+            else:
+                try:
+                    args = json.loads(tool_args_str)
+                    result = execute_tool(user_id, tool_name, args, triggered_by="ai_agent")
+                    result_str = json.dumps(result)
+                except Exception as e:
+                    # Catch tool execution errors securely
+                    result_str = json.dumps({"error": str(e)})
+                
+                # Cache it for any duplicates
+                executed_calls_cache[call_signature] = result_str
             
             current_messages.append({
                 "role": "tool",

@@ -17,13 +17,13 @@ TASKS_API_BASE = "https://tasks.googleapis.com/tasks/v1"
 TOOL_DEFINITIONS = [
     {
         "name": "list_google_task_lists",
-        "description": "List all task lists in the user's Google Tasks account",
+        "description": "List all available task lists in the user's Google Tasks account. Useful to see what categories or lists exist.",
         "crud_type": "read",
         "parameters": {},
     },
     {
         "name": "list_google_tasks",
-        "description": "List tasks from the user's selected Google Tasks list",
+        "description": "List tasks from the user's selected Google Tasks list. Use this when the user asks what tasks they have to do, or to find a specific task's ID.",
         "crud_type": "read",
         "parameters": {
             "show_completed": {

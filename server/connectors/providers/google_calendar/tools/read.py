@@ -15,7 +15,7 @@ CALENDAR_API_BASE = "https://www.googleapis.com/calendar/v3"
 TOOL_DEFINITIONS = [
     {
         "name": "list_google_calendar_events",
-        "description": "List upcoming events from the user's primary Google Calendar",
+        "description": "List upcoming events from the user's primary Google Calendar. Use this when the user asks about their schedule, meetings, or upcoming events. It will return event details including start/end times, attendees, and meeting links.",
         "crud_type": "read",
         "parameters": {
             "max_results": {

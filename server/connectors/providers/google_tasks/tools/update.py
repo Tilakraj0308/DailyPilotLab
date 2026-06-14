@@ -17,7 +17,7 @@ TASKS_API_BASE = "https://tasks.googleapis.com/tasks/v1"
 TOOL_DEFINITIONS = [
     {
         "name": "update_google_task",
-        "description": "Update a task's title, notes, or completion status",
+        "description": "Update an existing task's title, notes, or completion status. Use this to mark a task as complete, rename it, or add details to it. Requires the task ID from list_google_tasks.",
         "crud_type": "update",
         "parameters": {
             "task_id": {

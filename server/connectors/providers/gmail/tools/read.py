@@ -15,8 +15,7 @@ TOOL_DEFINITIONS = [
     {
         "name": "gmail_list_priority_threads",
         "description": (
-            "List priority Gmail threads: inbox messages for a query, deduped by thread, "
-            "then hydrated with metadata (same flow as the priority inbox view)."
+            "List priority Gmail threads from the user's inbox. Use this when the user asks to check their emails, read new messages, or search their inbox."
         ),
         "crud_type": "read",
         "parameters": {
@@ -36,7 +35,7 @@ TOOL_DEFINITIONS = [
     },
     {
         "name": "gmail_get_thread",
-        "description": "Fetch a Gmail thread by id with optional message format (metadata by default)",
+        "description": "Fetch a specific Gmail thread by ID to read its full content and messages. Requires a thread ID from gmail_list_priority_threads.",
         "crud_type": "read",
         "parameters": {
             "thread_id": {

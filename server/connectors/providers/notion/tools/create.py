@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 TOOL_DEFINITIONS = [
     {
         "name": "create_notion_page",
-        "description": "Create a Notion page as a child of an existing page, or a row in a database",
+        "description": "Create a new Notion page as a child of an existing page, or add a row to a database. Use this strictly when the user explicitly asks to create a document, note, or entry in Notion. Requires a parent page or database ID.",
         "crud_type": "create",
         "parameters": {
             "parent_type": {

@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 TOOL_DEFINITIONS = [
     {
         "name": "update_notion_page",
-        "description": "Update a Notion page title (default title property) or merge additional properties",
+        "description": "Update a Notion page's title or properties. Requires the Notion page UUID from search_notion_pages.",
         "crud_type": "update",
         "parameters": {
             "page_id": {

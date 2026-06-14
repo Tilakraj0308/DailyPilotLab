@@ -17,7 +17,7 @@ TASKS_API_BASE = "https://tasks.googleapis.com/tasks/v1"
 TOOL_DEFINITIONS = [
     {
         "name": "delete_google_task",
-        "description": "Delete a task from the user's Google Tasks list",
+        "description": "Delete a task from the user's Google Tasks list. Use this only when the user explicitly asks to delete or remove a task. Requires the task ID from list_google_tasks.",
         "crud_type": "delete",
         "parameters": {
             "task_id": {

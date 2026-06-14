@@ -17,7 +17,7 @@ TASKS_API_BASE = "https://tasks.googleapis.com/tasks/v1"
 TOOL_DEFINITIONS = [
     {
         "name": "create_google_task",
-        "description": "Create a new task in the user's selected Google Tasks list",
+        "description": "Create a new task in the user's selected Google Tasks list. Use this strictly when the user explicitly asks to create a task or add a to-do item.",
         "crud_type": "create",
         "parameters": {
             "title": {
