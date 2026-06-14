@@ -1,0 +1,46 @@
+[
+  {
+    "id": "nickname",
+    "question": "What should I call you?",
+    "type": "text_input",
+    "placeholder": "Your preferred name",
+    "prefill_from": "display_name",
+    "state_key": "nickname"
+  },
+  {
+    "id": "dob",
+    "question": "What's your Date of Birth?",
+    "type": "date_picker",
+    "state_key": "date_of_birth"
+  },
+  {
+    "id": "occupation",
+    "question": "What do you do?",
+    "type": "wheel_picker",
+    "options": ["Student", "Developer", "Teacher", "Housewife", "Chef", "Project Manager", "CTO", "Other"],
+    "state_key": "occupation"
+  },
+  {
+    "id": "student_detail",
+    "question": "What are you studying right now? Your current topic that interests you?",
+    "type": "text_input",
+    "placeholder": "e.g. Computer Science, Machine Learning...",
+    "state_key": "study_topic",
+    "show_when": { "occupation": "Student" }
+  },
+  {
+    "id": "developer_detail",
+    "question": "Where do you work? Your favourite domain of technology?",
+    "type": "text_input",
+    "placeholder": "e.g. Google — Backend / AI / Mobile...",
+    "state_key": "work_domain",
+    "show_when": { "occupation": "Developer" }
+  },
+  {
+    "id": "additional_info",
+    "question": "Anything more you want to add?",
+    "type": "textarea",
+    "placeholder": "Your hobbies, goals, constraints...",
+    "state_key": "additional_info"
+  }
+]

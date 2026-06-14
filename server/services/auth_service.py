@@ -52,7 +52,7 @@ def get_or_create_user(auth_id: str, email: str, display_name: str | None, avata
     with get_dict_cursor() as cur:
         # Try to find existing user
         cur.execute(
-            "SELECT id, auth_id, email, display_name, avatar_url FROM public.users WHERE auth_id = %s",
+            "SELECT id, auth_id, email, display_name, avatar_url, onboarding_completed, personal_state FROM public.users WHERE auth_id = %s",
             (auth_id,),
         )
         user = cur.fetchone()
@@ -68,7 +68,7 @@ def get_or_create_user(auth_id: str, email: str, display_name: str | None, avata
                     display_name = COALESCE(%s, display_name),
                     avatar_url = COALESCE(%s, avatar_url)
                 WHERE auth_id = %s
-                RETURNING id, auth_id, email, display_name, avatar_url
+                RETURNING id, auth_id, email, display_name, avatar_url, onboarding_completed, personal_state
                 """,
                 (trimmed, trimmed, display_name, avatar_url, auth_id),
             )
@@ -80,7 +80,7 @@ def get_or_create_user(auth_id: str, email: str, display_name: str | None, avata
             """
             INSERT INTO public.users (auth_id, email, display_name, avatar_url)
             VALUES (%s, %s, %s, %s)
-            RETURNING id, auth_id, email, display_name, avatar_url
+            RETURNING id, auth_id, email, display_name, avatar_url, onboarding_completed, personal_state
             """,
             (auth_id, email, display_name, avatar_url),
         )

@@ -19,6 +19,7 @@ import ConnectorsScreen from "./src/screens/ConnectorsScreen";
 import ToolAccessScreen from "./src/connectors/ToolAccessScreen";
 import GmailConnectorScreen from "./src/connectors/GmailConnectorScreen";
 import GlobalAlertUI from "./src/components/GlobalAlertUI";
+import OnboardingScreen from "./src/screens/OnboardingScreen";
 import { supabase } from "./src/lib/supabase";
 import * as Linking from "expo-linking";
 import * as QueryParams from "expo-auth-session/build/QueryParams";
@@ -72,7 +73,7 @@ class ErrorBoundary extends React.Component<
 
 
 function AppNavigator() {
-  const { session, isLoading } = useAuth();
+  const { session, isLoading, onboardingCompleted } = useAuth();
   const incomingUrl = Linking.useURL();
 
   // Root-level listener specifically meant to catch deep links that WebBrowser drops.
@@ -169,14 +170,20 @@ function AppNavigator() {
     <NavigationContainer ref={navigationRef}>
       {session ? (
         <Stack.Navigator screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="Home" component={HomeScreen} />
-          <Stack.Screen name="Chat" component={ChatScreen} />
-          <Stack.Screen name="Memories" component={MemoriesScreen} />
-          <Stack.Screen name="Profile" component={ProfileScreen} />
-          <Stack.Screen name="Settings" component={SettingsScreen} />
-          <Stack.Screen name="Connectors" component={ConnectorsScreen} />
-          <Stack.Screen name="ToolAccess" component={ToolAccessScreen} />
-          <Stack.Screen name="GmailConnector" component={GmailConnectorScreen} />
+          {!onboardingCompleted ? (
+            <Stack.Screen name="Onboarding" component={OnboardingScreen} />
+          ) : (
+            <>
+              <Stack.Screen name="Home" component={HomeScreen} />
+              <Stack.Screen name="Chat" component={ChatScreen} />
+              <Stack.Screen name="Memories" component={MemoriesScreen} />
+              <Stack.Screen name="Profile" component={ProfileScreen} />
+              <Stack.Screen name="Settings" component={SettingsScreen} />
+              <Stack.Screen name="Connectors" component={ConnectorsScreen} />
+              <Stack.Screen name="ToolAccess" component={ToolAccessScreen} />
+              <Stack.Screen name="GmailConnector" component={GmailConnectorScreen} />
+            </>
+          )}
         </Stack.Navigator>
       ) : (
         <Stack.Navigator screenOptions={{ headerShown: false }}>
