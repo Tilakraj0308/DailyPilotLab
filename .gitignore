@@ -13,3 +13,4 @@ worktrees/
 AGENTS.md
 app/AGENTS.md
 server/AGENTS.md
+server/supabase/.temp/
