@@ -2,7 +2,7 @@ import os
 import json
 import base64
 import tempfile
-from typing import AsyncGenerator, Any
+from typing import AsyncGenerator, Any, Union
 from openai import AsyncOpenAI
 
 from connectors.tool_registry import get_user_tools
@@ -94,7 +94,7 @@ def _format_tools_for_openai(tools_def: list[dict]) -> list[dict]:
     return out
 
 
-async def stream_chat(messages: list[dict], user_id: str) -> AsyncGenerator[str, None]:
+async def stream_chat(messages: list[dict], user_id: str) -> AsyncGenerator[Union[str, list[dict], dict], None]:
     """
     Stream GPT-4o-mini tokens.
     Dynamically injects tools the user has connected and authorized.
@@ -147,6 +147,8 @@ async def stream_chat(messages: list[dict], user_id: str) -> AsyncGenerator[str,
         
         # If the LLM did not call any tools, we are completely done.
         if finish_reason != "tool_calls" and not tool_calls_accumulator:
+            if assistant_content:
+                current_messages.append({"role": "assistant", "content": assistant_content})
             break
             
         # The LLM wants to execute tools. Let's process them.
@@ -167,8 +169,7 @@ async def stream_chat(messages: list[dict], user_id: str) -> AsyncGenerator[str,
             tool_args_str = tc["function"]["arguments"]
             
             # Send a notification to the UI about the tool action
-            tool_msg = f"\n*[Calling tool: {tool_name}...]*\n"
-            yield tool_msg
+            yield {"type": "tool_call", "tool_name": tool_name}
             
             try:
                 args = json.loads(tool_args_str)
@@ -186,3 +187,6 @@ async def stream_chat(messages: list[dict], user_id: str) -> AsyncGenerator[str,
             })
             
         # Loop restarts with the tool results appended, sending it back to OpenAI
+
+    # Yield the full message history so it can be saved in the database
+    yield current_messages

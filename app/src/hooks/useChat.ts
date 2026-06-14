@@ -13,6 +13,7 @@ export type ChatMessage = {
     role: 'user' | 'assistant';
     content: string;
     created_at?: string;
+    toolName?: string;
 };
 
 export type ChatSessionSummary = {
@@ -78,7 +79,8 @@ export function useChat() {
                         id: m.id || Crypto.randomUUID(),
                         role: m.role,
                         content: m.content,
-                        created_at: m.created_at
+                        created_at: m.created_at,
+                        toolName: m.toolName
                     }));
                     if (newMessages.length < limit) {
                         setHasMoreHistory(false);
@@ -148,6 +150,18 @@ export function useChat() {
                             const rest = prev.slice(1);
                             return [{ id: assistantMessageId, role: 'assistant', content: assistantMessageContent, created_at: new Date().toISOString() }, ...rest];
                         });
+                    } else if (data.type === 'tool_call') {
+                        const toolMsgId = Crypto.randomUUID();
+                        assistantMessageId = Crypto.randomUUID();
+                        assistantMessageContent = '';
+                        
+                        setMessages(prev => [
+                            // New empty bubble for future text (shows typing indicator)
+                            { id: assistantMessageId, role: 'assistant', content: '', created_at: new Date().toISOString() },
+                            // The tool call chip
+                            { id: toolMsgId, role: 'assistant', content: '', toolName: data.tool_name, created_at: new Date().toISOString() },
+                            ...prev
+                        ]);
                     } else if (data.type === 'done') {
                         setIsWaitingForResponse(false);
                         es.removeAllEventListeners();

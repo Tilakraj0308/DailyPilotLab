@@ -12,6 +12,7 @@ import {
     Alert,
     Animated as RNAnimated,
 } from 'react-native';
+import Markdown from 'react-native-markdown-display';
 import { universalAlert } from '../lib/alerts';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -462,13 +463,29 @@ export default function ChatScreen() {
 
     const renderMessage = ({ item, index }: { item: ChatMessage, index: number }) => {
         const isUser = item.role === 'user';
-        const isTyping = item.content === '' && item.role === 'assistant' && isWaitingForResponse;
+        const isTyping = item.content === '' && item.role === 'assistant' && isWaitingForResponse && !item.toolName;
         
-        if (!item.content && item.role === 'assistant' && !isTyping) return null;
+        if (!item.content && item.role === 'assistant' && !isTyping && !item.toolName) return null;
         
         // In descending list, messages[index + 1] is the older message.
         const prevMessage = messages[index + 1];
         const dateDivider = renderDateDivider(item.created_at || new Date().toISOString(), prevMessage?.created_at);
+
+        if (item.toolName) {
+            return (
+                <View key={item.id || index}>
+                    {dateDivider}
+                    <View className="items-start mb-4 ml-10">
+                        <View className="flex-row items-center bg-surface-variant/30 px-3 py-1.5 rounded-full border border-outline-variant/20 gap-2">
+                            <MaterialIcons name="auto-awesome" size={14} color="#4e45e4" />
+                            <Text className="text-xs text-on-surface-variant font-medium" style={{ fontFamily: "Inter_500Medium", textTransform: 'capitalize' }}>
+                                {item.toolName.replace(/_/g, ' ')}...
+                            </Text>
+                        </View>
+                    </View>
+                </View>
+            );
+        }
 
         return (
             <View key={item.id || index}>
@@ -482,12 +499,43 @@ export default function ChatScreen() {
                             {isTyping ? (
                                 <TypingWave />
                             ) : (
-                                <Text
-                                    className={`text-sm leading-relaxed ${isUser ? 'text-white' : 'text-on-surface'}`}
-                                    style={{ fontFamily: isUser ? "Inter_500Medium" : "Inter_400Regular", flexWrap: 'wrap' }}
+                                <Markdown
+                                    style={{
+                                        body: {
+                                            color: isUser ? '#FFFFFF' : '#2b3437',
+                                            fontFamily: isUser ? "Inter_500Medium" : "Inter_400Regular",
+                                            fontSize: 14,
+                                            lineHeight: 22,
+                                        },
+                                        paragraph: {
+                                            marginTop: 0,
+                                            marginBottom: 8,
+                                        },
+                                        link: {
+                                            color: isUser ? '#E0E7FF' : '#4e45e4',
+                                        },
+                                        list_item: {
+                                            flexDirection: 'row',
+                                        },
+                                        code_inline: {
+                                            backgroundColor: isUser ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.05)',
+                                            color: isUser ? '#FFFFFF' : '#2b3437',
+                                            borderRadius: 4,
+                                            paddingHorizontal: 4,
+                                            paddingVertical: 2,
+                                            fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+                                        },
+                                        code_block: {
+                                            backgroundColor: isUser ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.05)',
+                                            color: isUser ? '#FFFFFF' : '#2b3437',
+                                            borderRadius: 8,
+                                            padding: 8,
+                                            fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+                                        }
+                                    }}
                                 >
                                     {item.content}
-                                </Text>
+                                </Markdown>
                             )}
                         </View>
                     </View>
@@ -584,7 +632,7 @@ export default function ChatScreen() {
                                             onChangeText={setInputText}
                                             onSubmitEditing={handleSendText}
                                             multiline
-                                            style={{ fontFamily: "Inter_400Regular", minHeight: 40, paddingTop: 10, paddingBottom: 10, textAlignVertical: 'top' }}
+                                            style={{ fontFamily: "Inter_400Regular", minHeight: 40, paddingTop: 10, paddingBottom: 10, textAlignVertical: 'top', ...(Platform.OS === 'web' ? { outlineStyle: 'none' } : {}) as any }}
                                             returnKeyType="send"
                                             editable={status === 'connected'}
                                         />
