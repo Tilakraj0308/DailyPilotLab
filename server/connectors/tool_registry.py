@@ -51,16 +51,16 @@ def get_user_tools(user_id: str) -> list[dict]:
     Return tool definitions for providers the user has connected,
     filtered by the user's CRUD permission toggles.
     """
-    connected = db.list_connected_providers(user_id)
+    # Fetch all connected providers and their permissions in one DB call
+    connected_perms = db.get_all_connected_permissions(user_id)
     tools: list[dict] = []
 
-    for provider_key in connected:
+    for provider_key, permissions in connected_perms.items():
         provider_tools = _load_tools_for_provider(provider_key)
-        permissions = db.get_tool_permissions(user_id, provider_key)
 
         for tool in provider_tools:
             crud = tool.get("crud_type", "read")
-            # Default: all enabled if no permissions row exists yet
+            # Only add tool if permission for its crud_type is enabled
             if permissions.get(crud, True):
                 tools.append(tool)
 
