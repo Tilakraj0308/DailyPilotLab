@@ -1,16 +1,20 @@
-import React from "react";
-import { View, Text, TouchableOpacity, ScrollView, Image } from "react-native";
+import React, { useState } from "react";
+import { View, Text, TouchableOpacity, ScrollView, Image, TextInput } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MaterialIcons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { useAuth } from "../context/AuthContext";
 import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
-import ConnectorsSection from "../connectors/ConnectorsSection";
 import { universalAlert } from "../lib/alerts";
 
 export default function ProfileScreen() {
   const navigation = useNavigation<any>();
-  const { signOut, user } = useAuth();
+  const { signOut, user, personalState, updatePersonalState } = useAuth();
+
+  const [editNickname, setEditNickname] = useState(personalState?.nickname || "");
+  const [editOccupation, setEditOccupation] = useState(personalState?.occupation || "");
+  const [editAbout, setEditAbout] = useState(personalState?.about_you || "");
+  const [isEditingState, setIsEditingState] = useState(false);
 
   const displayName =
     user?.user_metadata?.full_name ||
@@ -29,6 +33,15 @@ export default function ProfileScreen() {
         },
       },
     ]);
+  };
+
+  const handleSavePersonalState = async () => {
+    await updatePersonalState({
+      nickname: editNickname,
+      occupation: editOccupation,
+      about_you: editAbout,
+    });
+    setIsEditingState(false);
   };
 
   return (
@@ -73,8 +86,66 @@ export default function ProfileScreen() {
           </Text>
         </View>
 
-        <View className="mb-8">
-          <ConnectorsSection />
+        <View className="flex-row items-center justify-between mb-3">
+          <Text
+            className="text-[10px] uppercase text-on-surface-variant font-semibold tracking-widest"
+            style={{ fontFamily: "Inter_600SemiBold" }}
+          >
+            Personal Info
+          </Text>
+          <TouchableOpacity onPress={() => isEditingState ? handleSavePersonalState() : setIsEditingState(true)}>
+            <Text className="text-primary text-sm font-semibold" style={{ color: "#4e45e4", fontFamily: "Inter_600SemiBold" }}>
+              {isEditingState ? "Save" : "Edit"}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        <View className="bg-surface-container-lowest rounded-2xl p-5 border border-outline-variant/15 mb-8 shadow-sm">
+          {/* Nickname */}
+          <View className="mb-4">
+            <Text className="text-xs text-on-surface-variant mb-1" style={{ fontFamily: "Inter_500Medium" }}>Preferred Name</Text>
+            {isEditingState ? (
+              <TextInput
+                value={editNickname}
+                onChangeText={setEditNickname}
+                className="bg-surface-container/50 px-3 py-2 rounded-lg text-base text-on-surface"
+                style={{ fontFamily: "Inter_500Medium" }}
+              />
+            ) : (
+              <Text className="text-base text-on-surface" style={{ fontFamily: "Inter_500Medium" }}>{personalState?.nickname || "Not set"}</Text>
+            )}
+          </View>
+
+          {/* Occupation */}
+          <View className="mb-4">
+            <Text className="text-xs text-on-surface-variant mb-1" style={{ fontFamily: "Inter_500Medium" }}>Profession</Text>
+            {isEditingState ? (
+              <TextInput
+                value={editOccupation}
+                onChangeText={setEditOccupation}
+                className="bg-surface-container/50 px-3 py-2 rounded-lg text-base text-on-surface"
+                style={{ fontFamily: "Inter_500Medium" }}
+              />
+            ) : (
+              <Text className="text-base text-on-surface" style={{ fontFamily: "Inter_500Medium" }}>{personalState?.occupation || "Not set"}</Text>
+            )}
+          </View>
+
+          {/* About You */}
+          <View>
+            <Text className="text-xs text-on-surface-variant mb-1" style={{ fontFamily: "Inter_500Medium" }}>About You</Text>
+            {isEditingState ? (
+              <TextInput
+                value={editAbout}
+                onChangeText={setEditAbout}
+                multiline
+                className="bg-surface-container/50 px-3 py-2 rounded-lg text-base text-on-surface min-h-[60px]"
+                style={{ fontFamily: "Inter_500Medium", textAlignVertical: "top" }}
+              />
+            ) : (
+              <Text className="text-base text-on-surface" style={{ fontFamily: "Inter_500Medium" }}>{personalState?.about_you || "Not set"}</Text>
+            )}
+          </View>
         </View>
 
         <Text
@@ -83,6 +154,33 @@ export default function ProfileScreen() {
         >
           Account
         </Text>
+
+        <TouchableOpacity
+          onPress={() => navigation.navigate("Connectors")}
+          className="bg-surface-container-lowest rounded-2xl p-4 border border-outline-variant/15 flex-row items-center justify-between mb-3 shadow-sm"
+        >
+          <View className="flex-row items-center gap-3">
+            <View className="w-10 h-10 rounded-full bg-surface-container items-center justify-center">
+              <MaterialIcons name="extension" size={22} color="#586064" />
+            </View>
+            <View>
+              <Text
+                className="text-base text-on-surface"
+                style={{ fontFamily: "Inter_600SemiBold" }}
+              >
+                Integrations
+              </Text>
+              <Text
+                className="text-xs text-on-surface-variant"
+                style={{ fontFamily: "Inter_400Regular" }}
+              >
+                Manage connected tools
+              </Text>
+            </View>
+          </View>
+          <MaterialIcons name="chevron-right" size={24} color="#586064" />
+        </TouchableOpacity>
+
         <TouchableOpacity
           onPress={() => navigation.navigate("Settings")}
           className="bg-surface-container-lowest rounded-2xl p-4 border border-outline-variant/15 flex-row items-center justify-between mb-4 shadow-sm"
