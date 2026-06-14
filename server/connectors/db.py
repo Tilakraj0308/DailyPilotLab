@@ -39,13 +39,9 @@ def get_user_email_by_auth_id(auth_id: str) -> str | None:
 
 
 def connector_provider_exists(provider_key: str) -> bool:
-    """True if `provider_key` is present in `public.connector_providers` (required for OAuth FK)."""
-    with get_dict_cursor() as cur:
-        cur.execute(
-            "SELECT 1 FROM public.connector_providers WHERE provider_key = %s LIMIT 1",
-            (provider_key,),
-        )
-        return cur.fetchone() is not None
+    """True if `provider_key` is present in the in-memory registry."""
+    from connectors.providers.registry import SUPPORTED_PROVIDERS
+    return provider_key in SUPPORTED_PROVIDERS
 
 
 def insert_oauth_state(
@@ -115,17 +111,15 @@ def save_tokens_for_connector(
     with get_dict_cursor() as cur:
         cur.execute(
             """
-            INSERT INTO public.user_connector_tokens
-                (user_connector_id, encrypted_access_token, encrypted_refresh_token, token_expires_at)
-            VALUES (%s, %s, %s, %s)
-            ON CONFLICT (user_connector_id)
-            DO UPDATE SET
-                encrypted_access_token = EXCLUDED.encrypted_access_token,
-                encrypted_refresh_token = EXCLUDED.encrypted_refresh_token,
-                token_expires_at = EXCLUDED.token_expires_at,
+            UPDATE public.user_connectors
+            SET
+                access_token = %s,
+                refresh_token = %s,
+                token_expires_at = %s,
                 updated_at = now()
+            WHERE id = %s
             """,
-            (user_connector_id, enc_a, enc_r, expires_at),
+            (enc_a, enc_r, expires_at, user_connector_id),
         )
 
 
@@ -180,31 +174,57 @@ def mark_connector_reauth(user_id: str, provider_key: str, message: str | None =
 
 
 def list_connectors_status(user_id: str) -> list[dict[str, Any]]:
+    from connectors.providers.registry import SUPPORTED_PROVIDERS
     with get_dict_cursor() as cur:
         cur.execute(
             """
             SELECT
-                cp.provider_key,
-                cp.display_name,
-                COALESCE(uc.status::text, 'disconnected') AS status,
-                COALESCE(uc.scopes, '{}') AS scopes,
-                uc.connected_at,
-                uc.provider_email,
-                uc.error_message,
-                ucr.resource_id AS selected_resource_id,
-                ucr.resource_name AS selected_resource_name
-            FROM public.connector_providers cp
-            LEFT JOIN public.user_connectors uc
-                ON uc.provider_key = cp.provider_key AND uc.user_id = %s
-            LEFT JOIN public.user_connector_resources ucr
-                ON ucr.user_connector_id = uc.id
-                AND ucr.resource_type = 'task_list'
-            ORDER BY cp.provider_key
+                provider_key,
+                status::text AS status,
+                scopes,
+                connected_at,
+                provider_email,
+                error_message,
+                metadata
+            FROM public.user_connectors
+            WHERE user_id = %s
             """,
             (user_id,),
         )
         rows = cur.fetchall()
-        return [dict(r) for r in rows]
+
+    db_map = {row["provider_key"]: dict(row) for row in rows}
+
+    result = []
+    for key, config in SUPPORTED_PROVIDERS.items():
+        row = db_map.get(key)
+        if row:
+            metadata = row.get("metadata") or {}
+            task_list = metadata.get("task_list") or {}
+            result.append({
+                "provider_key": key,
+                "display_name": config.display_name,
+                "status": row.get("status", "disconnected"),
+                "scopes": row.get("scopes", []),
+                "connected_at": row.get("connected_at"),
+                "provider_email": row.get("provider_email"),
+                "error_message": row.get("error_message"),
+                "selected_resource_id": task_list.get("id"),
+                "selected_resource_name": task_list.get("name"),
+            })
+        else:
+            result.append({
+                "provider_key": key,
+                "display_name": config.display_name,
+                "status": "disconnected",
+                "scopes": [],
+                "connected_at": None,
+                "provider_email": None,
+                "error_message": None,
+                "selected_resource_id": None,
+                "selected_resource_name": None,
+            })
+    return result
 
 
 def get_connector_token_bundle(user_id: str, provider_key: str) -> dict[str, Any] | None:
@@ -213,13 +233,12 @@ def get_connector_token_bundle(user_id: str, provider_key: str) -> dict[str, Any
         cur.execute(
             """
             SELECT
-                uct.encrypted_access_token,
-                uct.encrypted_refresh_token,
-                uct.token_expires_at,
-                uc.id AS user_connector_id
-            FROM public.user_connectors uc
-            JOIN public.user_connector_tokens uct ON uct.user_connector_id = uc.id
-            WHERE uc.user_id = %s AND uc.provider_key = %s
+                access_token AS encrypted_access_token,
+                refresh_token AS encrypted_refresh_token,
+                token_expires_at,
+                id AS user_connector_id
+            FROM public.user_connectors
+            WHERE user_id = %s AND provider_key = %s AND access_token IS NOT NULL
             """,
             (user_id, provider_key),
         )
@@ -247,17 +266,19 @@ def get_connector_resource(
     with get_dict_cursor() as cur:
         cur.execute(
             """
-            SELECT ucr.resource_id, ucr.resource_name
-            FROM public.user_connector_resources ucr
-            JOIN public.user_connectors uc ON uc.id = ucr.user_connector_id
-            WHERE uc.user_id = %s AND uc.provider_key = %s AND ucr.resource_type = %s
+            SELECT metadata
+            FROM public.user_connectors
+            WHERE user_id = %s AND provider_key = %s
             """,
-            (user_id, provider_key, resource_type),
+            (user_id, provider_key),
         )
         row = cur.fetchone()
         if not row:
             return None, None
-        return row.get("resource_id"), row.get("resource_name")
+        
+        metadata = row.get("metadata") or {}
+        resource = metadata.get(resource_type) or {}
+        return resource.get("id"), resource.get("name")
 
 
 def upsert_selected_task_list(
@@ -269,20 +290,20 @@ def upsert_selected_task_list(
     uc_id = get_user_connector_id(user_id, provider_key)
     if not uc_id:
         raise ValueError("Connector row not found")
+        
+    resource_data = {"id": task_list_id, "name": task_list_title}
+    import json
+    
     with get_dict_cursor() as cur:
         cur.execute(
             """
-            INSERT INTO public.user_connector_resources
-                (user_connector_id, resource_type, resource_id, resource_name, is_selected)
-            VALUES (%s, 'task_list', %s, %s, TRUE)
-            ON CONFLICT (user_connector_id, resource_type)
-            DO UPDATE SET
-                resource_id = EXCLUDED.resource_id,
-                resource_name = EXCLUDED.resource_name,
-                is_selected = TRUE,
+            UPDATE public.user_connectors
+            SET
+                metadata = jsonb_set(COALESCE(metadata, '{}'::jsonb), '{task_list}', %s::jsonb),
                 updated_at = now()
+            WHERE id = %s
             """,
-            (uc_id, task_list_id, task_list_title),
+            (json.dumps(resource_data), uc_id),
         )
 
 
@@ -324,10 +345,9 @@ def delete_tokens_and_disconnect(user_id: str, provider_key: str) -> dict[str, A
     with get_dict_cursor() as cur:
         cur.execute(
             """
-            SELECT uct.encrypted_refresh_token, uc.id AS cid
-            FROM public.user_connectors uc
-            LEFT JOIN public.user_connector_tokens uct ON uct.user_connector_id = uc.id
-            WHERE uc.user_id = %s AND uc.provider_key = %s
+            SELECT refresh_token AS encrypted_refresh_token, id AS cid
+            FROM public.user_connectors
+            WHERE user_id = %s AND provider_key = %s
             """,
             (user_id, provider_key),
         )
@@ -340,20 +360,6 @@ def delete_tokens_and_disconnect(user_id: str, provider_key: str) -> dict[str, A
 
         cur.execute(
             """
-            DELETE FROM public.user_connector_resources
-            WHERE user_connector_id = %s
-            """,
-            (row["cid"],),
-        )
-        cur.execute(
-            """
-            DELETE FROM public.user_connector_tokens
-            WHERE user_connector_id = %s
-            """,
-            (row["cid"],),
-        )
-        cur.execute(
-            """
             UPDATE public.user_connectors
             SET
                 status = 'disconnected',
@@ -362,6 +368,10 @@ def delete_tokens_and_disconnect(user_id: str, provider_key: str) -> dict[str, A
                 external_account_id = NULL,
                 provider_email = NULL,
                 error_message = NULL,
+                access_token = NULL,
+                refresh_token = NULL,
+                token_expires_at = NULL,
+                metadata = '{}'::jsonb,
                 updated_at = now()
             WHERE user_id = %s AND provider_key = %s
             """,
@@ -396,26 +406,28 @@ def get_tool_permissions(user_id: str, provider_key: str) -> dict[str, bool]:
     with get_dict_cursor() as cur:
         cur.execute(
             """
-            SELECT allowed_cruds
-            FROM public.connector_tool_permissions
+            SELECT metadata
+            FROM public.user_connectors
             WHERE user_id = %s AND provider_key = %s
             """,
             (user_id, provider_key),
         )
         row = cur.fetchone()
 
-    # Default fallback if no row exists
     defaults = {"create": True, "read": True, "update": True, "delete": True}
     if not row:
         return defaults
 
-    allowed = row.get("allowed_cruds") or []
-    # Convert list of strings/enums to the dict format expected by callers
+    metadata = row.get("metadata") or {}
+    perms = metadata.get("permissions")
+    if perms is None:
+        return defaults
+
     return {
-        "create": "create" in allowed,
-        "read": "read" in allowed,
-        "update": "update" in allowed,
-        "delete": "delete" in allowed,
+        "create": perms.get("create", False),
+        "read": perms.get("read", False),
+        "update": perms.get("update", False),
+        "delete": perms.get("delete", False),
     }
 
 
@@ -424,44 +436,45 @@ def update_tool_permission(
 ) -> None:
     """Add or remove a single CRUD permission from the array."""
     with get_dict_cursor() as cur:
-        if enabled:
-            # Add to array uniquely
-            cur.execute(
-                """
-                INSERT INTO public.connector_tool_permissions (user_id, provider_key, allowed_cruds)
-                VALUES (%s, %s, ARRAY[%s]::public.tool_crud_type[])
-                ON CONFLICT (user_id, provider_key)
-                DO UPDATE SET 
-                    allowed_cruds = ARRAY(
-                        SELECT DISTINCT e FROM unnest(array_append(public.connector_tool_permissions.allowed_cruds, %s::public.tool_crud_type)) e
-                    ),
-                    updated_at = now()
-                """,
-                (user_id, provider_key, crud_type, crud_type),
-            )
-        else:
-            # Remove from array
-            cur.execute(
-                """
-                UPDATE public.connector_tool_permissions
-                SET allowed_cruds = array_remove(allowed_cruds, %s::public.tool_crud_type),
-                    updated_at = now()
-                WHERE user_id = %s AND provider_key = %s
-                """,
-                (crud_type, user_id, provider_key),
-            )
+        cur.execute(
+            """
+            SELECT metadata
+            FROM public.user_connectors
+            WHERE user_id = %s AND provider_key = %s
+            """,
+            (user_id, provider_key),
+        )
+        row = cur.fetchone()
+        if not row:
+            return
+
+        metadata = row.get("metadata") or {}
+        perms = metadata.get("permissions", {"create": True, "read": True, "update": True, "delete": False})
+        
+        perms[crud_type] = enabled
+        
+        import json
+        cur.execute(
+            """
+            UPDATE public.user_connectors
+            SET metadata = jsonb_set(COALESCE(metadata, '{}'::jsonb), '{permissions}', %s::jsonb),
+                updated_at = now()
+            WHERE user_id = %s AND provider_key = %s
+            """,
+            (json.dumps(perms), user_id, provider_key),
+        )
 
 
 def init_default_permissions(user_id: str, provider_key: str) -> None:
     """Seed default CRUD permissions after a successful OAuth connection."""
-    # Delete disabled by default for safety
-    defaults = ["read", "create", "update"]
+    import json
+    defaults = {"create": True, "read": True, "update": True, "delete": False}
     with get_dict_cursor() as cur:
         cur.execute(
             """
-            INSERT INTO public.connector_tool_permissions (user_id, provider_key, allowed_cruds)
-            VALUES (%s, %s, %s::public.tool_crud_type[])
-            ON CONFLICT (user_id, provider_key) DO NOTHING
+            UPDATE public.user_connectors
+            SET metadata = jsonb_set(COALESCE(metadata, '{}'::jsonb), '{permissions}', %s::jsonb)
+            WHERE user_id = %s AND provider_key = %s
             """,
-            (user_id, provider_key, defaults),
+            (json.dumps(defaults), user_id, provider_key),
         )
