@@ -13,7 +13,23 @@ def update_personal_state_db(user_id: str, new_state: dict):
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "UPDATE public.users SET personal_state = %s WHERE auth_id = %s",
+                "UPDATE public.users SET personal_state = %s::jsonb WHERE auth_id = %s",
                 (json.dumps(new_state), user_id)
+            )
+        conn.commit()
+
+
+def mark_onboarding_complete(user_id: str, personal_state: dict):
+    """Write personal_state and set onboarding_completed = TRUE in one atomic update."""
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE public.users
+                SET personal_state = %s::jsonb,
+                    onboarding_completed = TRUE
+                WHERE auth_id = %s
+                """,
+                (json.dumps(personal_state), user_id)
             )
         conn.commit()

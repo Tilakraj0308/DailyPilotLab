@@ -15,6 +15,8 @@ class UserOut(BaseModel):
     email: str
     display_name: Optional[str] = None
     avatar_url: Optional[str] = None
+    onboarding_completed: bool = False
+    personal_state: Optional[dict] = None
 
     model_config = ConfigDict(from_attributes=True)
 

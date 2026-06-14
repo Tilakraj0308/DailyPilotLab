@@ -10,6 +10,7 @@ from models.ideas import IdeaCreateInput, IdeaOut, IdeaUpdateInput, IdeaDeleteIn
 # from models.users import GoogleAuthRequest, AuthResponse, UserOut
 from utils.helpers import assign_idea_to_topic, semantic_search_memories, update_traits
 from services.auth_service import get_or_create_user
+from services.onboarding_service import get_questions as get_onboarding_questions, submit_answers as submit_onboarding_answers
 from utils.auth_middleware import get_current_user
 from typing import List 
 from dotenv import load_dotenv
@@ -104,6 +105,35 @@ def sync_profile(payload: dict = Depends(get_current_user)):
     user = get_or_create_user(auth_id, email, name, avatar_url)
     return {"status": "success", "user": user}
 
+class PersonalStateUpdateRequest(BaseModel):
+    personal_state: dict
+
+@app.post("/auth/profile/personal_state")
+def update_profile_personal_state(req: PersonalStateUpdateRequest, payload: dict = Depends(get_current_user)):
+    user_id = payload.get("sub", "")
+    from services.user_service import update_personal_state_db
+    update_personal_state_db(user_id, req.personal_state)
+    return {"status": "success", "personal_state": req.personal_state}
+
+
+# ─── Onboarding ─────────────────────────────────────────────────────────────
+
+class OnboardingSubmitRequest(BaseModel):
+    answers: dict = {}
+
+@app.get("/onboarding/questions")
+def onboarding_questions(payload: dict = Depends(get_current_user)):
+    """Return the onboarding question set."""
+    return {"questions": get_onboarding_questions()}
+
+@app.post("/onboarding/complete")
+def onboarding_complete(req: OnboardingSubmitRequest, payload: dict = Depends(get_current_user)):
+    """
+    Submit onboarding answers. Writes personal_state and sets onboarding_completed = true.
+    """
+    user_id = payload.get("sub", "")
+    result = submit_onboarding_answers(user_id, req.answers)
+    return result
 
 
 # ─── Ideas ───────────────────────────────────────────────────────────────────
