@@ -273,16 +273,79 @@ async def chat_stream(req: ChatStreamRequest, payload: dict = Depends(get_curren
     system_content = f"{persona}\n\n{traits_data}\n\n{personal_state_data}\n\n{active_ideas_data}".strip()
 
     history = [{"role": "system", "content": system_content}]
+    
+    # 1. Load raw messages
+    temp_history = []
     for r in history_rows:
-        msg = {"role": r["role"], "content": r["content"]}
-        if r.get("tool_calls"):
-            msg["tool_calls"] = r["tool_calls"]
+        msg = {"role": r["role"], "content": r["content"] or ""}
+        tool_calls_raw = r.get("tool_calls")
+        if tool_calls_raw:
+            if isinstance(tool_calls_raw, str):
+                try:
+                    tool_calls_raw = json.loads(tool_calls_raw)
+                except Exception:
+                    pass
+            msg["tool_calls"] = tool_calls_raw
         if r.get("tool_call_id"):
             msg["tool_call_id"] = r["tool_call_id"]
-        history.append(msg)
+        temp_history.append(msg)
+
+    # 2. Robust OpenAI History Sanitization
+    valid_history = []
+    for i, msg in enumerate(temp_history):
+        if msg["role"] == "assistant" and msg.get("tool_calls"):
+            # Ensure all requested tool calls have matching tool messages
+            requested_ids = {tc.get("id") for tc in msg["tool_calls"]}
+            fulfilled_ids = set()
+            for next_msg in temp_history[i+1:]:
+                if next_msg["role"] == "tool":
+                    fulfilled_ids.add(next_msg.get("tool_call_id"))
+                else:
+                    break
+            
+            if requested_ids != fulfilled_ids:
+                # Unfulfilled or partial tool calls. Strip them to prevent OpenAI 400 errors.
+                msg.pop("tool_calls", None)
+                if not msg.get("content"):
+                    msg["content"] = "[Action interrupted]"
+                    
+        elif msg["role"] == "tool":
+            # Ensure this tool message has a valid parent assistant message
+            valid_parent = False
+            for prev_msg in reversed(valid_history):
+                if prev_msg["role"] == "tool":
+                    continue
+                if prev_msg["role"] == "assistant" and prev_msg.get("tool_calls"):
+                    # Check if this tool message's ID is in the parent's requested IDs
+                    req_ids = [tc.get("id") for tc in prev_msg["tool_calls"]]
+                    if msg.get("tool_call_id") in req_ids:
+                        valid_parent = True
+                break
+            
+            if not valid_parent:
+                continue # Skip this orphan/invalid tool message
+                
+        valid_history.append(msg)
+        
+    history.extend(valid_history)
 
     async def event_stream():
         async for token in stream_chat(history, user_id):
+            if isinstance(token, list):
+                # token is the final current_messages list
+                new_messages = token[len(history):]
+                for msg in new_messages:
+                    role = msg.get("role")
+                    content = msg.get("content", "")
+                    tool_calls = msg.get("tool_calls")
+                    tool_call_id = msg.get("tool_call_id")
+                    await asyncio.to_thread(save_message, user_id, role, content, tool_calls, tool_call_id)
+                continue
+
+            if isinstance(token, dict):
+                yield f'data: {json.dumps(token)}\n\n'
+                continue
+
             if isinstance(token, list):
                 # token is the final current_messages list
                 new_messages = token[len(history):]
@@ -310,6 +373,42 @@ import uuid
 def get_chat_user_history(limit: int = 15, offset: int = 0, payload: dict = Depends(get_current_user)):
     user_id = payload.get("sub", "")
     history_rows = load_history(user_id, limit=limit, offset=offset)
+    
+    history = []
+    for r in history_rows:
+        if r["role"] == "tool":
+            # Skip raw tool JSON responses in the UI history
+            continue
+
+        tool_calls = r.get("tool_calls")
+        if isinstance(tool_calls, str):
+            try:
+                tool_calls = json.loads(tool_calls)
+            except:
+                pass
+
+        # If it has tool calls, yield a separate toolName chip (newest first, so chip before text)
+        if r["role"] == "assistant" and tool_calls and isinstance(tool_calls, list):
+            for tc in reversed(tool_calls):
+                tc_name = tc.get("function", {}).get("name")
+                if tc_name:
+                    history.append({
+                        "id": str(uuid.uuid4()), 
+                        "role": "assistant",
+                        "content": "",
+                        "toolName": tc_name,
+                        "created_at": r.get('created_at')
+                    })
+                    
+        # If it has content, yield the content message
+        if r["content"]:
+            history.append({
+                "id": str(r.get('id') or uuid.uuid4()), 
+                "role": r["role"], 
+                "content": r["content"], 
+                "created_at": r.get('created_at')
+            })
+
     
     history = []
     for r in history_rows:
