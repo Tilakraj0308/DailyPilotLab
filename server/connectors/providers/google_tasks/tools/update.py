@@ -40,6 +40,11 @@ TOOL_DEFINITIONS = [
                 "required": False,
                 "description": "Set to true to mark complete, false to uncomplete",
             },
+            "due": {
+                "type": "str",
+                "required": False,
+                "description": "Due date of the task in RFC 3339 format (e.g. 2023-10-25T00:00:00.000Z). The time portion is ignored by Google Tasks.",
+            },
         },
     }
 ]
@@ -83,6 +88,8 @@ def execute(connector: Any, user_id: str, tool_name: str, params: dict) -> Any:
             body["title"] = params["title"]
         if "notes" in params:
             body["notes"] = params["notes"]
+        if "due" in params:
+            body["due"] = params["due"]
         if "completed" in params:
             from datetime import datetime, timezone
             if params["completed"]:

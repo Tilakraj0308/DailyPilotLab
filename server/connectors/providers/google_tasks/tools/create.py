@@ -30,6 +30,16 @@ TOOL_DEFINITIONS = [
                 "required": False,
                 "description": "Optional notes or description for the task",
             },
+            "due": {
+                "type": "str",
+                "required": False,
+                "description": "Due date of the task in RFC 3339 format (e.g. 2023-10-25T00:00:00.000Z). The time portion is ignored by Google Tasks.",
+            },
+            "parent": {
+                "type": "str",
+                "required": False,
+                "description": "ID of the parent task if you want to create this as a subtask.",
+            },
         },
     }
 ]
@@ -41,15 +51,25 @@ def create_task(
     task_list_id: str,
     title: str,
     notes: str | None = None,
+    due: str | None = None,
+    parent: str | None = None,
 ) -> dict[str, Any]:
     """Create a new task in the given list."""
     token = connector.ensure_access_token(user_id)
     body: dict[str, Any] = {"title": title}
     if notes:
         body["notes"] = notes
+    if due:
+        body["due"] = due
+
+    params = {}
+    if parent:
+        params["parent"] = parent
+
     r = requests.post(
         f"{TASKS_API_BASE}/lists/{urllib.parse.quote(task_list_id, safe='')}/tasks",
         headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        params=params,
         json=body,
         timeout=30,
     )
@@ -72,6 +92,8 @@ def execute(connector: Any, user_id: str, tool_name: str, params: dict) -> Any:
             task_list_id,
             title=params["title"],
             notes=params.get("notes"),
+            due=params.get("due"),
+            parent=params.get("parent"),
         )
 
     raise ValueError(f"Unknown create tool: {tool_name}")
