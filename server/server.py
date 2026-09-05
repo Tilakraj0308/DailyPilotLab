@@ -22,6 +22,10 @@ from services.chat_db import save_message, load_history
 from connectors import router as connectors_router
 from tasks.router import router as tasks_router
 
+from utils.logger import setup_logger
+
+logger = setup_logger()
+
 load_dotenv()
 app = FastAPI()
 
@@ -64,7 +68,7 @@ async def transcribe_endpoint(file: UploadFile = File(...)):
     Returns: Transcribed text
     """
     try:
-        print("INSIDE THE FUNTION")
+        logger.info("INSIDE THE FUNTION")
         # Read the audio file
         audio_bytes = await file.read()
         
@@ -74,7 +78,7 @@ async def transcribe_endpoint(file: UploadFile = File(...)):
         # Convert to base64 for the transcribe_audio function
         import base64
         audio_b64 = base64.b64encode(audio_bytes).decode('utf-8')
-        print("GOING TO TRANSCRIBE")
+        logger.info("GOING TO TRANSCRIBE")
         # Transcribe using OpenAI Whisper API
         transcript = await transcribe_audio(audio_b64)
         
@@ -86,7 +90,7 @@ async def transcribe_endpoint(file: UploadFile = File(...)):
         }
         
     except Exception as e:
-        print(f"Transcription error: {str(e)}")
+        logger.error(f"Transcription error: {str(e)}")
         return {"error": str(e), "success": False}, 500
 
 
