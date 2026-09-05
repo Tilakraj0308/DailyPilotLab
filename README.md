@@ -12,6 +12,14 @@ The project is split into two main components. If you are a developer looking to
 
 **AI / agent tooling:** [AGENTS.md](AGENTS.md) (repo map, commands, links to `.notes/`), [`.cursor/rules/`](.cursor/rules/) (Cursor project rules), and nested `AGENTS.md` files under `server/` and `app/`.
 
+### 📚 Design & Architecture Decisions (`docx/`)
+
+Key design and architectural decisions are documented in the [`docx/`](./docx/) directory at the root level of the repository. This directory stores decision records detailing architectural choices, trade-offs, and implementation strategies, for example:
+- **Audio Provider Choice:** Rationale for using Deepgram over OpenAI TTS.
+- **API Key Model:** Strategy around introducing user API keys for usage tracking rather than application-managed keys.
+
+---
+
 ### 1. [Server (Backend)](./server/README.md)
 The backend is a FastAPI service powered by a Supabase Postgres database with the `pgvector` extension. It handles semantic search, AI-driven topic extraction (via OpenAI), and data persistence.
 
