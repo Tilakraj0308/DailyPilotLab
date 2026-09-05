@@ -16,6 +16,7 @@
 | `idea_topics` | Memory | M:N junction linking ideas ↔ topics |
 | `trait` | Memory | AI-inferred user personality traits with confidence scores |
 | `chat_messages` | Chat | Continuous multi-turn conversation history |
+| `tasks` | Productivity | User to-do items with status, priority, and due dates |
 | `user_connectors` | Integrations | Per-user provider connections, tokens, permissions, resources |
 | `oauth_state_sessions` | Integrations | Ephemeral PKCE state for OAuth redirect flows |
 | `connector_tool_history` | Integrations | Append-only audit log of external tool executions |
@@ -134,6 +135,28 @@ PK: `(idea_id, topic_id)`
 
 ---
 
+### `tasks`
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | `UUID` (PK) | `gen_random_uuid()` |
+| `user_id` | `TEXT` (FK → `users.auth_id`, CASCADE) | Tenant isolation |
+| `title` | `TEXT NOT NULL` | Short task name |
+| `description` | `TEXT` | Optional notes |
+| `status` | `task_status` enum | `todo`, `in_progress`, `done`, `cancelled` (default: `todo`) |
+| `priority` | `task_priority` enum | `low`, `medium`, `high`, `urgent` (default: `medium`) |
+| `due_date` | `TIMESTAMPTZ` | Nullable — no due date means open-ended |
+| `completed_at` | `TIMESTAMPTZ` | Auto-set when `status` → `done`, cleared otherwise |
+| `created_at` | `TIMESTAMPTZ` | `now()` default |
+| `updated_at` | `TIMESTAMPTZ` | Auto-updated by `moddatetime` trigger |
+
+**Written by**: `tasks/db.py` (via `tasks/service.py`)
+**Read by**: `tasks/router.py` (REST API for UI), `tasks/tools.py` (LLM agent tools)
+**RLS**: Row Level Security enabled — users can only access their own rows
+**Index**: `idx_tasks_user_id` on `user_id`
+
+---
+
 ### `user_connectors`
 
 | Column | Type | Notes |
@@ -217,6 +240,8 @@ PK: `(idea_id, topic_id)`
 | `trait_category` | `interest`, `goal`, `skill`, `routine`, `workstyle`, `preference`, `avoidance`, `value`, `constraint` |
 | `connector_status` | `disconnected`, `connecting`, `connected`, `error`, `reauth_required` |
 | `tool_crud_type` | `create`, `read`, `update`, `delete` |
+| `task_status` | `todo`, `in_progress`, `done`, `cancelled` |
+| `task_priority` | `low`, `medium`, `high`, `urgent` |
 
 ---
 

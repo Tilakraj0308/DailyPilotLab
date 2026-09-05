@@ -20,6 +20,7 @@ from services.chat_service import transcribe_audio, stream_chat
 from services.chat_db import save_message, load_history
 # from models.chat import ChatSessionSummary
 from connectors import router as connectors_router
+from tasks.router import router as tasks_router
 
 load_dotenv()
 app = FastAPI()
@@ -33,6 +34,7 @@ app.add_middleware(
 )
 
 app.include_router(connectors_router, prefix="/connectors", tags=["connectors"])
+app.include_router(tasks_router, prefix="/tasks", tags=["tasks"])
 
 # ─── Health Check Endpoint ──────────────────────────────────────────────────
 

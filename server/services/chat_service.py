@@ -10,6 +10,7 @@ from openai import AsyncOpenAI
 
 from connectors.tool_registry import get_user_tools
 from connectors.tool_executor import execute_tool
+from tasks.tools import execute_task_tool, TASK_TOOL_NAMES
 
 client = AsyncOpenAI(api_key=os.getenv("OPENAPI"))
 
@@ -207,26 +208,27 @@ async def stream_chat(messages: list[dict], user_id: str) -> AsyncGenerator[Unio
                 yield {"type": "tool_call", "tool_name": tool_name}
             
             if call_signature in executed_calls_cache:
-                # We already executed this exact tool call in this iteration. Use the cached result.
                 result_str = executed_calls_cache[call_signature]
             else:
                 try:
                     args = json.loads(tool_args_str)
-                    result = execute_tool(user_id, tool_name, args, triggered_by="ai_agent")
-                    if isinstance(result, dict) and result.get("error_type") == "requires_reauth":
-                        yield {
-                            "type": "reauth_required",
-                            "provider": result.get("provider"),
-                            "auth_url": result.get("auth_url"),
-                            "tool_name": tool_name,
-                        }
-                        return
-                    result_str = json.dumps(result)
+                    # Route: first-party task tools bypass the connector executor
+                    if tool_name in TASK_TOOL_NAMES:
+                        result = execute_task_tool(user_id, tool_name, args)
+                    else:
+                        result = execute_tool(user_id, tool_name, args, triggered_by="ai_agent")
+                        if isinstance(result, dict) and result.get("error_type") == "requires_reauth":
+                            yield {
+                                "type": "reauth_required",
+                                "provider": result.get("provider"),
+                                "auth_url": result.get("auth_url"),
+                                "tool_name": tool_name,
+                            }
+                            return
+                    result_str = json.dumps(result, default=str)
                 except Exception as e:
-                    # Catch tool execution errors securely
                     result_str = json.dumps({"error": str(e)})
-                
-                # Cache it for any duplicates
+
                 executed_calls_cache[call_signature] = result_str
             
             current_messages.append({

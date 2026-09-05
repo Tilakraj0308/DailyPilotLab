@@ -77,7 +77,7 @@ export default function HomeScreen() {
                         {/* Todos Button */}
                         <TouchableOpacity
                             className="bg-white rounded-[24px] p-5 w-[48%] shadow-sm"
-                            onPress={() => { /* Redirect to Todo */ }}
+                            onPress={() => navigation.navigate('Todos')}
                         >
                             <View className="w-10 h-10 rounded-full bg-[#f1f3f5] items-center justify-center mb-6">
                                 <MaterialIcons name="list-alt" size={20} color="#2b3437" />
