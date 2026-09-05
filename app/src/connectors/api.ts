@@ -2,7 +2,6 @@ import { getApiUrl } from "../lib/api";
 
 export const GOOGLE_CALENDAR_PROVIDER = "google_calendar";
 export const GOOGLE_TASKS_PROVIDER = "google_tasks";
-export const NOTION_PROVIDER = "notion";
 export const GMAIL_PROVIDER = "gmail";
 
 /** Turn FastAPI `{ "detail": "..." }` bodies into a single alert-friendly string. */

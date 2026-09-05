@@ -325,23 +325,6 @@ def connector_start(
     raw_email = payload.get("email")
     login_hint = raw_email.strip() if isinstance(raw_email, str) and raw_email.strip() else None
 
-    # Notion callback compares Notion token owner email to public.users.email; keep that row
-    # aligned with the current Supabase JWT so account-switch is not stale before /auth/profile runs.
-    if provider == "notion" and user_id and login_hint:
-        from services.auth_service import get_or_create_user
-
-        meta = payload.get("user_metadata") or {}
-        if not isinstance(meta, dict):
-            meta = {}
-        nm = meta.get("full_name") or meta.get("name")
-        av = meta.get("avatar_url")
-        get_or_create_user(
-            user_id,
-            login_hint,
-            nm if isinstance(nm, str) else None,
-            av if isinstance(av, str) else None,
-        )
-
     if provider not in PROVIDER_MAP:
         raise HTTPException(status_code=404, detail="Unknown connector provider")
 

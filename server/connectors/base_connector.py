@@ -1,7 +1,7 @@
 """
-Google OAuth connector — Calendar / Tasks shared OAuth lifecycle.
+Google OAuth connector — Calendar / Tasks / Gmail shared OAuth lifecycle.
 
-Notion and other providers use separate connector classes; this module stays Google-specific.
+Other providers use separate connector classes; this module stays Google-specific.
 """
 
 from __future__ import annotations

@@ -9,7 +9,6 @@ import {
     startConnectorOAuth,
     GOOGLE_CALENDAR_PROVIDER,
     GOOGLE_TASKS_PROVIDER,
-    NOTION_PROVIDER,
     GMAIL_PROVIDER,
     ConnectorStatusItem,
 } from "./api";
@@ -34,24 +33,17 @@ function statusPill(status: string | undefined): { label: string; bg: string; te
 
 function connectedSuccessLabel(provider: string | null): string {
     if (provider === GOOGLE_TASKS_PROVIDER) return "Google Tasks is connected.";
-    if (provider === NOTION_PROVIDER) return "Notion is connected.";
     if (provider === GMAIL_PROVIDER) return "Gmail is connected.";
     return "Google Calendar is connected.";
 }
 
 function humanizeConnectorErrorReason(reason: string | null | undefined): string {
     if (!reason) return "Please try again.";
-    if (reason === "notion_account_email_mismatch") {
-        return (
-            "The Notion account you approved does not use the same email as this app sign-in. " +
-            "Sign out of Notion in the browser (or use a private window), then connect again using the matching Notion user."
-        );
-    }
     return reason;
 }
 
 export default function ConnectorsSection() {
-    const { session, user } = useAuth();
+    const { session } = useAuth();
     const navigation = useNavigation<any>();
 
     const [items, setItems] = useState<ConnectorStatusItem[]>([]);
@@ -133,9 +125,7 @@ export default function ConnectorsSection() {
             try {
                 const returnTo = getConnectorReturnUrl();
                 const { authorization_url } = await startConnectorOAuth(providerKey, token, returnTo);
-                await openConnectorAuthorizationUrl(authorization_url, {
-                    preferEphemeralSession: providerKey === NOTION_PROVIDER,
-                });
+                await openConnectorAuthorizationUrl(authorization_url);
 
                 // On native, we wait for the browser to close. On web, we are redirecting.
                 if (Platform.OS !== "web") {
@@ -147,25 +137,6 @@ export default function ConnectorsSection() {
                 await load();
             }
         };
-
-        if (providerKey === NOTION_PROVIDER) {
-            const appEmail = user?.email?.trim();
-            if (appEmail) {
-                const webNote =
-                    Platform.OS === "web"
-                        ? " On the web, this Chrome profile may already be logged into Notion as someone else (see the account menu on Notion’s screen). Switch there, sign out at notion.so, or use a Guest/Incognito window—then approve. If you approve the wrong account, the app will reject the connection."
-                        : "";
-                universalAlert(
-                    "Connect Notion",
-                    `This app account is ${appEmail}. Notion must approve access for that same person (Notion’s token email must match).${webNote}`,
-                    [
-                        { text: "Cancel", style: "cancel" },
-                        { text: "Continue", onPress: () => void runOAuth() },
-                    ]
-                );
-                return;
-            }
-        }
 
         await runOAuth();
     };
@@ -186,7 +157,6 @@ export default function ConnectorsSection() {
 
     const googleCal = items.find((c) => c.provider_key === GOOGLE_CALENDAR_PROVIDER);
     const googleTasks = items.find((c) => c.provider_key === GOOGLE_TASKS_PROVIDER);
-    const notion = items.find((c) => c.provider_key === NOTION_PROVIDER);
     const gmail = items.find((c) => c.provider_key === GMAIL_PROVIDER);
 
     const calConnected = googleCal?.status === "connected";
@@ -206,12 +176,6 @@ export default function ConnectorsSection() {
     const tasksPill = tasksNeedsSetup
         ? { label: "Setup needed", bg: "bg-amber-100", text: "text-amber-900" }
         : statusPill(googleTasks?.status);
-
-    const notionConnected = notion?.status === "connected";
-    const notionReauth = notion?.status === "reauth_required";
-    const notionErr = notion?.status === "error";
-    const notionConnecting = notion?.status === "connecting";
-    const notionPill = statusPill(notion?.status);
 
     const gmailConnected = gmail?.status === "connected";
     const gmailReauth = gmail?.status === "reauth_required";
@@ -262,22 +226,6 @@ export default function ConnectorsSection() {
                         isError={tasksErr}
                         isBusy={busyId === GOOGLE_TASKS_PROVIDER}
                         onPressCard={() => handleCardPress(GOOGLE_TASKS_PROVIDER, tasksConnected, tasksReauth)}
-                    />
-
-                    <ConnectorCard
-                        title="Notion"
-                        description={
-                            notion?.provider_email || "Connect your workspace for AI page tools"
-                        }
-                        iconName="description"
-                        pill={notionPill}
-                        errorMessage={notion?.error_message}
-                        isConnected={notionConnected}
-                        isReauth={notionReauth}
-                        isConnecting={notionConnecting}
-                        isError={notionErr}
-                        isBusy={busyId === NOTION_PROVIDER}
-                        onPressCard={() => handleCardPress(NOTION_PROVIDER, notionConnected, notionReauth)}
                     />
 
                     <ConnectorCard
