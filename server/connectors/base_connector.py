@@ -32,6 +32,15 @@ GOOGLE_REVOKE_URL = "https://oauth2.googleapis.com/revoke"
 GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
 
 
+class ConnectorReAuthError(Exception):
+    """Raised when access token is expired and refresh token strategy fails or is missing."""
+
+    def __init__(self, provider_key: str, message: str):
+        super().__init__(message)
+        self.provider_key = provider_key
+        self.message = message
+
+
 def _client_credentials() -> tuple[str, str]:
     cid = env("GOOGLE_CONNECTOR_CLIENT_ID")
     csec = env("GOOGLE_CONNECTOR_CLIENT_SECRET")
@@ -243,13 +252,13 @@ class GoogleOAuthConnector:
 
         if not refresh:
             db.mark_connector_reauth(user_id, self.provider_key, "missing_refresh_token")
-            raise RuntimeError("Re-authentication required")
+            raise ConnectorReAuthError(self.provider_key, "Re-authentication required: missing refresh token")
 
         try:
             payload = self._refresh_access_token(refresh)
         except Exception as e:
             db.mark_connector_reauth(user_id, self.provider_key, str(e))
-            raise RuntimeError("Token refresh failed") from e
+            raise ConnectorReAuthError(self.provider_key, f"Token refresh failed: {e}") from e
 
         new_access = payload.get("access_token")
         new_refresh = payload.get("refresh_token") or refresh
