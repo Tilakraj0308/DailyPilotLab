@@ -13,6 +13,7 @@ import {
     Animated as RNAnimated,
 } from 'react-native';
 import Markdown from 'react-native-markdown-display';
+import * as Clipboard from 'expo-clipboard';
 import { universalAlert } from '../lib/alerts';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -175,11 +176,75 @@ const HistorySkeleton = () => {
     );
 };
 
+const ToolGroupView = ({ item, prevMessage, renderDateDivider }: { item: any, prevMessage: any, renderDateDivider: any }) => {
+    const [expanded, setExpanded] = useState(false);
+    const dateDivider = renderDateDivider(item.created_at || new Date().toISOString(), prevMessage?.created_at);
+
+    return (
+        <View key={item.id}>
+            {dateDivider}
+            <View className="items-start mb-4 ml-10">
+                <TouchableOpacity 
+                    onPress={() => setExpanded(!expanded)}
+                    className="flex-row items-center bg-surface-variant/30 px-3 py-1.5 rounded-full border border-outline-variant/20 gap-2"
+                >
+                    <MaterialIcons name="build" size={14} color="#4e45e4" />
+                    <Text className="text-xs text-on-surface-variant font-medium" style={{ fontFamily: "Inter_500Medium" }}>
+                        {item.tools.length} tool {item.tools.length === 1 ? 'call' : 'calls'}
+                    </Text>
+                    <MaterialIcons name={expanded ? "expand-less" : "expand-more"} size={16} color="#4e45e4" />
+                </TouchableOpacity>
+
+                {expanded && (
+                    <View className="mt-2 ml-2 pl-2 border-l border-outline-variant/20 gap-2">
+                        {item.tools.map((tool: any, idx: number) => (
+                            <View key={tool.id || idx} className="flex-row items-center gap-2">
+                                <MaterialIcons name="auto-awesome" size={12} color="#586064" />
+                                <Text className="text-xs text-on-surface-variant" style={{ fontFamily: "Inter_400Regular", textTransform: 'capitalize' }}>
+                                    {tool.toolName.replace(/_/g, ' ')}
+                                </Text>
+                            </View>
+                        ))}
+                    </View>
+                )}
+            </View>
+        </View>
+    );
+};
+
 export default function ChatScreen() {
     const navigation = useNavigation<any>();
     const { messages, status, sendText, sendAudio, isWaitingForResponse, isLoadingHistory, fetchHistory, hasMoreHistory } = useChat();
     const [inputText, setInputText] = useState('');
     const [isFetchingMore, setIsFetchingMore] = useState(false);
+
+    const groupedMessages = React.useMemo(() => {
+        const result: any[] = [];
+        let currentToolGroup: any = null;
+
+        for (let i = 0; i < messages.length; i++) {
+            const msg = messages[i];
+            if (msg.toolName) {
+                if (!currentToolGroup) {
+                    currentToolGroup = {
+                        id: `group-${msg.id}`,
+                        isToolGroup: true,
+                        tools: [msg],
+                        created_at: msg.created_at,
+                        role: 'assistant',
+                        content: ''
+                    };
+                    result.push(currentToolGroup);
+                } else {
+                    currentToolGroup.tools.unshift(msg);
+                }
+            } else {
+                currentToolGroup = null;
+                result.push(msg);
+            }
+        }
+        return result;
+    }, [messages]);
 
     const loadMoreMessages = async () => {
         if (!isLoadingHistory && !isFetchingMore && hasMoreHistory) {
@@ -461,31 +526,19 @@ export default function ChatScreen() {
         return null;
     };
 
-    const renderMessage = ({ item, index }: { item: ChatMessage, index: number }) => {
+    const renderMessage = ({ item, index }: { item: any, index: number }) => {
+        if (item.isToolGroup) {
+            return <ToolGroupView key={item.id} item={item} prevMessage={groupedMessages[index + 1]} renderDateDivider={renderDateDivider} />;
+        }
+
         const isUser = item.role === 'user';
         const isTyping = item.content === '' && item.role === 'assistant' && isWaitingForResponse && !item.toolName;
         
         if (!item.content && item.role === 'assistant' && !isTyping && !item.toolName) return null;
         
-        // In descending list, messages[index + 1] is the older message.
-        const prevMessage = messages[index + 1];
+        // In descending list, groupedMessages[index + 1] is the older message.
+        const prevMessage = groupedMessages[index + 1];
         const dateDivider = renderDateDivider(item.created_at || new Date().toISOString(), prevMessage?.created_at);
-
-        if (item.toolName) {
-            return (
-                <View key={item.id || index}>
-                    {dateDivider}
-                    <View className="items-start mb-4 ml-10">
-                        <View className="flex-row items-center bg-surface-variant/30 px-3 py-1.5 rounded-full border border-outline-variant/20 gap-2">
-                            <MaterialIcons name="auto-awesome" size={14} color="#4e45e4" />
-                            <Text className="text-xs text-on-surface-variant font-medium" style={{ fontFamily: "Inter_500Medium", textTransform: 'capitalize' }}>
-                                {item.toolName.replace(/_/g, ' ')}...
-                            </Text>
-                        </View>
-                    </View>
-                </View>
-            );
-        }
 
         return (
             <View key={item.id || index}>
@@ -539,6 +592,23 @@ export default function ChatScreen() {
                             )}
                         </View>
                     </View>
+                    
+                    {!isUser && !isTyping && (
+                        <View className="flex-row items-center mt-1 ml-11 gap-4">
+                            <Text className="text-[10px] text-on-surface-variant/70 font-medium tracking-wide">
+                                Gemini 3.1 Pro
+                            </Text>
+                            <TouchableOpacity 
+                                onPress={async () => {
+                                    await Clipboard.setStringAsync(item.content);
+                                    universalAlert('Copied', 'Message copied to clipboard');
+                                }}
+                                className="p-1"
+                            >
+                                <MaterialIcons name="content-copy" size={13} color="#9CA4AA" />
+                            </TouchableOpacity>
+                        </View>
+                    )}
                 </View>
             </View>
         );
@@ -600,13 +670,13 @@ export default function ChatScreen() {
                             </Text>
                         </View>
                     ) : (
-                        <FlatList
-                            ref={flatListRef}
-                            className="flex-1 bg-background"
-                            contentContainerStyle={{ paddingVertical: 16, paddingHorizontal: 16 }}
-                            data={messages}
-                            keyExtractor={(item, index) => item.id || index.toString()}
-                            renderItem={renderMessage}
+                            <FlatList
+                                ref={flatListRef}
+                                className="flex-1 bg-background"
+                                contentContainerStyle={{ paddingVertical: 16, paddingHorizontal: 16 }}
+                                data={groupedMessages}
+                                keyExtractor={(item, index) => item.id || index.toString()}
+                                renderItem={renderMessage}
                             inverted={true}
                             showsVerticalScrollIndicator={false}
                             keyboardShouldPersistTaps="handled"
