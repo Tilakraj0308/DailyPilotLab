@@ -143,7 +143,6 @@ CREATE TABLE IF NOT EXISTS public.connector_tool_history (
     crud_type       TEXT NOT NULL,
     params          JSONB,
     result_summary  JSONB,
-    ai_tool_response JSONB,
     status          TEXT NOT NULL DEFAULT 'success',
     error_message   TEXT,
     triggered_by    TEXT NOT NULL DEFAULT 'user',

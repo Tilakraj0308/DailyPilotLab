@@ -23,19 +23,17 @@ def log_tool_call(
     status: str,
     error_message: str | None,
     triggered_by: str,
-    ai_tool_response: dict | None = None,
 ) -> None:
     """Log a single tool execution to the database."""
     params_json = json.dumps(params) if params else None
     result_json = json.dumps(result_summary) if result_summary else None
-    ai_json = json.dumps(ai_tool_response) if ai_tool_response else None
 
     with get_dict_cursor() as cur:
         cur.execute(
             """
             INSERT INTO public.connector_tool_history
-                (user_id, provider_key, tool_name, crud_type, params, result_summary, status, error_message, triggered_by, ai_tool_response)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                (user_id, provider_key, tool_name, crud_type, params, result_summary, status, error_message, triggered_by)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 user_id,
@@ -47,7 +45,6 @@ def log_tool_call(
                 status,
                 error_message,
                 triggered_by,
-                ai_json,
             ),
         )
 
@@ -66,7 +63,6 @@ def get_recent_history(
             crud_type,
             params,
             result_summary,
-            ai_tool_response,
             status,
             error_message,
             triggered_by,

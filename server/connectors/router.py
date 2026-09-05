@@ -101,7 +101,6 @@ def _log_gmail_ui_tool(
             status="success",
             error_message=None,
             triggered_by="user",
-            ai_tool_response=None,
         )
     except Exception as e:
         logger.warning("Failed to log gmail UI tool history: %s", e)

@@ -44,10 +44,6 @@ export default function ActivityFeed({ history }: ActivityFeedProps) {
         () => (detailItem ? formatJsonBlock(detailItem.result_summary) : ""),
         [detailItem]
     );
-    const aiToolResponseText = useMemo(
-        () => (detailItem ? formatJsonBlock(detailItem.ai_tool_response) : ""),
-        [detailItem]
-    );
     if (!history || history.length === 0) {
         return (
             <View className="py-4 items-center">
@@ -197,8 +193,8 @@ export default function ActivityFeed({ history }: ActivityFeedProps) {
                                                 {detailItem.triggered_by === "ai_agent"
                                                     ? "AI agent"
                                                     : detailItem.triggered_by === "automation"
-                                                      ? "Automation"
-                                                      : "You"}
+                                                        ? "Automation"
+                                                        : "You"}
                                             </Text>
                                         </View>
                                     </View>
@@ -225,23 +221,6 @@ export default function ActivityFeed({ history }: ActivityFeedProps) {
                                             </Text>
                                         </>
                                     ) : null}
-
-                                    <Text
-                                        className="text-[11px] text-on-surface-variant uppercase tracking-wide mb-1"
-                                        style={{ fontFamily: "Inter_600SemiBold" }}
-                                    >
-                                        Returned to AI
-                                    </Text>
-                                    <Text className="text-[11px] text-on-surface-variant mb-2 leading-snug" style={{ fontFamily: "Inter_400Regular" }}>
-                                        Exact JSON stringified into the model tool message content in chat.
-                                    </Text>
-                                    <Text
-                                        className="text-xs text-on-surface mb-4 leading-5"
-                                        style={{ fontFamily: mono }}
-                                        selectable
-                                    >
-                                        {detailItem.ai_tool_response != null ? aiToolResponseText : "— (not stored for this row)"}
-                                    </Text>
 
                                     <Text
                                         className="text-[11px] text-on-surface-variant uppercase tracking-wide mb-1"
