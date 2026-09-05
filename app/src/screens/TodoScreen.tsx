@@ -36,8 +36,9 @@ interface FilterTab {
 const FILTERS: FilterTab[] = [
     { key: 'all', label: 'All' },
     { key: 'due_today', label: 'Today' },
-    { key: 'in_progress', label: 'In Progress' },
+    { key: 'overdue', label: 'Overdue' },
     { key: 'high_priority', label: 'Priority' },
+    { key: 'completed', label: 'Completed' },
 ];
 
 const PRIORITY_COLORS: Record<TaskPriority, string> = {
@@ -55,7 +56,7 @@ const PRIORITY_BG: Record<TaskPriority, string> = {
 };
 
 const STATUS_NEXT: Record<TaskStatus, TaskStatus> = {
-    todo: 'in_progress',
+    todo: 'done',
     in_progress: 'done',
     done: 'todo',
     cancelled: 'todo',
@@ -70,11 +71,15 @@ function formatDueDate(due?: string): string | null {
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const dDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
     const diff = Math.round((dDay.getTime() - today.getTime()) / 86400000);
-    if (diff === 0) return 'Due today';
-    if (diff === 1) return 'Due tomorrow';
-    if (diff === -1) return 'Yesterday';
+
+    const hasTime = (d.getHours() !== 0 || d.getMinutes() !== 0);
+    const timeStr = hasTime ? ` at ${d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : '';
+
+    if (diff === 0) return `Due today${timeStr}`;
+    if (diff === 1) return `Due tomorrow${timeStr}`;
+    if (diff === -1) return `Yesterday${timeStr}`;
     if (diff < 0) return `${Math.abs(diff)}d overdue`;
-    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    return `${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}${timeStr}`;
 }
 
 function isOverdue(due?: string, status?: TaskStatus): boolean {
@@ -100,16 +105,15 @@ function TaskCard({
     const isDone = task.status === 'done';
 
     return (
-        <View className={`bg-white rounded-2xl p-4 mb-3 shadow-sm border ${overdue ? 'border-red-200' : 'border-transparent'}`}>
+        <View className={`bg-white rounded-2xl p-4 mb-3 shadow-sm border ${overdue ? 'border-red-200 bg-red-50/20' : 'border-transparent'}`}>
             <View className="flex-row items-start gap-3">
-                {/* Status toggle */}
+                {/* Status toggle (Open <-> Done) */}
                 <TouchableOpacity
-                    className={`w-6 h-6 rounded-full border-2 mt-0.5 items-center justify-center flex-shrink-0 ${isDone ? 'bg-[#35436b] border-[#35436b]' : task.status === 'in_progress' ? 'border-amber-500 bg-amber-50' : 'border-gray-300'}`}
+                    className={`w-6 h-6 rounded-full border-2 mt-0.5 items-center justify-center flex-shrink-0 ${isDone ? 'bg-[#35436b] border-[#35436b]' : 'border-gray-300 bg-white'}`}
                     onPress={() => onToggleStatus(task)}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 >
                     {isDone && <MaterialIcons name="check" size={14} color="#fff" />}
-                    {task.status === 'in_progress' && <View className="w-2.5 h-2.5 rounded-full bg-amber-500" />}
                 </TouchableOpacity>
 
                 {/* Content */}
@@ -196,6 +200,124 @@ function TaskCard({
     );
 }
 
+// ── Mini Calendar Date Picker Component ─────────────────────────────────────
+
+function MiniCalendarPicker({
+    selectedDate,
+    onSelectDate,
+}: {
+    selectedDate: string;
+    onSelectDate: (dateStr: string) => void;
+}) {
+    const today = new Date();
+    const initialDate = selectedDate ? new Date(selectedDate + 'T00:00:00') : today;
+    const [viewYear, setViewYear] = useState(initialDate.getFullYear());
+    const [viewMonth, setViewMonth] = useState(initialDate.getMonth());
+
+    const monthNames = [
+        'January', 'February', 'March', 'April', 'May', 'June',
+        'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+
+    const prevMonth = () => {
+        if (viewMonth === 0) {
+            setViewMonth(11);
+            setViewYear(v => v - 1);
+        } else {
+            setViewMonth(v => v - 1);
+        }
+    };
+
+    const nextMonth = () => {
+        if (viewMonth === 11) {
+            setViewMonth(0);
+            setViewYear(v => v + 1);
+        } else {
+            setViewMonth(v => v + 1);
+        }
+    };
+
+    const firstDayIndex = new Date(viewYear, viewMonth, 1).getDay();
+    const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+    const todayStr = today.toISOString().split('T')[0];
+
+    const handleSelectDay = (day: number) => {
+        const mm = String(viewMonth + 1).padStart(2, '0');
+        const dd = String(day).padStart(2, '0');
+        onSelectDate(`${viewYear}-${mm}-${dd}`);
+    };
+
+    return (
+        <View style={{ backgroundColor: '#f8f9fa', borderRadius: 16, padding: 12, marginBottom: 14, borderWidth: 1, borderColor: '#e2e8f0' }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                <TouchableOpacity onPress={prevMonth} style={{ padding: 4 }}>
+                    <MaterialIcons name="chevron-left" size={22} color="#35436b" />
+                </TouchableOpacity>
+                <Text style={{ fontSize: 13, fontFamily: 'Inter_600SemiBold', color: '#1a2228' }}>
+                    {monthNames[viewMonth]} {viewYear}
+                </Text>
+                <TouchableOpacity onPress={nextMonth} style={{ padding: 4 }}>
+                    <MaterialIcons name="chevron-right" size={22} color="#35436b" />
+                </TouchableOpacity>
+            </View>
+
+            <View style={{ flexDirection: 'row', justifyContent: 'space-around', marginBottom: 6 }}>
+                {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
+                    <Text key={i} style={{ width: 28, textAlign: 'center', fontSize: 11, color: '#94a3b8', fontFamily: 'Inter_600SemiBold' }}>
+                        {d}
+                    </Text>
+                ))}
+            </View>
+
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+                {Array.from({ length: firstDayIndex }).map((_, i) => (
+                    <View key={`empty-${i}`} style={{ width: '14.28%', height: 32 }} />
+                ))}
+                {Array.from({ length: daysInMonth }).map((_, i) => {
+                    const dayNum = i + 1;
+                    const mm = String(viewMonth + 1).padStart(2, '0');
+                    const dd = String(dayNum).padStart(2, '0');
+                    const dateStr = `${viewYear}-${mm}-${dd}`;
+                    const isSelected = selectedDate === dateStr;
+                    const isToday = todayStr === dateStr;
+
+                    return (
+                        <TouchableOpacity
+                            key={`day-${dayNum}`}
+                            onPress={() => handleSelectDay(dayNum)}
+                            style={{
+                                width: '14.28%',
+                                height: 32,
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                            }}
+                        >
+                            <View style={{
+                                width: 26,
+                                height: 26,
+                                borderRadius: 99,
+                                backgroundColor: isSelected ? '#35436b' : 'transparent',
+                                borderWidth: isToday && !isSelected ? 1.5 : 0,
+                                borderColor: '#35436b',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                            }}>
+                                <Text style={{
+                                    fontSize: 12,
+                                    fontFamily: isSelected || isToday ? 'Inter_600SemiBold' : 'Inter_400Regular',
+                                    color: isSelected ? '#ffffff' : isToday ? '#35436b' : '#334155',
+                                }}>
+                                    {dayNum}
+                                </Text>
+                            </View>
+                        </TouchableOpacity>
+                    );
+                })}
+            </View>
+        </View>
+    );
+}
+
 // ── Task Form Sheet (inline, no Modal — works correctly on web+native) ────────
 
 const PRIORITY_OPTIONS: { key: TaskPriority; label: string; color: string; bg: string }[] = [
@@ -205,11 +327,11 @@ const PRIORITY_OPTIONS: { key: TaskPriority; label: string; color: string; bg: s
     { key: 'urgent', label: 'Urgent', color: '#dc2626', bg: '#fee2e2' },
 ];
 
-const QUICK_DATES = [
-    { label: 'Today', offset: 0 },
-    { label: 'Tomorrow', offset: 1 },
-    { label: 'In 3 days', offset: 3 },
-    { label: 'Next week', offset: 7 },
+const TIME_PERIODS = [
+    { label: 'Morning', time: '09:00', icon: 'wb-sunny' },
+    { label: 'Afternoon', time: '13:00', icon: 'wb-twilight' },
+    { label: 'Evening', time: '18:00', icon: 'nights-stay' },
+    { label: 'Night', time: '21:00', icon: 'bedtime' },
 ];
 
 function TaskFormSheet({
@@ -227,10 +349,11 @@ function TaskFormSheet({
     const [description, setDescription] = useState('');
     const [priority, setPriority] = useState<TaskPriority>('medium');
     const [dueDate, setDueDate] = useState('');
+    const [dueTime, setDueTime] = useState('');
     const [saving, setSaving] = useState(false);
-    const slideAnim = useRef(new Animated.Value(500)).current;
-    const fadeAnim = useRef(new Animated.Value(0)).current;
-    const isHidden = useRef(true);
+    const [mounted, setMounted] = useState(visible);
+    const slideAnim = useRef(new Animated.Value(visible ? 0 : 500)).current;
+    const fadeAnim = useRef(new Animated.Value(visible ? 1 : 0)).current;
 
     // Sync form fields when task/visible changes
     useEffect(() => {
@@ -238,65 +361,84 @@ function TaskFormSheet({
             setTitle(task.title);
             setDescription(task.description || '');
             setPriority(task.priority);
-            setDueDate(task.due_date ? task.due_date.split('T')[0] : '');
+            if (task.due_date) {
+                const d = new Date(task.due_date);
+                if (!isNaN(d.getTime())) {
+                    const yyyy = d.getFullYear();
+                    const mm = String(d.getMonth() + 1).padStart(2, '0');
+                    const dd = String(d.getDate()).padStart(2, '0');
+                    setDueDate(`${yyyy}-${mm}-${dd}`);
+
+                    const hh = String(d.getHours()).padStart(2, '0');
+                    const min = String(d.getMinutes()).padStart(2, '0');
+                    if (d.getHours() !== 0 || d.getMinutes() !== 0) {
+                        setDueTime(`${hh}:${min}`);
+                    } else {
+                        setDueTime('');
+                    }
+                } else {
+                    setDueDate('');
+                    setDueTime('');
+                }
+            } else {
+                setDueDate('');
+                setDueTime('');
+            }
         } else {
             setTitle('');
             setDescription('');
             setPriority('medium');
             setDueDate('');
+            setDueTime('');
         }
     }, [task, visible]);
 
     // Slide in/out animation
     useEffect(() => {
         if (visible) {
-            isHidden.current = false;
+            setMounted(true);
             Animated.parallel([
-                Animated.spring(slideAnim, { toValue: 0, useNativeDriver: true, damping: 22, stiffness: 220 }),
+                Animated.spring(slideAnim, { toValue: 0, useNativeDriver: true, damping: 24, stiffness: 240 }),
                 Animated.timing(fadeAnim, { toValue: 1, duration: 180, useNativeDriver: true }),
             ]).start();
         } else {
             Animated.parallel([
-                Animated.timing(slideAnim, { toValue: 500, duration: 200, useNativeDriver: true }),
+                Animated.timing(slideAnim, { toValue: 500, duration: 180, useNativeDriver: true }),
                 Animated.timing(fadeAnim, { toValue: 0, duration: 180, useNativeDriver: true }),
-            ]).start(() => { isHidden.current = true; });
+            ]).start(({ finished }) => {
+                if (finished) setMounted(false);
+            });
         }
     }, [visible]);
 
-    const handleSave = async () => {
-        if (!title.trim()) return;
-        setSaving(true);
-        try {
-            await onSave({
-                title: title.trim(),
-                description: description.trim() || undefined,
-                priority,
-                due_date: dueDate ? new Date(dueDate + 'T00:00:00').toISOString() : undefined,
-            });
-            onClose();
-        } catch {
-            Alert.alert('Error', 'Failed to save task. Please try again.');
-        }
-        setSaving(false);
-    };
-
-    const getChipDate = (offset: number) => {
-        const d = new Date();
-        d.setDate(d.getDate() + offset);
-        return d.toISOString().split('T')[0];
+    const handleSave = () => {
+        if (!title.trim() || saving) return;
+        const timeToUse = dueTime || '00:00';
+        const payload = {
+            title: title.trim(),
+            description: description.trim() || undefined,
+            priority,
+            due_date: dueDate ? new Date(`${dueDate}T${timeToUse}:00`).toISOString() : undefined,
+        };
+        onClose();
+        onSave(payload);
     };
 
     const formattedDue = dueDate
-        ? new Date(dueDate + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+        ? new Date(dueDate + 'T' + (dueTime || '00:00') + ':00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
         : null;
 
-    if (!visible && isHidden.current) return null;
+    const formattedTime = dueTime
+        ? new Date(`2000-01-01T${dueTime}:00`).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+        : null;
+
+    if (!visible && !mounted) return null;
 
     return (
         <View style={{ position: 'absolute', inset: 0, zIndex: 50 } as any} pointerEvents={visible ? 'auto' : 'none'}>
             {/* Backdrop */}
             <Animated.View
-                style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(20,28,40,0.5)' } as any}
+                style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(20,28,40,0.5)', opacity: fadeAnim } as any}
                 pointerEvents={visible ? 'auto' : 'none'}
             >
                 <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
@@ -316,168 +458,183 @@ function TaskFormSheet({
                     paddingHorizontal: 20,
                     paddingTop: 10,
                     paddingBottom: Platform.OS === 'ios' ? 40 : 28,
+                    maxHeight: '90%',
                     shadowColor: '#000',
                     shadowOffset: { width: 0, height: -6 },
                     shadowOpacity: 0.1,
                     shadowRadius: 24,
                     elevation: 24,
                 }}>
-                    {/* Handle */}
-                    <View style={{ width: 32, height: 4, backgroundColor: '#dde1e8', borderRadius: 99, alignSelf: 'center', marginBottom: 16 }} />
+                    <ScrollView showsVerticalScrollIndicator={false} bounces={false}>
+                        {/* Handle */}
+                        <View style={{ width: 32, height: 4, backgroundColor: '#dde1e8', borderRadius: 99, alignSelf: 'center', marginBottom: 14 }} />
 
-                    {/* Header */}
-                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-                        <Text style={{ fontSize: 17, fontFamily: 'Manrope_700Bold', color: '#1a2228' }}>
-                            {task ? 'Edit Task' : 'New Task'}
-                        </Text>
-                        <TouchableOpacity
-                            onPress={onClose}
-                            style={{ width: 30, height: 30, borderRadius: 99, backgroundColor: '#f0f2f5', alignItems: 'center', justifyContent: 'center' }}
-                        >
-                            <MaterialIcons name="close" size={17} color="#586064" />
-                        </TouchableOpacity>
-                    </View>
-
-                    {/* Title + Notes — grouped in one card */}
-                    <View style={{
-                        backgroundColor: '#f6f7f9',
-                        borderRadius: 16,
-                        marginBottom: 14,
-                        overflow: 'hidden',
-                        borderWidth: 1,
-                        borderColor: '#eceef2',
-                    }}>
-                        <TextInput
-                            style={{
-                                paddingHorizontal: 15,
-                                paddingTop: 13,
-                                paddingBottom: 8,
-                                fontSize: 15,
-                                color: '#1a2228',
-                                fontFamily: 'Inter_500Medium',
-                                // Remove browser outline
-                                ...(Platform.OS === 'web' ? { outlineStyle: 'none' } as any : {}),
-                            }}
-                            placeholder="What needs to be done?"
-                            placeholderTextColor="#adb5bd"
-                            value={title}
-                            onChangeText={setTitle}
-                            autoFocus
-                            returnKeyType="next"
-                            blurOnSubmit={false}
-                        />
-                        <View style={{ height: 1, backgroundColor: '#eceef2', marginHorizontal: 15 }} />
-                        <TextInput
-                            style={{
-                                paddingHorizontal: 15,
-                                paddingTop: 8,
-                                paddingBottom: 12,
-                                fontSize: 13,
-                                color: '#586064',
-                                fontFamily: 'Inter_400Regular',
-                                minHeight: 56,
-                                textAlignVertical: 'top',
-                                ...(Platform.OS === 'web' ? { outlineStyle: 'none' } as any : {}),
-                            }}
-                            placeholder="Add notes (optional)..."
-                            placeholderTextColor="#c0c8d0"
-                            value={description}
-                            onChangeText={setDescription}
-                            multiline
-                        />
-                    </View>
-
-                    {/* Priority */}
-                    <Text style={{ fontSize: 10, color: '#adb5bd', fontFamily: 'Inter_600SemiBold', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 8 }}>
-                        Priority
-                    </Text>
-                    <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
-                        {PRIORITY_OPTIONS.map(p => {
-                            const selected = priority === p.key;
-                            return (
-                                <TouchableOpacity
-                                    key={p.key}
-                                    onPress={() => setPriority(p.key)}
-                                    style={{
-                                        flexDirection: 'row',
-                                        alignItems: 'center',
-                                        gap: 5,
-                                        paddingHorizontal: 12,
-                                        paddingVertical: 7,
-                                        borderRadius: 99,
-                                        backgroundColor: selected ? p.bg : '#f6f7f9',
-                                        borderWidth: 1.5,
-                                        borderColor: selected ? p.color : '#eceef2',
-                                    }}
-                                >
-                                    <View style={{ width: 7, height: 7, borderRadius: 99, backgroundColor: p.color }} />
-                                    <Text style={{ fontSize: 12, fontFamily: selected ? 'Inter_600SemiBold' : 'Inter_400Regular', color: selected ? p.color : '#586064' }}>
-                                        {p.label}
-                                    </Text>
-                                </TouchableOpacity>
-                            );
-                        })}
-                    </View>
-
-                    {/* Due Date */}
-                    <Text style={{ fontSize: 10, color: '#adb5bd', fontFamily: 'Inter_600SemiBold', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 8 }}>
-                        Due Date
-                    </Text>
-                    <View style={{ flexDirection: 'row', gap: 7, marginBottom: formattedDue ? 8 : 18, flexWrap: 'wrap' }}>
-                        {QUICK_DATES.map(qd => {
-                            const chipDate = getChipDate(qd.offset);
-                            const isActive = dueDate === chipDate;
-                            return (
-                                <TouchableOpacity
-                                    key={qd.label}
-                                    onPress={() => setDueDate(isActive ? '' : chipDate)}
-                                    style={{
-                                        paddingHorizontal: 11,
-                                        paddingVertical: 6,
-                                        borderRadius: 99,
-                                        backgroundColor: isActive ? '#35436b' : '#f0f2f5',
-                                        borderWidth: 1,
-                                        borderColor: isActive ? '#35436b' : '#e4e7ec',
-                                    }}
-                                >
-                                    <Text style={{ fontSize: 12, fontFamily: isActive ? 'Inter_600SemiBold' : 'Inter_400Regular', color: isActive ? '#fff' : '#586064' }}>
-                                        {qd.label}
-                                    </Text>
-                                </TouchableOpacity>
-                            );
-                        })}
-                    </View>
-
-                    {/* Selected date pill */}
-                    {formattedDue && (
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 16 }}>
-                            <MaterialIcons name="event" size={13} color="#35436b" />
-                            <Text style={{ fontSize: 12, color: '#35436b', fontFamily: 'Inter_500Medium' }}>{formattedDue}</Text>
-                            <TouchableOpacity onPress={() => setDueDate('')} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
-                                <MaterialIcons name="cancel" size={14} color="#c0c8d0" />
+                        {/* Header */}
+                        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+                            <Text style={{ fontSize: 17, fontFamily: 'Manrope_700Bold', color: '#1a2228' }}>
+                                {task ? 'Edit Task' : 'New Task'}
+                            </Text>
+                            <TouchableOpacity
+                                onPress={onClose}
+                                style={{ width: 30, height: 30, borderRadius: 99, backgroundColor: '#f0f2f5', alignItems: 'center', justifyContent: 'center' }}
+                            >
+                                <MaterialIcons name="close" size={17} color="#586064" />
                             </TouchableOpacity>
                         </View>
-                    )}
 
-                    {/* Save */}
-                    <TouchableOpacity
-                        onPress={handleSave}
-                        disabled={!title.trim() || saving}
-                        style={{
-                            backgroundColor: title.trim() ? '#35436b' : '#eceef2',
-                            borderRadius: 14,
-                            paddingVertical: 14,
-                            alignItems: 'center',
-                        }}
-                    >
-                        {saving ? (
-                            <ActivityIndicator color="#fff" />
-                        ) : (
-                            <Text style={{ color: title.trim() ? '#fff' : '#adb5bd', fontSize: 14, fontFamily: 'Inter_600SemiBold' }}>
-                                {task ? 'Save Changes' : 'Add Task'}
-                            </Text>
+                        {/* Title + Notes — grouped in one card */}
+                        <View style={{
+                            backgroundColor: '#f6f7f9',
+                            borderRadius: 16,
+                            marginBottom: 14,
+                            overflow: 'hidden',
+                            borderWidth: 1,
+                            borderColor: '#eceef2',
+                        }}>
+                            <TextInput
+                                style={{
+                                    paddingHorizontal: 15,
+                                    paddingTop: 13,
+                                    paddingBottom: 8,
+                                    fontSize: 15,
+                                    color: '#1a2228',
+                                    fontFamily: 'Inter_500Medium',
+                                    ...(Platform.OS === 'web' ? { outlineStyle: 'none' } as any : {}),
+                                }}
+                                placeholder="What needs to be done?"
+                                placeholderTextColor="#adb5bd"
+                                value={title}
+                                onChangeText={setTitle}
+                                autoFocus
+                                returnKeyType="next"
+                                blurOnSubmit={false}
+                            />
+                            <View style={{ height: 1, backgroundColor: '#eceef2', marginHorizontal: 15 }} />
+                            <TextInput
+                                style={{
+                                    paddingHorizontal: 15,
+                                    paddingTop: 8,
+                                    paddingBottom: 12,
+                                    fontSize: 13,
+                                    color: '#586064',
+                                    fontFamily: 'Inter_400Regular',
+                                    minHeight: 56,
+                                    textAlignVertical: 'top',
+                                    ...(Platform.OS === 'web' ? { outlineStyle: 'none' } as any : {}),
+                                }}
+                                placeholder="Add notes (optional)..."
+                                placeholderTextColor="#c0c8d0"
+                                value={description}
+                                onChangeText={setDescription}
+                                multiline
+                            />
+                        </View>
+
+                        {/* Priority */}
+                        <Text style={{ fontSize: 10, color: '#adb5bd', fontFamily: 'Inter_600SemiBold', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 8 }}>
+                            Priority
+                        </Text>
+                        <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
+                            {PRIORITY_OPTIONS.map(p => {
+                                const selected = priority === p.key;
+                                return (
+                                    <TouchableOpacity
+                                        key={p.key}
+                                        onPress={() => setPriority(p.key)}
+                                        style={{
+                                            flexDirection: 'row',
+                                            alignItems: 'center',
+                                            gap: 5,
+                                            paddingHorizontal: 12,
+                                            paddingVertical: 7,
+                                            borderRadius: 99,
+                                            backgroundColor: selected ? p.bg : '#f6f7f9',
+                                            borderWidth: 1.5,
+                                            borderColor: selected ? p.color : '#eceef2',
+                                        }}
+                                    >
+                                        <View style={{ width: 7, height: 7, borderRadius: 99, backgroundColor: p.color }} />
+                                        <Text style={{ fontSize: 12, fontFamily: selected ? 'Inter_600SemiBold' : 'Inter_400Regular', color: selected ? p.color : '#586064' }}>
+                                            {p.label}
+                                        </Text>
+                                    </TouchableOpacity>
+                                );
+                            })}
+                        </View>
+
+                        {/* Due Date Calendar Picker */}
+                        <Text style={{ fontSize: 10, color: '#adb5bd', fontFamily: 'Inter_600SemiBold', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 8 }}>
+                            Due Date
+                        </Text>
+
+                        <MiniCalendarPicker
+                            selectedDate={dueDate}
+                            onSelectDate={(d) => setDueDate(d)}
+                        />
+
+                        {/* Time Period Selector */}
+                        <Text style={{ fontSize: 10, color: '#adb5bd', fontFamily: 'Inter_600SemiBold', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 8 }}>
+                            Time Period
+                        </Text>
+                        <View style={{ flexDirection: 'row', gap: 7, marginBottom: 14, flexWrap: 'wrap' }}>
+                            {TIME_PERIODS.map(tp => {
+                                const isActive = dueTime === tp.time;
+                                return (
+                                    <TouchableOpacity
+                                        key={tp.label}
+                                        onPress={() => setDueTime(isActive ? '' : tp.time)}
+                                        style={{
+                                            flexDirection: 'row',
+                                            alignItems: 'center',
+                                            gap: 5,
+                                            paddingHorizontal: 11,
+                                            paddingVertical: 6,
+                                            borderRadius: 99,
+                                            backgroundColor: isActive ? '#35436b' : '#f0f2f5',
+                                            borderWidth: 1,
+                                            borderColor: isActive ? '#35436b' : '#e4e7ec',
+                                        }}
+                                    >
+                                        <MaterialIcons name={tp.icon as any} size={13} color={isActive ? '#fff' : '#586064'} />
+                                        <Text style={{ fontSize: 12, fontFamily: isActive ? 'Inter_600SemiBold' : 'Inter_400Regular', color: isActive ? '#fff' : '#586064' }}>
+                                            {tp.label}
+                                        </Text>
+                                    </TouchableOpacity>
+                                );
+                            })}
+                        </View>
+
+                        {/* Selected date & time pill */}
+                        {formattedDue && (
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 16 }}>
+                                <MaterialIcons name="event" size={13} color="#35436b" />
+                                <Text style={{ fontSize: 12, color: '#35436b', fontFamily: 'Inter_500Medium' }}>
+                                    {formattedDue}{formattedTime ? ` at ${formattedTime}` : ''}
+                                </Text>
+                                <TouchableOpacity onPress={() => { setDueDate(''); setDueTime(''); }} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+                                    <MaterialIcons name="cancel" size={14} color="#c0c8d0" />
+                                </TouchableOpacity>
+                            </View>
                         )}
-                    </TouchableOpacity>
+
+                        {/* Save Button */}
+                        <TouchableOpacity
+                            onPress={handleSave}
+                            disabled={!title.trim() || saving}
+                            style={{
+                                backgroundColor: title.trim() ? '#35436b' : '#e2e8f0',
+                                borderRadius: 14,
+                                paddingVertical: 14,
+                                alignItems: 'center',
+                                marginTop: 4,
+                                marginBottom: 8,
+                            }}
+                        >
+                            <Text style={{ fontSize: 15, fontFamily: 'Inter_600SemiBold', color: title.trim() ? '#ffffff' : '#94a3b8' }}>
+                                {task ? 'Save Changes' : 'Create Task'}
+                            </Text>
+                        </TouchableOpacity>
+                    </ScrollView>
                 </Animated.View>
             </KeyboardAvoidingView>
         </View>
@@ -495,32 +652,46 @@ export default function TodoScreen() {
     const [modalVisible, setModalVisible] = useState(false);
     const [editingTask, setEditingTask] = useState<Task | null>(null);
 
-    const fetchTasks = useCallback(async (filter: TaskFilter = activeFilter) => {
+    const fetchTasks = useCallback(async () => {
         try {
-            const data = await getTasks(filter);
+            // Fetch all tasks once (or during pull-to-refresh)
+            const data = await getTasks('all');
             setTasks(data);
         } catch (e) {
             console.error('fetchTasks error', e);
         }
-    }, [activeFilter]);
+    }, []);
 
     useEffect(() => {
         setLoading(true);
-        fetchTasks(activeFilter).finally(() => setLoading(false));
-    }, [activeFilter]);
+        fetchTasks().finally(() => setLoading(false));
+    }, [fetchTasks]);
 
     const handleRefresh = async () => {
         setRefreshing(true);
-        await fetchTasks(activeFilter);
+        await fetchTasks();
         setRefreshing(false);
     };
 
     const handleToggleStatus = async (task: Task) => {
         const nextStatus = STATUS_NEXT[task.status];
+        const optimisticTask: Task = {
+            ...task,
+            status: nextStatus,
+            completed_at: nextStatus === 'done' ? new Date().toISOString() : undefined,
+            updated_at: new Date().toISOString(),
+        };
+
+        // Optimistic UI update: instantly update local state
+        setTasks(prev => prev.map(t => (t.id === task.id ? optimisticTask : t)));
+
         try {
             const updated = await updateTask(task.id, { status: nextStatus });
             setTasks(prev => prev.map(t => (t.id === task.id ? updated : t)));
-        } catch {
+        } catch (e) {
+            console.error('Failed to update task status', task.id, e);
+            // Rollback on failure
+            setTasks(prev => prev.map(t => (t.id === task.id ? task : t)));
             Alert.alert('Error', 'Failed to update task status.');
         }
     };
@@ -536,26 +707,91 @@ export default function TodoScreen() {
     };
 
     const handleDelete = async (task: Task) => {
+        // Optimistic UI update: instantly remove from list
+        setTasks(prev => prev.filter(t => t.id !== task.id));
+
         try {
             await deleteTask(task.id);
-            setTasks(prev => prev.filter(t => t.id !== task.id));
-        } catch {
-            console.error('Failed to delete task', task.id);
+        } catch (e) {
+            console.error('Failed to delete task', task.id, e);
+            // Rollback on failure: restore task
+            setTasks(prev => [task, ...prev]);
+            Alert.alert('Error', 'Failed to delete task.');
         }
     };
 
     const handleSave = async (data: any) => {
         if (editingTask) {
-            const updated = await updateTask(editingTask.id, data);
-            setTasks(prev => prev.map(t => (t.id === editingTask.id ? updated : t)));
+            const optimisticTask: Task = {
+                ...editingTask,
+                ...data,
+                updated_at: new Date().toISOString(),
+            };
+            // Optimistic update
+            setTasks(prev => prev.map(t => (t.id === editingTask.id ? optimisticTask : t)));
+
+            try {
+                const updated = await updateTask(editingTask.id, data);
+                setTasks(prev => prev.map(t => (t.id === editingTask.id ? updated : t)));
+            } catch (e) {
+                console.error('Failed to update task', editingTask.id, e);
+                // Rollback
+                setTasks(prev => prev.map(t => (t.id === editingTask.id ? editingTask : t)));
+                Alert.alert('Error', 'Failed to update task.');
+            }
         } else {
-            const created = await createTask(data);
-            setTasks(prev => [created, ...prev]);
+            const tempId = `temp_${Date.now()}`;
+            const tempTask: Task = {
+                id: tempId,
+                user_id: '',
+                title: data.title,
+                description: data.description,
+                status: 'todo',
+                priority: data.priority || 'medium',
+                due_date: data.due_date,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+            };
+            // Optimistic insert
+            setTasks(prev => [tempTask, ...prev]);
+
+            try {
+                const created = await createTask(data);
+                setTasks(prev => prev.map(t => (t.id === tempId ? created : t)));
+            } catch (e) {
+                console.error('Failed to create task', e);
+                // Rollback
+                setTasks(prev => prev.filter(t => t.id !== tempId));
+                Alert.alert('Error', 'Failed to create task.');
+            }
         }
     };
 
-    const activeTasks = tasks.filter(t => t.status !== 'done' && t.status !== 'cancelled');
-    const completedTasks = tasks.filter(t => t.status === 'done');
+    const filteredTasks = tasks.filter(t => {
+        if (t.status === 'cancelled') return false;
+        if (activeFilter === 'completed') {
+            return t.status === 'done';
+        }
+        if (t.status === 'done') return false;
+
+        if (activeFilter === 'due_today') {
+            if (!t.due_date) return false;
+            const d = new Date(t.due_date);
+            const now = new Date();
+            return (
+                d.getFullYear() === now.getFullYear() &&
+                d.getMonth() === now.getMonth() &&
+                d.getDate() === now.getDate()
+            );
+        }
+        if (activeFilter === 'overdue') {
+            return isOverdue(t.due_date, t.status);
+        }
+        if (activeFilter === 'high_priority') {
+            return t.priority === 'high' || t.priority === 'urgent';
+        }
+        return true;
+    });
 
     return (
         <SafeAreaView className="flex-1 bg-[#f8f9fa]" edges={['top']}>
@@ -610,7 +846,7 @@ export default function TodoScreen() {
                     refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#35436b" />}
                     showsVerticalScrollIndicator={false}
                 >
-                    {tasks.length === 0 ? (
+                    {filteredTasks.length === 0 ? (
                         <View className="items-center mt-20">
                             <View className="w-16 h-16 rounded-full bg-[#35436b]/10 items-center justify-center mb-4">
                                 <MaterialIcons name="check-circle-outline" size={32} color="#35436b" />
@@ -624,41 +860,18 @@ export default function TodoScreen() {
                         </View>
                     ) : (
                         <>
-                            {/* Active tasks */}
-                            {activeTasks.length > 0 && (
-                                <>
-                                    <Text className="text-xs text-[#586064] uppercase tracking-widest mb-3" style={{ fontFamily: 'Inter_600SemiBold' }}>
-                                        {activeTasks.length} {activeTasks.length === 1 ? 'Task' : 'Tasks'}
-                                    </Text>
-                                    {activeTasks.map(task => (
-                                        <TaskCard
-                                            key={task.id}
-                                            task={task}
-                                            onToggleStatus={handleToggleStatus}
-                                            onEdit={handleEdit}
-                                            onDelete={handleDelete}
-                                        />
-                                    ))}
-                                </>
-                            )}
-
-                            {/* Completed section */}
-                            {completedTasks.length > 0 && (
-                                <>
-                                    <Text className="text-xs text-[#586064] uppercase tracking-widest mb-3 mt-4" style={{ fontFamily: 'Inter_600SemiBold' }}>
-                                        Completed · {completedTasks.length}
-                                    </Text>
-                                    {completedTasks.map(task => (
-                                        <TaskCard
-                                            key={task.id}
-                                            task={task}
-                                            onToggleStatus={handleToggleStatus}
-                                            onEdit={handleEdit}
-                                            onDelete={handleDelete}
-                                        />
-                                    ))}
-                                </>
-                            )}
+                            <Text className="text-xs text-[#586064] uppercase tracking-widest mb-3" style={{ fontFamily: 'Inter_600SemiBold' }}>
+                                {filteredTasks.length} {filteredTasks.length === 1 ? 'Task' : 'Tasks'}
+                            </Text>
+                            {filteredTasks.map((task: Task) => (
+                                <TaskCard
+                                    key={task.id}
+                                    task={task}
+                                    onToggleStatus={handleToggleStatus}
+                                    onEdit={handleEdit}
+                                    onDelete={handleDelete}
+                                />
+                            ))}
                         </>
                     )}
                 </ScrollView>
