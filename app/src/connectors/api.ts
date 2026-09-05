@@ -267,8 +267,6 @@ export type ConnectorHistoryItem = {
   crud_type: string;
   params: any;
   result_summary: any;
-  /** Same object the backend JSON-stringifies into the LLM tool message content. Omitted on legacy rows. */
-  ai_tool_response?: any | null;
   status: "success" | "error";
   error_message: string | null;
   triggered_by: "user" | "ai_agent" | "automation";

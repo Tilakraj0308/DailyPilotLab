@@ -216,7 +216,6 @@ PK: `(idea_id, topic_id)`
 | `crud_type` | `TEXT` | `create`, `read`, `update`, `delete` |
 | `params` | `JSONB` | Input parameters |
 | `result_summary` | `JSONB` | Outcome summary |
-| `ai_tool_response` | `JSONB` | Full agent response payload |
 | `status` | `TEXT` | `success` or `error` |
 | `error_message` | `TEXT` | |
 | `triggered_by` | `TEXT` | `user` or `system` |

@@ -113,7 +113,6 @@ def execute_tool(
             "error",
             str(e),
             triggered_by,
-            ai_tool_response=reauth_response,
         )
         logger.warning("Tool execution requires re-authentication: %s — %s", tool_name, e)
         return reauth_response
@@ -129,7 +128,6 @@ def execute_tool(
             "error",
             str(e),
             triggered_by,
-            ai_tool_response={"error": str(e)},
         )
         logger.error("Tool execution failed: %s — %s", tool_name, traceback.format_exc())
         raise ToolExecutionError(f"Tool '{tool_name}' failed: {e}") from e
@@ -147,7 +145,6 @@ def execute_tool(
         "success",
         None,
         triggered_by,
-        ai_tool_response=ai_tool_response,
     )
 
     # 6. Return
@@ -175,7 +172,6 @@ def _log_history(
     status: str,
     error_message: str | None,
     triggered_by: str,
-    ai_tool_response: dict[str, Any] | None = None,
 ) -> None:
     """Log a tool call to history. Fails silently to not block execution."""
     try:
@@ -190,7 +186,6 @@ def _log_history(
             status=status,
             error_message=error_message,
             triggered_by=triggered_by,
-            ai_tool_response=ai_tool_response,
         )
     except Exception as e:
         logger.warning("Failed to log tool history: %s", e)
