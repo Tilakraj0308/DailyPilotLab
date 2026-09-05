@@ -404,6 +404,7 @@ def get_chat_user_history(limit: int = 15, offset: int = 0, payload: dict = Depe
                         "role": "assistant",
                         "content": "",
                         "toolName": tc_name,
+                        "toolArgs": tc_args,
                         "created_at": r.get('created_at')
                     })
                     

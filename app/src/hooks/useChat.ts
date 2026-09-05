@@ -14,6 +14,7 @@ export type ChatMessage = {
     content: string;
     created_at?: string;
     toolName?: string;
+    toolArgs?: string;
 };
 
 export type ChatSessionSummary = {
@@ -80,7 +81,8 @@ export function useChat() {
                         role: m.role,
                         content: m.content,
                         created_at: m.created_at,
-                        toolName: m.toolName
+                        toolName: m.toolName,
+                        toolArgs: m.toolArgs
                     }));
                     if (newMessages.length < limit) {
                         setHasMoreHistory(false);
@@ -179,7 +181,7 @@ export function useChat() {
                                 // New empty bubble for future text (shows typing indicator)
                                 { id: assistantMessageId, role: 'assistant', content: '', created_at: new Date().toISOString() },
                                 // The tool call chip
-                                { id: toolMsgId, role: 'assistant', content: '', toolName: data.tool_name, created_at: new Date().toISOString() },
+                                { id: toolMsgId, role: 'assistant', content: '', toolName: data.tool_name, toolArgs: data.tool_args, created_at: new Date().toISOString() },
                                 ...filteredPrev
                             ];
                         });
