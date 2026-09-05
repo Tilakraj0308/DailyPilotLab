@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import * as Crypto from 'expo-crypto';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Platform } from 'react-native';
+import { Platform, Linking } from 'react-native';
 import EventSource from 'react-native-sse';
 import * as FileSystem from 'expo-file-system/legacy';
 import { FileSystemUploadType } from 'expo-file-system/legacy';
@@ -107,7 +107,24 @@ export function useChat() {
     useEffect(() => {
         // Fetch initial continuous history
         setStatus('connected');
-        fetchHistory(0, 30, false);
+        fetchHistory(0, 30, false).then(() => {
+            // Check if returning from a successful OAuth flow
+            if (Platform.OS === 'web' && typeof window !== 'undefined') {
+                const params = new URLSearchParams(window.location.search);
+                if (params.get('connector_status') === 'success') {
+                    AsyncStorage.getItem('@pending_reauth_prompt').then(savedPrompt => {
+                        if (savedPrompt) {
+                            AsyncStorage.removeItem('@pending_reauth_prompt').catch(console.error);
+                            if (window.history && window.history.replaceState) {
+                                window.history.replaceState({}, document.title, window.location.pathname);
+                            }
+                            console.log('🔄 Auto-retrying prompt after re-authentication:', savedPrompt);
+                            sendText(savedPrompt);
+                        }
+                    }).catch(console.error);
+                }
+            }
+        });
     }, [authLoading, user?.id]);
 
     const sendText = async (text: string) => {
@@ -154,7 +171,7 @@ export function useChat() {
                         const toolMsgId = Crypto.randomUUID();
                         assistantMessageId = Crypto.randomUUID();
                         assistantMessageContent = '';
-                        
+
                         setMessages(prev => [
                             // New empty bubble for future text (shows typing indicator)
                             { id: assistantMessageId, role: 'assistant', content: '', created_at: new Date().toISOString() },
@@ -162,6 +179,24 @@ export function useChat() {
                             { id: toolMsgId, role: 'assistant', content: '', toolName: data.tool_name, created_at: new Date().toISOString() },
                             ...prev
                         ]);
+                    } else if (data.type === 'reauth_required') {
+                        setIsWaitingForResponse(false);
+                        es.removeAllEventListeners();
+                        es.close();
+
+                        // Clean up placeholder assistant message
+                        setMessages(prev => prev.filter(m => m.id !== assistantMessageId));
+
+                        if (data.auth_url) {
+                            // Save current pending prompt for auto-retry after re-authentication
+                            AsyncStorage.setItem('@pending_reauth_prompt', text).catch(console.error);
+
+                            if (Platform.OS === 'web' && typeof window !== 'undefined') {
+                                window.location.href = data.auth_url;
+                            } else {
+                                Linking.openURL(data.auth_url).catch(console.error);
+                            }
+                        }
                     } else if (data.type === 'done') {
                         setIsWaitingForResponse(false);
                         es.removeAllEventListeners();

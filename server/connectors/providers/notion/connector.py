@@ -12,6 +12,7 @@ from typing import Any
 import requests
 
 from connectors import db
+from connectors.base_connector import ConnectorReAuthError
 from connectors.oauth_common import append_query, default_return_to, env, oauth_ttl_seconds, pkce_pair
 
 logger = logging.getLogger(__name__)
@@ -272,13 +273,13 @@ class NotionConnector:
 
         if not refresh:
             db.mark_connector_reauth(user_id, self.provider_key, "missing_refresh_token")
-            raise RuntimeError("Re-authentication required")
+            raise ConnectorReAuthError(self.provider_key, "Re-authentication required: missing refresh token")
 
         try:
             payload = self._refresh_tokens(refresh)
         except Exception as e:
             db.mark_connector_reauth(user_id, self.provider_key, str(e))
-            raise RuntimeError("Token refresh failed") from e
+            raise ConnectorReAuthError(self.provider_key, f"Token refresh failed: {e}") from e
 
         new_access = payload.get("access_token")
         new_refresh = payload.get("refresh_token") or refresh

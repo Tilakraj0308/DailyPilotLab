@@ -12,6 +12,7 @@ import traceback
 from typing import Any
 
 from connectors import db
+from connectors.base_connector import ConnectorReAuthError
 from connectors.providers import PROVIDER_MAP
 from connectors.tool_registry import resolve_tool
 
@@ -83,6 +84,39 @@ def execute_tool(
     try:
         tool_module = _get_tool_module(provider_key, crud_type)
         result = tool_module.execute(connector, user_id, tool_name, params)
+    except ConnectorReAuthError as e:
+        auth_url = None
+        try:
+            auth_url, _ = connector.build_start_authorization_url(user_id, return_to=None)
+        except Exception as auth_err:
+            logger.warning("Failed to build start authorization url for %s: %s", provider_key, auth_err)
+
+        reauth_response = {
+            "ok": False,
+            "error_type": "requires_reauth",
+            "provider": provider_key,
+            "auth_url": auth_url,
+            "error": (
+                f"Re-authentication required for {provider_key}. "
+                f"Please instruct the user to reconnect using this authorization URL: {auth_url}"
+                if auth_url
+                else f"Re-authentication required for {provider_key}."
+            ),
+        }
+        _log_history(
+            user_id,
+            provider_key,
+            tool_name,
+            crud_type,
+            params,
+            None,
+            "error",
+            str(e),
+            triggered_by,
+            ai_tool_response=reauth_response,
+        )
+        logger.warning("Tool execution requires re-authentication: %s — %s", tool_name, e)
+        return reauth_response
     except Exception as e:
         # Log failure (same shape as chat_service tool message on error)
         _log_history(

@@ -206,6 +206,14 @@ async def stream_chat(messages: list[dict], user_id: str) -> AsyncGenerator[Unio
                 try:
                     args = json.loads(tool_args_str)
                     result = execute_tool(user_id, tool_name, args, triggered_by="ai_agent")
+                    if isinstance(result, dict) and result.get("error_type") == "requires_reauth":
+                        yield {
+                            "type": "reauth_required",
+                            "provider": result.get("provider"),
+                            "auth_url": result.get("auth_url"),
+                            "tool_name": tool_name,
+                        }
+                        return
                     result_str = json.dumps(result)
                 except Exception as e:
                     # Catch tool execution errors securely
