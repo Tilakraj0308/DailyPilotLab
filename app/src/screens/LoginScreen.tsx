@@ -24,6 +24,9 @@ export default function LoginScreen() {
                     provider: "google",
                     options: {
                         redirectTo: window.location.origin,
+                        queryParams: {
+                            prompt: "select_account",
+                        },
                     },
                 });
                 if (error) throw error;
@@ -35,6 +38,9 @@ export default function LoginScreen() {
                 options: {
                     redirectTo,
                     skipBrowserRedirect: true,
+                    queryParams: {
+                        prompt: "select_account",
+                    },
                 },
             });
 
