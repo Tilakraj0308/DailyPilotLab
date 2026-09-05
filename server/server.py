@@ -331,41 +331,44 @@ async def chat_stream(req: ChatStreamRequest, payload: dict = Depends(get_curren
         
     history.extend(valid_history)
 
+    queue = asyncio.Queue()
+
+    async def background_worker():
+        try:
+            async for token in stream_chat(history, user_id):
+                if isinstance(token, list):
+                    # token is the final current_messages list
+                    new_messages = token[len(history):]
+                    for msg in new_messages:
+                        role = msg.get("role")
+                        content = msg.get("content", "")
+                        tool_calls = msg.get("tool_calls")
+                        tool_call_id = msg.get("tool_call_id")
+                        await asyncio.to_thread(save_message, user_id, role, content, tool_calls, tool_call_id)
+                    continue
+
+                if isinstance(token, dict):
+                    await queue.put(f'data: {json.dumps(token)}\n\n')
+                    continue
+
+                await queue.put(f'data: {json.dumps({"type": "token", "content": token})}\n\n')
+            
+            await queue.put(f'data: {json.dumps({"type": "done", "content": ""})}\n\n')
+        except Exception as e:
+            print(f"Error in background chat execution for user {user_id}: {e}")
+            await queue.put(f'data: {json.dumps({"type": "error", "content": str(e)})}\n\n')
+        finally:
+            await queue.put(None)  # Sentinel to signal end of stream to consumer
+
+    # Launch background task independent of client HTTP connection lifecycle
+    asyncio.create_task(background_worker())
+
     async def event_stream():
-        async for token in stream_chat(history, user_id):
-            if isinstance(token, list):
-                # token is the final current_messages list
-                new_messages = token[len(history):]
-                for msg in new_messages:
-                    role = msg.get("role")
-                    content = msg.get("content", "")
-                    tool_calls = msg.get("tool_calls")
-                    tool_call_id = msg.get("tool_call_id")
-                    await asyncio.to_thread(save_message, user_id, role, content, tool_calls, tool_call_id)
-                continue
-
-            if isinstance(token, dict):
-                yield f'data: {json.dumps(token)}\n\n'
-                continue
-
-            if isinstance(token, list):
-                # token is the final current_messages list
-                new_messages = token[len(history):]
-                for msg in new_messages:
-                    role = msg.get("role")
-                    content = msg.get("content", "")
-                    tool_calls = msg.get("tool_calls")
-                    tool_call_id = msg.get("tool_call_id")
-                    await asyncio.to_thread(save_message, user_id, role, content, tool_calls, tool_call_id)
-                continue
-
-            if isinstance(token, dict):
-                yield f'data: {json.dumps(token)}\n\n'
-                continue
-
-            yield f'data: {json.dumps({"type": "token", "content": token})}\n\n'
-        
-        yield f'data: {json.dumps({"type": "done", "content": ""})}\n\n'
+        while True:
+            item = await queue.get()
+            if item is None:
+                break
+            yield item
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 

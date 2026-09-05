@@ -66,7 +66,7 @@ TASK_TOOL_DEFINITIONS: list[dict] = [
             },
             "due_date": {
                 "type": "str",
-                "description": "ISO 8601 datetime string for the due date/time (e.g. 2026-09-10T18:00:00Z). Optional.",
+                "description": "ISO 8601 UTC datetime string (e.g. 2026-09-10T10:11:00Z for 3:41 PM IST). Convert user's requested local time into UTC using the current timezone offset provided in system prompt.",
                 "required": False,
             },
         },
@@ -97,7 +97,7 @@ TASK_TOOL_DEFINITIONS: list[dict] = [
             },
             "due_date": {
                 "type": "str",
-                "description": "New due date as ISO 8601 string.",
+                "description": "New due date as ISO 8601 UTC datetime string (converted from local time using current timezone offset).",
                 "required": False,
             },
             "title": {

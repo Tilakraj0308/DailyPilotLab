@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import * as Crypto from 'expo-crypto';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform, Linking } from 'react-native';
@@ -61,6 +61,56 @@ export function useChat() {
     const [isLoadingHistory, setIsLoadingHistory] = useState(true); // default true 
     const [hasMoreHistory, setHasMoreHistory] = useState(true);
 
+    const pollingRef = useRef<NodeJS.Timeout | null>(null);
+
+    const stopPolling = () => {
+        if (pollingRef.current) {
+            clearInterval(pollingRef.current);
+            pollingRef.current = null;
+        }
+    };
+
+    const pollForResponse = () => {
+        stopPolling();
+        let attempts = 0;
+        pollingRef.current = setInterval(async () => {
+            attempts++;
+            if (attempts > 8) {
+                stopPolling();
+                setIsWaitingForResponse(false);
+                return;
+            }
+
+            try {
+                const apiUrl = getApiUrl();
+                const { data } = await supabase.auth.getSession();
+                const token = data?.session?.access_token;
+                const res = await fetch(`${apiUrl}/chat/history?limit=15&offset=0`, {
+                    headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+                });
+                if (res.ok) {
+                    const json = await res.json();
+                    if (json.history && json.history.length > 0) {
+                        const fetchedMessages = json.history.map((m: any) => ({
+                            id: m.id || Crypto.randomUUID(),
+                            role: m.role,
+                            content: m.content,
+                            created_at: m.created_at,
+                            toolName: m.toolName
+                        }));
+                        if (fetchedMessages[0] && fetchedMessages[0].role === 'assistant') {
+                            setMessages(fetchedMessages);
+                            setIsWaitingForResponse(false);
+                            stopPolling();
+                        }
+                    }
+                }
+            } catch (e) {
+                console.error("Polling history error:", e);
+            }
+        }, 2000);
+    };
+
     const fetchHistory = async (offset: number = 0, limit: number = 15, append: boolean = false) => {
         if (!append) {
             setIsLoadingHistory(true);
@@ -88,7 +138,21 @@ export function useChat() {
                     if (append) {
                         setMessages(prev => [...prev, ...newMessages]);
                     } else {
-                        setMessages(newMessages);
+                        // If the latest message in DB is from user, an assistant response is in progress
+                        if (!append && newMessages.length > 0 && newMessages[0].role === 'user') {
+                            setIsWaitingForResponse(true);
+                            const pendingPlaceholder: ChatMessage = {
+                                id: 'pending-assistant',
+                                role: 'assistant',
+                                content: '',
+                                created_at: new Date().toISOString()
+                            };
+                            setMessages([pendingPlaceholder, ...newMessages]);
+                            pollForResponse();
+                        } else {
+                            setIsWaitingForResponse(false);
+                            setMessages(newMessages);
+                        }
                     }
                     setIsLoadingHistory(false);
                     return json.history.length;
@@ -103,6 +167,12 @@ export function useChat() {
         setIsLoadingHistory(false);
         return 0;
     };
+
+    useEffect(() => {
+        return () => {
+            stopPolling();
+        };
+    }, []);
 
     useEffect(() => {
         // Fetch initial continuous history

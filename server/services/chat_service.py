@@ -121,8 +121,13 @@ async def stream_chat(messages: list[dict], user_id: str) -> AsyncGenerator[Unio
         personal_state_dict = get_personal_state(user_id) if user_id else {}
         personal_state_str = json.dumps(personal_state_dict, indent=2) if personal_state_dict else "Not provided"
 
+        now_local = datetime.datetime.now().astimezone()
+        tz_str = now_local.strftime("%Y-%m-%d %H:%M:%S %z")
+        tz_name = now_local.tzname()
+        formatted_date = f"{tz_str} ({tz_name})" if tz_name else tz_str
+
         system_prompt_text = prompt_data.get("template", "").format(
-            current_date=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            current_date=formatted_date,
             user_profile=personal_state_str
         )
         if current_messages and current_messages[0].get("role") == "system":

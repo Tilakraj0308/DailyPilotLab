@@ -184,7 +184,7 @@ const ToolGroupView = ({ item, prevMessage, renderDateDivider }: { item: any, pr
         <View key={item.id}>
             {dateDivider}
             <View className="items-start mb-4 ml-10">
-                <TouchableOpacity 
+                <TouchableOpacity
                     onPress={() => setExpanded(!expanded)}
                     className="flex-row items-center bg-surface-variant/30 px-3 py-1.5 rounded-full border border-outline-variant/20 gap-2"
                 >
@@ -217,6 +217,59 @@ export default function ChatScreen() {
     const { messages, status, sendText, sendAudio, isWaitingForResponse, isLoadingHistory, fetchHistory, hasMoreHistory } = useChat();
     const [inputText, setInputText] = useState('');
     const [isFetchingMore, setIsFetchingMore] = useState(false);
+
+    const [toastMessage, setToastMessage] = useState<string | null>(null);
+    const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
+    const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const copyTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const toastOpacity = useRef(new RNAnimated.Value(0)).current;
+
+    const showToast = (msg: string) => {
+        if (toastTimeoutRef.current) {
+            clearTimeout(toastTimeoutRef.current);
+        }
+        setToastMessage(msg);
+        toastOpacity.setValue(0);
+        RNAnimated.timing(toastOpacity, {
+            toValue: 1,
+            duration: 150,
+            useNativeDriver: Platform.OS !== 'web',
+        }).start();
+
+        toastTimeoutRef.current = setTimeout(() => {
+            RNAnimated.timing(toastOpacity, {
+                toValue: 0,
+                duration: 200,
+                useNativeDriver: Platform.OS !== 'web',
+            }).start(() => {
+                setToastMessage(null);
+            });
+        }, 2000);
+    };
+
+    const handleCopyMessage = async (id: string, content: string) => {
+        if (!content) return;
+        await Clipboard.setStringAsync(content);
+        showToast('Copied');
+        setCopiedMessageId(id);
+        if (copyTimeoutRef.current) {
+            clearTimeout(copyTimeoutRef.current);
+        }
+        copyTimeoutRef.current = setTimeout(() => {
+            setCopiedMessageId(null);
+        }, 2000);
+    };
+
+    useEffect(() => {
+        return () => {
+            if (toastTimeoutRef.current) {
+                clearTimeout(toastTimeoutRef.current);
+            }
+            if (copyTimeoutRef.current) {
+                clearTimeout(copyTimeoutRef.current);
+            }
+        };
+    }, []);
 
     const groupedMessages = React.useMemo(() => {
         const result: any[] = [];
@@ -297,7 +350,7 @@ export default function ChatScreen() {
 
     const handleSendText = () => {
         console.log("CALLED HANDLESENDTEXT")
-        if (!inputText.trim()) return;
+        if (!inputText.trim() || isWaitingForResponse) return;
         sendText(inputText.trim());
         setInputText('');
     };
@@ -492,7 +545,7 @@ export default function ChatScreen() {
         if (!currentDateStr) return null;
         const current = new Date(currentDateStr);
         const prev = prevDateStr ? new Date(prevDateStr) : null;
-        
+
         let showDivider = false;
         if (!prev) {
             showDivider = true; // Last item in array (oldest overall)
@@ -533,9 +586,9 @@ export default function ChatScreen() {
 
         const isUser = item.role === 'user';
         const isTyping = item.content === '' && item.role === 'assistant' && isWaitingForResponse && !item.toolName;
-        
+
         if (!item.content && item.role === 'assistant' && !isTyping && !item.toolName) return null;
-        
+
         // In descending list, groupedMessages[index + 1] is the older message.
         const prevMessage = groupedMessages[index + 1];
         const dateDivider = renderDateDivider(item.created_at || new Date().toISOString(), prevMessage?.created_at);
@@ -592,20 +645,36 @@ export default function ChatScreen() {
                             )}
                         </View>
                     </View>
-                    
+
                     {!isUser && !isTyping && (
                         <View className="flex-row items-center mt-1 ml-11 gap-4">
                             <Text className="text-[10px] text-on-surface-variant/70 font-medium tracking-wide">
                                 Gemini 3.1 Pro
                             </Text>
-                            <TouchableOpacity 
-                                onPress={async () => {
-                                    await Clipboard.setStringAsync(item.content);
-                                    universalAlert('Copied', 'Message copied to clipboard');
-                                }}
+                            <TouchableOpacity
+                                onPress={() => handleCopyMessage(item.id || index.toString(), item.content)}
                                 className="p-1"
                             >
-                                <MaterialIcons name="content-copy" size={13} color="#9CA4AA" />
+                                <MaterialIcons
+                                    name={copiedMessageId === (item.id || index.toString()) ? "check" : "content-copy"}
+                                    size={13}
+                                    color={copiedMessageId === (item.id || index.toString()) ? "#4ADE80" : "#9CA4AA"}
+                                />
+                            </TouchableOpacity>
+                        </View>
+                    )}
+
+                    {isUser && !isTyping && (
+                        <View className="flex-row items-center mt-1 mr-11 justify-end gap-4">
+                            <TouchableOpacity
+                                onPress={() => handleCopyMessage(item.id || index.toString(), item.content)}
+                                className="p-1"
+                            >
+                                <MaterialIcons
+                                    name={copiedMessageId === (item.id || index.toString()) ? "check" : "content-copy"}
+                                    size={13}
+                                    color={copiedMessageId === (item.id || index.toString()) ? "#4ADE80" : "#9CA4AA"}
+                                />
                             </TouchableOpacity>
                         </View>
                     )}
@@ -655,7 +724,7 @@ export default function ChatScreen() {
                 style={{ flex: 1 }}
                 behavior="padding"
             >
-                <View className="flex-1">
+                <View className="flex-1 relative">
                     {messages.length === 0 && isLoadingHistory ? (
                         <View className="flex-1 justify-center items-center bg-background">
                             <ActivityIndicator size="large" color="#4e45e4" />
@@ -670,13 +739,13 @@ export default function ChatScreen() {
                             </Text>
                         </View>
                     ) : (
-                            <FlatList
-                                ref={flatListRef}
-                                className="flex-1 bg-background"
-                                contentContainerStyle={{ paddingVertical: 16, paddingHorizontal: 16 }}
-                                data={groupedMessages}
-                                keyExtractor={(item, index) => item.id || index.toString()}
-                                renderItem={renderMessage}
+                        <FlatList
+                            ref={flatListRef}
+                            className="flex-1 bg-background"
+                            contentContainerStyle={{ paddingVertical: 16, paddingHorizontal: 16 }}
+                            data={groupedMessages}
+                            keyExtractor={(item, index) => item.id || index.toString()}
+                            renderItem={renderMessage}
                             inverted={true}
                             showsVerticalScrollIndicator={false}
                             keyboardShouldPersistTaps="handled"
@@ -688,73 +757,99 @@ export default function ChatScreen() {
                         />
                     )}
 
+                    {/* Floating Toast Notification Chip (Above Text Field at Bottom Left) */}
+                    {toastMessage && (
+                        <RNAnimated.View
+                            style={{
+                                position: 'absolute',
+                                bottom: 84,
+                                left: 12,
+                                zIndex: 9999,
+                                opacity: toastOpacity,
+                                backgroundColor: '#2b3437',
+                                paddingHorizontal: 14,
+                                paddingVertical: 8,
+                                borderRadius: 8,
+                                shadowColor: '#000',
+                                shadowOffset: { width: 0, height: 2 },
+                                shadowOpacity: 0.25,
+                                shadowRadius: 3.84,
+                                elevation: 5,
+                            }}
+                        >
+                            <Text style={{ color: '#ffffff', fontSize: 12, fontFamily: 'Inter_500Medium', fontWeight: '500' }}>
+                                {toastMessage}
+                            </Text>
+                        </RNAnimated.View>
+                    )}
+
                     {/* Input Bar - Fixed at bottom, NOT inside scroll view */}
                     <View className="bg-surface border-t border-outline-variant/10 px-4 py-3">
-                            <View className="flex-row items-end gap-3">
-                                {/* Main Input Area */}
-                                {!isRecording ? (
-                                    <View className="flex-1 flex-row items-end rounded-3xl bg-surface-container px-4 min-h-[48px] py-1 border border-outline-variant/20">
-                                        <TextInput
-                                            className="flex-1 max-h-[120px] text-sm text-on-surface"
-                                            placeholder="Message DailyPilot..."
-                                            placeholderTextColor="#586064"
-                                            value={inputText}
-                                            onChangeText={setInputText}
-                                            onSubmitEditing={handleSendText}
-                                            multiline
-                                            style={{ fontFamily: "Inter_400Regular", minHeight: 40, paddingTop: 10, paddingBottom: 10, textAlignVertical: 'top', ...(Platform.OS === 'web' ? { outlineStyle: 'none' } : {}) as any }}
-                                            returnKeyType="send"
-                                            editable={status === 'connected'}
-                                        />
+                        <View className="flex-row items-end gap-3">
+                            {/* Main Input Area */}
+                            {!isRecording ? (
+                                <View className="flex-1 flex-row items-end rounded-3xl bg-surface-container px-4 min-h-[48px] py-1 border border-outline-variant/20">
+                                    <TextInput
+                                        className="flex-1 max-h-[120px] text-sm text-on-surface"
+                                        placeholder={isWaitingForResponse ? "DailyPilot is thinking..." : "Message DailyPilot..."}
+                                        placeholderTextColor="#586064"
+                                        value={inputText}
+                                        onChangeText={setInputText}
+                                        onSubmitEditing={handleSendText}
+                                        multiline
+                                        style={{ fontFamily: "Inter_400Regular", minHeight: 40, paddingTop: 10, paddingBottom: 10, textAlignVertical: 'top', ...(Platform.OS === 'web' ? { outlineStyle: 'none' } : {}) as any }}
+                                        returnKeyType="send"
+                                        editable={status === 'connected' && !isWaitingForResponse}
+                                    />
 
-                                        {/* Mic and Send Buttons */}
-                                        <View className="ml-2 flex-row items-center">
-                                            {/* Microphone Recording Button */}
-                                            {isUploadingAudio ? (
-                                                <View className="w-10 h-10 items-center justify-center rounded-full">
-                                                    <ActivityIndicator size={22} color="#4e45e4" />
-                                                </View>
-                                            ) : !isAudioAvailable ? (
-                                                <View className="w-10 h-10 items-center justify-center rounded-full bg-gray-400 opacity-50">
-                                                    <MaterialIcons name="mic-off" size={22} color="#FFFFFF" />
-                                                </View>
-                                            ) : (
+                                    {/* Mic and Send Buttons */}
+                                    <View className="ml-2 flex-row items-center">
+                                        {/* Microphone Recording Button */}
+                                        {isUploadingAudio ? (
+                                            <View className="w-10 h-10 items-center justify-center rounded-full">
+                                                <ActivityIndicator size={22} color="#4e45e4" />
+                                            </View>
+                                        ) : !isAudioAvailable ? (
+                                            <View className="w-10 h-10 items-center justify-center rounded-full bg-gray-400 opacity-50">
+                                                <MaterialIcons name="mic-off" size={22} color="#FFFFFF" />
+                                            </View>
+                                        ) : (
+                                            <TouchableOpacity
+                                                onPress={() => startRecording()}
+                                                className={`w-10 h-10 items-center justify-center rounded-full bg-surface-variant ${isWaitingForResponse ? 'opacity-40' : ''}`}
+                                                disabled={status !== 'connected' || isWaitingForResponse}
+                                            >
+                                                <MaterialIcons name="mic-none" size={22} color="#9CA4AA" />
+                                            </TouchableOpacity>
+                                        )}
+
+                                        {inputText.trim().length > 0 && (
+                                            <Animated.View entering={FadeIn.duration(200)} exiting={FadeOut.duration(150)}>
                                                 <TouchableOpacity
-                                                    onPress={() => startRecording()}
-                                                    className="w-10 h-10 items-center justify-center rounded-full bg-surface-variant"
-                                                    disabled={status !== 'connected'}
+                                                    onPress={handleSendText}
+                                                    className={`w-10 h-10 items-center justify-center bg-surface-variant rounded-full ml-1 ${isWaitingForResponse ? 'opacity-40' : ''}`}
+                                                    disabled={status !== 'connected' || isWaitingForResponse}
                                                 >
-                                                    <MaterialIcons name="mic-none" size={22} color="#9CA4AA" />
+                                                    <MaterialIcons name="arrow-upward" size={22} color="#9CA4AA" />
                                                 </TouchableOpacity>
-                                            )}
-
-                                            {inputText.trim().length > 0 && (
-                                                <Animated.View entering={FadeIn.duration(200)} exiting={FadeOut.duration(150)}>
-                                                    <TouchableOpacity
-                                                        onPress={handleSendText}
-                                                        className="w-10 h-10 items-center justify-center bg-surface-variant rounded-full ml-1"
-                                                        disabled={status !== 'connected'}
-                                                    >
-                                                        <MaterialIcons name="arrow-upward" size={22} color="#9CA4AA" />
-                                                    </TouchableOpacity>
-                                                </Animated.View>
-                                            )}
-                                        </View>
+                                            </Animated.View>
+                                        )}
                                     </View>
-                                ) : (
-                                    <View className="flex-1 flex-row items-center justify-center rounded-3xl bg-surface-container overflow-hidden h-12 relative border border-outline-variant/20">
-                                        <SoundBarsEqualizer volumeLevel={rawVolumeAnim} noiseFloorLevel={noiseFloorAnim} />
-                                        {/* <SoundBarsEqualizer volumeLevel={volumeAnim} /> */}
-                                        <TouchableOpacity
-                                            onPress={() => stopRecording()}
-                                            className="absolute right-1 z-10 w-10 h-10 items-center justify-center bg-surface-variant rounded-full"
-                                        >
-                                            <MaterialIcons name="stop" size={24} color="#9CA4AA" />
-                                        </TouchableOpacity>
-                                    </View>
-                                )}
-                            </View>
+                                </View>
+                            ) : (
+                                <View className="flex-1 flex-row items-center justify-center rounded-3xl bg-surface-container overflow-hidden h-12 relative border border-outline-variant/20">
+                                    <SoundBarsEqualizer volumeLevel={rawVolumeAnim} noiseFloorLevel={noiseFloorAnim} />
+                                    {/* <SoundBarsEqualizer volumeLevel={volumeAnim} /> */}
+                                    <TouchableOpacity
+                                        onPress={() => stopRecording()}
+                                        className="absolute right-1 z-10 w-10 h-10 items-center justify-center bg-surface-variant rounded-full"
+                                    >
+                                        <MaterialIcons name="stop" size={24} color="#9CA4AA" />
+                                    </TouchableOpacity>
+                                </View>
+                            )}
                         </View>
+                    </View>
                 </View>
             </KeyboardAvoidingView>
         </SafeAreaView>
