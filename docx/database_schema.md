@@ -20,6 +20,8 @@
 | `user_connectors` | Integrations | Per-user provider connections, tokens, permissions, resources |
 | `oauth_state_sessions` | Integrations | Ephemeral PKCE state for OAuth redirect flows |
 | `connector_tool_history` | Integrations | Append-only audit log of external tool executions |
+| `token_usage_traces` | Analytics | Request-level token consumption metadata and aggregate cost |
+| `token_usage_timeline` | Analytics | Step-by-step granular request timeline events and token breakdown |
 
 ---
 
