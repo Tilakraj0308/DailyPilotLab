@@ -83,11 +83,11 @@ function DrumPicker({
     const handleScroll = (e: any) => {
         const offsetY = e.nativeEvent.contentOffset.y;
         if (scrollTimeout.current) clearTimeout(scrollTimeout.current);
-        
+
         scrollTimeout.current = setTimeout(() => {
             const index = Math.round(offsetY / ITEM_HEIGHT);
             const clamped = Math.max(0, Math.min(index, items.length - 1));
-            
+
             // Only update and snap if we actually stopped on a new item or if we're misaligned
             if (clamped !== selectedIndex) {
                 onSelect(clamped);
@@ -286,7 +286,7 @@ export default function OnboardingScreen() {
     useEffect(() => {
         setAnswers((prev) => {
             const newAnswers = { ...prev };
-            
+
             // Prefill Google display name
             const displayName = user?.user_metadata?.full_name || user?.user_metadata?.name || "";
             if (displayName && !newAnswers.nickname) {
@@ -325,13 +325,13 @@ export default function OnboardingScreen() {
                 const parsed = JSON.parse(draft);
                 setAnswers((prev) => ({ ...prev, ...parsed }));
             }
-        } catch {}
+        } catch { }
     };
 
     const saveDraft = async (newAnswers: Record<string, any>) => {
         try {
             await AsyncStorage.setItem("@onboarding_draft", JSON.stringify(newAnswers));
-        } catch {}
+        } catch { }
     };
 
     // Filter questions based on branching logic
@@ -365,11 +365,11 @@ export default function OnboardingScreen() {
 
     const goNext = () => {
         Keyboard.dismiss();
-        
+
         // If the user clicks Next/Done but left the picker untouched, save the default value
         const currentQ = activeQuestions[currentIndex];
         let currentAnswers = { ...answers };
-        
+
         if (!currentAnswers[currentQ.state_key]) {
             if (currentQ.type === "date_picker") {
                 const dateStr = `${dateValue.year}-${String(dateValue.month + 1).padStart(2, "0")}-${String(dateValue.day).padStart(2, "0")}`;
@@ -400,7 +400,7 @@ export default function OnboardingScreen() {
 
     const handleSubmit = (finalAnswers = answers) => {
         console.log("Submitting answers:", JSON.stringify({ answers: finalAnswers }));
-        
+
         const apiUrl = getApiUrl();
         fetch(`${apiUrl}/onboarding/complete`, {
             method: "POST",
@@ -410,22 +410,22 @@ export default function OnboardingScreen() {
             },
             body: JSON.stringify({ answers: finalAnswers }),
         })
-        .then((resp) => {
-            if (!resp.ok) {
+            .then((resp) => {
+                if (!resp.ok) {
+                    saveDraft(finalAnswers);
+                    alert(`Server returned ${resp.status}: Request reached server but failed.`);
+                } else {
+                    // Success! Delay closing just to be completely safe
+                    setTimeout(() => {
+                        setOnboardingCompleted(true);
+                        AsyncStorage.removeItem("@onboarding_draft").catch(() => { });
+                    }, 100);
+                }
+            })
+            .catch((e) => {
                 saveDraft(finalAnswers);
-                alert(`Server returned ${resp.status}: Request reached server but failed.`);
-            } else {
-                // Success! Delay closing just to be completely safe
-                setTimeout(() => {
-                    setOnboardingCompleted(true);
-                    AsyncStorage.removeItem("@onboarding_draft").catch(() => {});
-                }, 100);
-            }
-        })
-        .catch((e) => {
-            saveDraft(finalAnswers);
-            alert(`Network Error: ${e.message}\nAPI URL: ${apiUrl}\nCould not reach the backend!`);
-        });
+                alert(`Network Error: ${e.message}\nAPI URL: ${apiUrl}\nCould not reach the backend!`);
+            });
     };
 
     const handleSkip = () => {
@@ -438,19 +438,19 @@ export default function OnboardingScreen() {
             },
             body: JSON.stringify({ answers }),
         })
-        .then((resp) => {
-            if (!resp.ok) {
-                alert(`Server returned ${resp.status}`);
-            } else {
-                setTimeout(() => {
-                    setOnboardingCompleted(true);
-                    AsyncStorage.removeItem("@onboarding_draft").catch(() => {});
-                }, 100);
-            }
-        })
-        .catch((e) => {
-            alert(`Network Error: ${e.message}\nAPI URL: ${apiUrl}\nCould not reach the backend!`);
-        });
+            .then((resp) => {
+                if (!resp.ok) {
+                    alert(`Server returned ${resp.status}`);
+                } else {
+                    setTimeout(() => {
+                        setOnboardingCompleted(true);
+                        AsyncStorage.removeItem("@onboarding_draft").catch(() => { });
+                    }, 100);
+                }
+            })
+            .catch((e) => {
+                alert(`Network Error: ${e.message}\nAPI URL: ${apiUrl}\nCould not reach the backend!`);
+            });
     };
 
     // ─── Render Question Content ────────────────────────────────────────
@@ -732,8 +732,29 @@ export default function OnboardingScreen() {
                     )}
                 </View>
 
+                {/* Bottom Progress Bar */}
+                <View style={{ width: "100%", paddingHorizontal: 24, paddingBottom: 12 }}>
+                    <View
+                        style={{
+                            height: 6,
+                            backgroundColor: "rgba(78, 69, 228, 0.15)",
+                            borderRadius: 3,
+                            overflow: "hidden",
+                        }}
+                    >
+                        <Animated.View
+                            style={{
+                                height: "100%",
+                                backgroundColor: "#4e45e4",
+                                borderRadius: 3,
+                                width: `${((currentIndex + 1) / (activeQuestions.length || 1)) * 100}%`,
+                            }}
+                        />
+                    </View>
+                </View>
+
                 {/* Skip Link */}
-                <View style={{ alignItems: "center", paddingBottom: 20 }}>
+                <View style={{ alignItems: "center", paddingBottom: 16 }}>
                     <TouchableOpacity
                         onPress={handleSkip}
                         accessibilityLabel="Skip onboarding"
