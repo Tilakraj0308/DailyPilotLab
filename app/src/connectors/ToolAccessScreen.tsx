@@ -31,10 +31,6 @@ const PROVIDER_INFO: Record<string, { title: string; iconUri: string }> = {
         title: "Google Calendar",
         iconUri: "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a5/Google_Calendar_icon_%282020%29.svg/512px-Google_Calendar_icon_%282020%29.svg.png",
     },
-    notion: {
-        title: "Notion",
-        iconUri: "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e9/Notion-logo.svg/512px-Notion-logo.svg.png",
-    },
     gmail: {
         title: "Gmail",
         iconUri: "https://upload.wikimedia.org/wikipedia/commons/thumb/7/7e/Gmail_icon_%282020%29.svg/512px-Gmail_icon_%282020%29.svg.png",
@@ -186,29 +182,28 @@ export default function ToolAccessScreen() {
 
                                 {(providerKey === "google_tasks" ||
                                     providerKey === "google_calendar" ||
-                                    providerKey === "notion" ||
                                     providerKey === "gmail") && (
-                                    <>
-                                        <PermissionToggleCard
-                                            crudType="create"
-                                            enabled={permissions?.create ?? true}
-                                            onToggle={(v) => handleToggle("create", v)}
-                                            disabled={saving}
-                                        />
-                                        <PermissionToggleCard
-                                            crudType="update"
-                                            enabled={permissions?.update ?? true}
-                                            onToggle={(v) => handleToggle("update", v)}
-                                            disabled={saving}
-                                        />
-                                        <PermissionToggleCard
-                                            crudType="delete"
-                                            enabled={permissions?.delete ?? false}
-                                            onToggle={(v) => handleToggle("delete", v)}
-                                            disabled={saving}
-                                        />
-                                    </>
-                                )}
+                                        <>
+                                            <PermissionToggleCard
+                                                crudType="create"
+                                                enabled={permissions?.create ?? true}
+                                                onToggle={(v) => handleToggle("create", v)}
+                                                disabled={saving}
+                                            />
+                                            <PermissionToggleCard
+                                                crudType="update"
+                                                enabled={permissions?.update ?? true}
+                                                onToggle={(v) => handleToggle("update", v)}
+                                                disabled={saving}
+                                            />
+                                            <PermissionToggleCard
+                                                crudType="delete"
+                                                enabled={permissions?.delete ?? false}
+                                                onToggle={(v) => handleToggle("delete", v)}
+                                                disabled={saving}
+                                            />
+                                        </>
+                                    )}
                             </View>
                         </View>
 

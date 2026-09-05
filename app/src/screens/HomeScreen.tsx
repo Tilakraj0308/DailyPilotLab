@@ -73,7 +73,7 @@ export default function HomeScreen() {
                     </View>
 
                     {/* App Shortcuts */}
-                    <View className="flex-row justify-between mb-8">
+                    <View className="flex-row justify-between">
                         {/* Todos Button */}
                         <TouchableOpacity
                             className="bg-white rounded-[24px] p-5 w-[48%] shadow-sm"
@@ -119,76 +119,6 @@ export default function HomeScreen() {
                             >
                                 Continue conversation
                             </Text>
-                        </TouchableOpacity>
-                    </View>
-
-                    {/* Recent Memories Section */}
-                    <View className="mb-4 flex-row justify-between items-center">
-                        <Text
-                            className="text-xl text-[#2b3437]"
-                            style={{ fontFamily: "Inter_600SemiBold" }}
-                        >
-                            Recent Memories
-                        </Text>
-                        <TouchableOpacity className="flex-row items-center">
-                            <Text
-                                className="text-[#35436b] text-sm mr-1"
-                                style={{ fontFamily: "Inter_500Medium" }}
-                            >
-                                Search all
-                            </Text>
-                            <Feather name="search" size={14} color="#35436b" />
-                        </TouchableOpacity>
-                    </View>
-
-                    {/* Recent Memories List */}
-                    <View className="gap-3">
-                        {/* Memory Item 1 */}
-                        <TouchableOpacity className="w-full bg-[#f1f3f5] rounded-3xl p-4 flex-row items-center">
-                            <View className="w-12 h-12 rounded-full bg-[#e2e8f0] items-center justify-center mr-4">
-                                <MaterialIcons name="description" size={24} color="#475569" />
-                            </View>
-                            <View className="flex-1">
-                                <View className="flex-row justify-between items-center mb-1">
-                                    <Text className="text-base text-[#2b3437]" style={{ fontFamily: "Inter_500Medium" }}>Q3 Strategy Notes</Text>
-                                    <Text className="text-xs text-[#586064]" style={{ fontFamily: "Inter_400Regular" }}>2h ago</Text>
-                                </View>
-                                <Text className="text-[#586064] text-sm" numberOfLines={1} style={{ fontFamily: "Inter_400Regular" }}>
-                                    Review of key objectives for the upcoming ...
-                                </Text>
-                            </View>
-                        </TouchableOpacity>
-
-                        {/* Memory Item 2 */}
-                        <TouchableOpacity className="w-full bg-[#f1f3f5] rounded-3xl p-4 flex-row items-center">
-                            <View className="w-12 h-12 rounded-full bg-[#def2db] items-center justify-center mr-4">
-                                <MaterialIcons name="lightbulb" size={24} color="#4b5563" />
-                            </View>
-                            <View className="flex-1">
-                                <View className="flex-row justify-between items-center mb-1">
-                                    <Text className="text-base text-[#2b3437]" style={{ fontFamily: "Inter_500Medium" }}>Project Phoenix Idea</Text>
-                                    <Text className="text-xs text-[#586064]" style={{ fontFamily: "Inter_400Regular" }}>Yesterday</Text>
-                                </View>
-                                <Text className="text-[#586064] text-sm" numberOfLines={1} style={{ fontFamily: "Inter_400Regular" }}>
-                                    Initial thoughts on rebranding the core dash...
-                                </Text>
-                            </View>
-                        </TouchableOpacity>
-
-                        {/* Memory Item 3 */}
-                        <TouchableOpacity className="w-full bg-[#f1f3f5] rounded-3xl p-4 flex-row items-center">
-                            <View className="w-12 h-12 rounded-full bg-[#e2e8f0] items-center justify-center mr-4">
-                                <MaterialIcons name="link" size={24} color="#475569" />
-                            </View>
-                            <View className="flex-1">
-                                <View className="flex-row justify-between items-center mb-1">
-                                    <Text className="text-base text-[#2b3437]" style={{ fontFamily: "Inter_500Medium" }}>Design Resources</Text>
-                                    <Text className="text-xs text-[#586064]" style={{ fontFamily: "Inter_400Regular" }}>Oct 20</Text>
-                                </View>
-                                <Text className="text-[#586064] text-sm" numberOfLines={1} style={{ fontFamily: "Inter_400Regular" }}>
-                                    Collection of inspirational moodboards and ...
-                                </Text>
-                            </View>
                         </TouchableOpacity>
                     </View>
                 </View>

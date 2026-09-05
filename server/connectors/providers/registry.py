@@ -5,7 +5,6 @@ from pydantic import BaseModel
 
 class ProviderKey(str, Enum):
     gmail = "gmail"
-    notion = "notion"
     google_calendar = "google_calendar"
     google_tasks = "google_tasks"
 
@@ -24,11 +23,6 @@ SUPPORTED_PROVIDERS = {
         key=ProviderKey.google_tasks,
         display_name="Google Tasks",
         icon_name="check-circle",
-    ),
-    ProviderKey.notion.value: ProviderConfig(
-        key=ProviderKey.notion,
-        display_name="Notion",
-        icon_name="description",
     ),
     ProviderKey.gmail.value: ProviderConfig(
         key=ProviderKey.gmail,

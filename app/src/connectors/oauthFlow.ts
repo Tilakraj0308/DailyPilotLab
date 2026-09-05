@@ -17,8 +17,7 @@ export function getConnectorReturnUrl(): string {
 
 export type OpenConnectorAuthOptions = {
   /**
-   * iOS: prefer an ephemeral web session so a prior Notion login in Safari
-   * is less likely to auto-approve the wrong account (no effect on Android/web).
+   * iOS: prefer an ephemeral web session if needed (no effect on Android/web).
    */
   preferEphemeralSession?: boolean;
 };

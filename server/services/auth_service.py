@@ -58,7 +58,7 @@ def get_or_create_user(auth_id: str, email: str, display_name: str | None, avata
         user = cur.fetchone()
 
         if user:
-            # Keep IdP email current (used e.g. to match Notion OAuth owner email to the signed-in account).
+            # Keep IdP email current.
             trimmed = (email or "").strip()
             cur.execute(
                 """

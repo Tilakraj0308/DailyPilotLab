@@ -82,9 +82,8 @@ OPENAPI=sk-...
 # JWT Secret from Supabase → Project Settings → API (label: JWT Secret). Not the anon key.
 SUPABASE_JWT_SECRET=your-supabase-jwt-secret
 
-# ── Connectors (Google Calendar / Google Tasks / Gmail / Notion) ──────────────────────
+# ── Connectors (Google Calendar / Google Tasks / Gmail) ──────────────────────
 # Google: same `GOOGLE_CONNECTOR_CLIENT_*` Web client; add Calendar, Tasks, and Gmail redirect URIs in Google Cloud.
-# Notion: public integration OAuth — see `.env.example` for `NOTION_CLIENT_*`, `NOTION_CONNECTOR_REDIRECT_URI`.
 # Shared: `CONNECTOR_ENCRYPTION_SECRET`, `CONNECTOR_OAUTH_STATE_TTL_SECONDS`, `FRONTEND_CONNECTOR_BASE_URL`.
 
 # ── Tuning knobs (leave defaults unless you know what you're changing) ────────
@@ -188,14 +187,6 @@ Calendar, Tasks, and **Gmail** use separate provider keys but the **same** `GOOG
 
 **Migration timestamps:** use a **unique** `YYYYMMDDHHMMSS` prefix per file. Two files sharing the same eight-digit day prefix (e.g. `20260418_foo.sql` and `20260418_bar.sql`) map to the same `schema_migrations.version` and **`db push` will fail** with a duplicate key on `schema_migrations`.
 
-### Notion connector
-
-Notion uses a **separate** OAuth client (`NOTION_CLIENT_ID` / `NOTION_CLIENT_SECRET` from [Notion integrations](https://www.notion.so/my-integrations)). Register the **exact** redirect URI **`NOTION_CONNECTOR_REDIRECT_URI`** (for example `http://127.0.0.1:8000/connectors/notion/callback`). Token exchange uses Notion’s `POST /v1/oauth/token` with HTTP Basic auth; there is no Google-style remote revoke URL — **disconnect** clears tokens locally. Optional **`NOTION_API_VERSION`** defaults to `2022-06-28` and should match Notion REST calls.
-
-**Same email as app sign-in:** Notion’s authorize URL cannot take a Google `login_hint`. By default, after the code is exchanged, the API compares **`owner.user.person.email`** from Notion’s token response to **`public.users.email`** (kept in sync from the Supabase JWT via `GET /auth/profile`). If both are present and they differ (case-insensitive), the connection fails with `notion_account_email_mismatch` and tokens are not stored. Set **`NOTION_OAUTH_STRICT_APP_EMAIL=false`** only if you need to disable that check (e.g. local testing). Workspace-only token payloads without a person email skip the comparison and are allowed (with a server log).
-
-If Chrome shows **`ERR_SSL_PROTOCOL_ERROR`** on the callback: the browser is opening **`https://`** to `127.0.0.1:8000`, but the dev server only speaks **`http://`**. Use **`http://`** in the address bar, ensure Notion’s redirect URI is **`http://...`** (not `https://`), and remove any HSTS entry for `127.0.0.1` in `chrome://net-internals/#hsts` if you previously forced HTTPS for loopback.
-
 ---
 
 ## API Endpoints
@@ -214,8 +205,8 @@ If Chrome shows **`ERR_SSL_PROTOCOL_ERROR`** on the callback: the browser is ope
 | `GET`  | `/refine-ideas`             | Refine raw ideas using AI                  |
 | `GET`  | `/auth/profile`             | Sync Supabase user into `public.users`     |
 | `GET`  | `/connectors`               | List connector status per provider (auth)   |
-| `POST` | `/connectors/{provider}/start` | Start OAuth (`google_calendar` \| `google_tasks` \| `gmail` \| `notion`) — returns `authorization_url` (auth) |
-| `GET`  | `/connectors/{provider}/callback` | OAuth redirect — **public** (Google or Notion; Gmail uses `/connectors/gmail/callback`)   |
+| `POST` | `/connectors/{provider}/start` | Start OAuth (`google_calendar` \| `google_tasks` \| `gmail`) — returns `authorization_url` (auth) |
+| `GET`  | `/connectors/{provider}/callback` | OAuth redirect — **public** (Google; Gmail uses `/connectors/gmail/callback`)   |
 | `POST` | `/connectors/{provider}/disconnect` | Revoke tokens and disconnect (auth)   |
 | `GET`  | `/connectors/gmail/priority` | Priority-oriented Gmail thread summaries for the connected account (auth) |
 | `GET`  | `/connectors/gmail/threads/{thread_id}` | Gmail thread detail (auth) |
