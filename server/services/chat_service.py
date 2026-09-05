@@ -205,7 +205,7 @@ async def stream_chat(messages: list[dict], user_id: str) -> AsyncGenerator[Unio
             
             if call_signature not in executed_calls_cache:
                 # Send a notification to the UI about the tool action only for the first unique call
-                yield {"type": "tool_call", "tool_name": tool_name}
+                yield {"type": "tool_call", "tool_name": tool_name, "tool_args": tool_args_str}
             
             if call_signature in executed_calls_cache:
                 result_str = executed_calls_cache[call_signature]

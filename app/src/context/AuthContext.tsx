@@ -9,6 +9,7 @@ interface AuthContextType {
     user: User | null;
     isLoading: boolean;
     onboardingCompleted: boolean;
+    isAdmin: boolean;
     personalState: Record<string, any>;
     setOnboardingCompleted: (val: boolean) => void;
     signOut: () => Promise<void>;
@@ -20,6 +21,7 @@ const AuthContext = createContext<AuthContextType>({
     user: null,
     isLoading: true,
     onboardingCompleted: false,
+    isAdmin: false,
     personalState: {},
     setOnboardingCompleted: () => {},
     signOut: async () => { },
@@ -30,6 +32,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const [session, setSession] = useState<Session | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [onboardingCompleted, setOnboardingCompleted] = useState(false);
+    const [isAdmin, setIsAdmin] = useState(false);
     const [personalState, setPersonalState] = useState<Record<string, any>>({});
 
     useEffect(() => {
@@ -53,6 +56,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             if (!session) {
                 // Reset onboarding state on sign out
                 setOnboardingCompleted(false);
+                setIsAdmin(false);
                 setPersonalState({});
             }
         });
@@ -86,6 +90,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             const data = await response.json();
             if (data?.user) {
                 setOnboardingCompleted(data.user.onboarding_completed ?? false);
+                setIsAdmin(data.user.is_admin ?? false);
                 setPersonalState(data.user.personal_state ?? {});
             }
         } catch (e) {
@@ -135,6 +140,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 user: session?.user ?? null,
                 isLoading,
                 onboardingCompleted,
+                isAdmin,
                 personalState,
                 setOnboardingCompleted,
                 signOut,

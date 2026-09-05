@@ -7,14 +7,10 @@ Handles:
 - Issuing app-level JWT tokens
 """
 
-# import os
-# import jwt
-# import datetime
-
-# from google.oauth2 import id_token as google_id_token
-# from google.auth.transport import requests as google_requests
-
+import os
 from db.dbConnection import get_dict_cursor
+
+ADMIN_EMAILS = [e.strip() for e in os.getenv("ADMIN_EMAILS", "").split(",") if e.strip()]
 
 # GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
 # JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "change-me-in-production")
@@ -49,10 +45,11 @@ def get_or_create_user(auth_id: str, email: str, display_name: str | None, avata
     Look up a user by auth_id. If they don't exist, create one.
     Returns the user record as a dict.
     """
+    is_admin_flag = email in ADMIN_EMAILS
     with get_dict_cursor() as cur:
         # Try to find existing user
         cur.execute(
-            "SELECT id, auth_id, email, display_name, avatar_url, onboarding_completed, personal_state FROM public.users WHERE auth_id = %s",
+            "SELECT id, auth_id, email, display_name, avatar_url, onboarding_completed, personal_state, is_admin FROM public.users WHERE auth_id = %s",
             (auth_id,),
         )
         user = cur.fetchone()
@@ -66,11 +63,12 @@ def get_or_create_user(auth_id: str, email: str, display_name: str | None, avata
                 SET
                     email = CASE WHEN %s <> '' THEN %s ELSE email END,
                     display_name = COALESCE(%s, display_name),
-                    avatar_url = COALESCE(%s, avatar_url)
+                    avatar_url = COALESCE(%s, avatar_url),
+                    is_admin = %s
                 WHERE auth_id = %s
-                RETURNING id, auth_id, email, display_name, avatar_url, onboarding_completed, personal_state
+                RETURNING id, auth_id, email, display_name, avatar_url, onboarding_completed, personal_state, is_admin
                 """,
-                (trimmed, trimmed, display_name, avatar_url, auth_id),
+                (trimmed, trimmed, display_name, avatar_url, is_admin_flag, auth_id),
             )
             updated = cur.fetchone()
             return dict(updated) if updated else dict(user)
@@ -78,11 +76,11 @@ def get_or_create_user(auth_id: str, email: str, display_name: str | None, avata
         # Create new user
         cur.execute(
             """
-            INSERT INTO public.users (auth_id, email, display_name, avatar_url)
-            VALUES (%s, %s, %s, %s)
-            RETURNING id, auth_id, email, display_name, avatar_url, onboarding_completed, personal_state
+            INSERT INTO public.users (auth_id, email, display_name, avatar_url, is_admin)
+            VALUES (%s, %s, %s, %s, %s)
+            RETURNING id, auth_id, email, display_name, avatar_url, onboarding_completed, personal_state, is_admin
             """,
-            (auth_id, email, display_name, avatar_url),
+            (auth_id, email, display_name, avatar_url, is_admin_flag),
         )
         new_user = cur.fetchone()
         return dict(new_user)
