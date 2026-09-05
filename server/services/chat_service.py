@@ -114,8 +114,15 @@ async def stream_chat(messages: list[dict], user_id: str) -> AsyncGenerator[Unio
     if prompt_path.exists():
         with open(prompt_path, "r") as f:
             prompt_data = yaml.safe_load(f)
+        
+        # Retrieve user's personal state context
+        from services.user_service import get_personal_state
+        personal_state_dict = get_personal_state(user_id) if user_id else {}
+        personal_state_str = json.dumps(personal_state_dict, indent=2) if personal_state_dict else "Not provided"
+
         system_prompt_text = prompt_data.get("template", "").format(
-            current_date=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            current_date=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            user_profile=personal_state_str
         )
         if current_messages and current_messages[0].get("role") == "system":
             current_messages[0]["content"] += f"\n\n{system_prompt_text}"
