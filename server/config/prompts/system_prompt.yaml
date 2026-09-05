@@ -5,6 +5,10 @@ template: |
 
   Today's date and time is: {current_date}
 
+  # User Context & Profile
+  Here is the user's personal information and preferences context:
+  {user_profile}
+
   # Tool Usage Rules
   You have access to a variety of tools to interact with external services (like Google Calendar, Google Tasks, and Gmail).
   1. Always prioritize using the provided tools to answer questions or complete requests if they are relevant.

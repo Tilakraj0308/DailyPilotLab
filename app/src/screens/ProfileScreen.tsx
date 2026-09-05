@@ -11,10 +11,39 @@ export default function ProfileScreen() {
   const navigation = useNavigation<any>();
   const { signOut, user, personalState, updatePersonalState } = useAuth();
 
-  const [editNickname, setEditNickname] = useState(personalState?.nickname || "");
-  const [editOccupation, setEditOccupation] = useState(personalState?.occupation || "");
-  const [editAbout, setEditAbout] = useState(personalState?.about_you || "");
+  // Define known label mappings for clean UI display
+  const FIELD_LABELS: Record<string, string> = {
+    nickname: "Preferred Name",
+    occupation: "Profession",
+    date_of_birth: "Date of Birth",
+    study_topic: "Study Topic",
+    work_domain: "Work Domain",
+    additional_info: "About You",
+    about_you: "About You",
+  };
+
+  const [formState, setFormState] = useState<Record<string, string>>({});
   const [isEditingState, setIsEditingState] = useState(false);
+
+  // Sync internal form state whenever personalState updates
+  React.useEffect(() => {
+    const initialForm: Record<string, string> = {
+      nickname: personalState?.nickname || "",
+      occupation: personalState?.occupation || "",
+      about_you: personalState?.additional_info || personalState?.about_you || "",
+    };
+
+    // Include any additional keys present in personalState
+    if (personalState) {
+      Object.entries(personalState).forEach(([key, val]) => {
+        if (typeof val === "string" || typeof val === "number") {
+          initialForm[key] = String(val);
+        }
+      });
+    }
+
+    setFormState(initialForm);
+  }, [personalState]);
 
   const displayName =
     user?.user_metadata?.full_name ||
@@ -36,13 +65,22 @@ export default function ProfileScreen() {
   };
 
   const handleSavePersonalState = async () => {
-    await updatePersonalState({
-      nickname: editNickname,
-      occupation: editOccupation,
-      about_you: editAbout,
-    });
+    await updatePersonalState(formState);
     setIsEditingState(false);
   };
+
+  const handleFieldChange = (key: string, val: string) => {
+    setFormState((prev) => ({ ...prev, [key]: val }));
+  };
+
+  // Determine standard keys to render in preferred order
+  const standardKeys = ["nickname", "occupation", "date_of_birth", "study_topic", "work_domain", "about_you"];
+  const allKeys = Array.from(
+    new Set([
+      ...standardKeys,
+      ...Object.keys(formState).filter((k) => k !== "additional_info"),
+    ])
+  );
 
   return (
     <SafeAreaView className="flex-1 bg-background">
@@ -93,7 +131,7 @@ export default function ProfileScreen() {
           >
             Personal Info
           </Text>
-          <TouchableOpacity onPress={() => isEditingState ? handleSavePersonalState() : setIsEditingState(true)}>
+          <TouchableOpacity onPress={() => (isEditingState ? handleSavePersonalState() : setIsEditingState(true))}>
             <Text className="text-primary text-sm font-semibold" style={{ color: "#4e45e4", fontFamily: "Inter_600SemiBold" }}>
               {isEditingState ? "Save" : "Edit"}
             </Text>
@@ -101,51 +139,38 @@ export default function ProfileScreen() {
         </View>
 
         <View className="bg-surface-container-lowest rounded-2xl p-5 border border-outline-variant/15 mb-8 shadow-sm">
-          {/* Nickname */}
-          <View className="mb-4">
-            <Text className="text-xs text-on-surface-variant mb-1" style={{ fontFamily: "Inter_500Medium" }}>Preferred Name</Text>
-            {isEditingState ? (
-              <TextInput
-                value={editNickname}
-                onChangeText={setEditNickname}
-                className="bg-surface-container/50 px-3 py-2 rounded-lg text-base text-on-surface"
-                style={{ fontFamily: "Inter_500Medium" }}
-              />
-            ) : (
-              <Text className="text-base text-on-surface" style={{ fontFamily: "Inter_500Medium" }}>{personalState?.nickname || "Not set"}</Text>
-            )}
-          </View>
+          {allKeys.map((key, idx) => {
+            const label =
+              FIELD_LABELS[key] ||
+              key
+                .replace(/_/g, " ")
+                .replace(/\b\w/g, (c) => c.toUpperCase());
+            const value = formState[key] || "";
+            const isLast = idx === allKeys.length - 1;
+            const isMultiline = key === "about_you" || key === "additional_info";
 
-          {/* Occupation */}
-          <View className="mb-4">
-            <Text className="text-xs text-on-surface-variant mb-1" style={{ fontFamily: "Inter_500Medium" }}>Profession</Text>
-            {isEditingState ? (
-              <TextInput
-                value={editOccupation}
-                onChangeText={setEditOccupation}
-                className="bg-surface-container/50 px-3 py-2 rounded-lg text-base text-on-surface"
-                style={{ fontFamily: "Inter_500Medium" }}
-              />
-            ) : (
-              <Text className="text-base text-on-surface" style={{ fontFamily: "Inter_500Medium" }}>{personalState?.occupation || "Not set"}</Text>
-            )}
-          </View>
-
-          {/* About You */}
-          <View>
-            <Text className="text-xs text-on-surface-variant mb-1" style={{ fontFamily: "Inter_500Medium" }}>About You</Text>
-            {isEditingState ? (
-              <TextInput
-                value={editAbout}
-                onChangeText={setEditAbout}
-                multiline
-                className="bg-surface-container/50 px-3 py-2 rounded-lg text-base text-on-surface min-h-[60px]"
-                style={{ fontFamily: "Inter_500Medium", textAlignVertical: "top" }}
-              />
-            ) : (
-              <Text className="text-base text-on-surface" style={{ fontFamily: "Inter_500Medium" }}>{personalState?.about_you || "Not set"}</Text>
-            )}
-          </View>
+            return (
+              <View key={key} className={isLast ? "" : "mb-4"}>
+                <Text className="text-xs text-on-surface-variant mb-1" style={{ fontFamily: "Inter_500Medium" }}>
+                  {label}
+                </Text>
+                {isEditingState ? (
+                  <TextInput
+                    value={value}
+                    onChangeText={(text) => handleFieldChange(key, text)}
+                    multiline={isMultiline}
+                    className={`bg-surface-container/50 px-3 py-2 rounded-lg text-base text-on-surface ${isMultiline ? "min-h-[60px]" : ""
+                      }`}
+                    style={{ fontFamily: "Inter_500Medium", textAlignVertical: isMultiline ? "top" : "center" }}
+                  />
+                ) : (
+                  <Text className="text-base text-on-surface" style={{ fontFamily: "Inter_500Medium" }}>
+                    {value || "Not set"}
+                  </Text>
+                )}
+              </View>
+            );
+          })}
         </View>
 
         <Text
