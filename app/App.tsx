@@ -20,6 +20,7 @@ import ToolAccessScreen from "./src/connectors/ToolAccessScreen";
 import GmailConnectorScreen from "./src/connectors/GmailConnectorScreen";
 import GlobalAlertUI from "./src/components/GlobalAlertUI";
 import OnboardingScreen from "./src/screens/OnboardingScreen";
+import TodoScreen from "./src/screens/TodoScreen";
 import { supabase } from "./src/lib/supabase";
 import * as Linking from "expo-linking";
 import * as QueryParams from "expo-auth-session/build/QueryParams";
@@ -176,6 +177,7 @@ function AppNavigator() {
             <>
               <Stack.Screen name="Home" component={HomeScreen} />
               <Stack.Screen name="Chat" component={ChatScreen} />
+              <Stack.Screen name="Todos" component={TodoScreen} />
               <Stack.Screen name="Memories" component={MemoriesScreen} />
               <Stack.Screen name="Profile" component={ProfileScreen} />
               <Stack.Screen name="Settings" component={SettingsScreen} />

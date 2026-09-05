@@ -1,8 +1,6 @@
 """
-Tool Registry — discovers available tools from connected providers.
-
-Scans each provider's `tools/` package, collects TOOL_DEFINITIONS,
-and filters by the user's connected providers and permission toggles.
+Tool Registry — discovers available tools from connected providers
+and always injects first-party system tools (tasks, etc.).
 """
 
 from __future__ import annotations
@@ -13,6 +11,7 @@ from typing import Any
 
 from connectors import db
 from connectors.providers import PROVIDER_MAP
+from tasks.tools import TASK_TOOL_DEFINITIONS
 
 logger = logging.getLogger(__name__)
 
@@ -48,21 +47,22 @@ def get_all_tool_definitions() -> list[dict]:
 
 def get_user_tools(user_id: str) -> list[dict]:
     """
-    Return tool definitions for providers the user has connected,
-    filtered by the user's CRUD permission toggles.
+    Return tool definitions for the user:
+    - Provider tools the user has connected (filtered by CRUD permissions)
+    - First-party task tools (always available, no auth gate)
     """
-    # Fetch all connected providers and their permissions in one DB call
     connected_perms = db.get_all_connected_permissions(user_id)
     tools: list[dict] = []
 
     for provider_key, permissions in connected_perms.items():
         provider_tools = _load_tools_for_provider(provider_key)
-
         for tool in provider_tools:
             crud = tool.get("crud_type", "read")
-            # Only add tool if permission for its crud_type is enabled
             if permissions.get(crud, True):
                 tools.append(tool)
+
+    # Always inject first-party task tools
+    tools.extend(TASK_TOOL_DEFINITIONS)
 
     return tools
 
