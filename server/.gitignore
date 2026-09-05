@@ -36,3 +36,7 @@ Thumbs.db
 # Project specifics
 backup/
 config/memory/
+
+# Logs
+logs/
+*.log
