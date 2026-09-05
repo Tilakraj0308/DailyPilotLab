@@ -169,16 +169,20 @@ export function useChat() {
                         });
                     } else if (data.type === 'tool_call') {
                         const toolMsgId = Crypto.randomUUID();
+                        const oldAssistantId = assistantMessageId;
                         assistantMessageId = Crypto.randomUUID();
                         assistantMessageContent = '';
 
-                        setMessages(prev => [
-                            // New empty bubble for future text (shows typing indicator)
-                            { id: assistantMessageId, role: 'assistant', content: '', created_at: new Date().toISOString() },
-                            // The tool call chip
-                            { id: toolMsgId, role: 'assistant', content: '', toolName: data.tool_name, created_at: new Date().toISOString() },
-                            ...prev
-                        ]);
+                        setMessages(prev => {
+                            const filteredPrev = prev.filter(m => m.id !== oldAssistantId);
+                            return [
+                                // New empty bubble for future text (shows typing indicator)
+                                { id: assistantMessageId, role: 'assistant', content: '', created_at: new Date().toISOString() },
+                                // The tool call chip
+                                { id: toolMsgId, role: 'assistant', content: '', toolName: data.tool_name, created_at: new Date().toISOString() },
+                                ...filteredPrev
+                            ];
+                        });
                     } else if (data.type === 'reauth_required') {
                         setIsWaitingForResponse(false);
                         es.removeAllEventListeners();
