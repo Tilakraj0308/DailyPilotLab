@@ -20,6 +20,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import * as FileSystem from 'expo-file-system/legacy';
 import { useChat, ChatMessage, ChatSessionSummary } from '../hooks/useChat';
+import { useAuth } from '../context/AuthContext';
 import { useAudioRecorder, requestRecordingPermissionsAsync, setAudioModeAsync } from 'expo-audio';
 import Animated, { useSharedValue, withTiming, FadeIn, FadeOut, withRepeat, withSequence, withDelay } from 'react-native-reanimated';
 import SoundBarsEqualizer from '../components/SoundBarsEqualizer';
@@ -176,7 +177,7 @@ const HistorySkeleton = () => {
     );
 };
 
-const ToolGroupView = ({ item, prevMessage, renderDateDivider }: { item: any, prevMessage: any, renderDateDivider: any }) => {
+const ToolGroupView = ({ item, prevMessage, renderDateDivider, isAdmin }: { item: any, prevMessage: any, renderDateDivider: any, isAdmin: boolean }) => {
     const [expanded, setExpanded] = useState(false);
     const dateDivider = renderDateDivider(item.created_at || new Date().toISOString(), prevMessage?.created_at);
 
@@ -198,11 +199,25 @@ const ToolGroupView = ({ item, prevMessage, renderDateDivider }: { item: any, pr
                 {expanded && (
                     <View className="mt-2 ml-2 pl-2 border-l border-outline-variant/20 gap-2">
                         {item.tools.map((tool: any, idx: number) => (
-                            <View key={tool.id || idx} className="flex-row items-center gap-2">
-                                <MaterialIcons name="auto-awesome" size={12} color="#586064" />
-                                <Text className="text-xs text-on-surface-variant" style={{ fontFamily: "Inter_400Regular", textTransform: 'capitalize' }}>
-                                    {tool.toolName.replace(/_/g, ' ')}
-                                </Text>
+                            <View key={tool.id || idx} className="flex-col gap-1 mb-2">
+                                <View className="flex-row items-center gap-2">
+                                    <MaterialIcons name="auto-awesome" size={12} color="#586064" />
+                                    <Text className="text-xs text-on-surface-variant" style={{ fontFamily: "Inter_400Regular", textTransform: 'capitalize' }}>
+                                        {tool.toolName.replace(/_/g, ' ')}
+                                    </Text>
+                                </View>
+                                {isAdmin && tool.toolArgs && (
+                                    <View className="bg-surface-container-lowest p-2 rounded-md border border-outline-variant/10 mt-1 mr-2">
+                                        <Text className="text-[10px] text-on-surface-variant/80" style={{ fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' }}>
+                                            {typeof tool.toolArgs === 'string' 
+                                                ? (() => {
+                                                    try { return JSON.stringify(JSON.parse(tool.toolArgs), null, 2); }
+                                                    catch { return tool.toolArgs; }
+                                                })()
+                                                : JSON.stringify(tool.toolArgs, null, 2)}
+                                        </Text>
+                                    </View>
+                                )}
                             </View>
                         ))}
                     </View>
@@ -214,6 +229,7 @@ const ToolGroupView = ({ item, prevMessage, renderDateDivider }: { item: any, pr
 
 export default function ChatScreen() {
     const navigation = useNavigation<any>();
+    const { isAdmin } = useAuth();
     const { messages, status, sendText, sendAudio, isWaitingForResponse, isLoadingHistory, fetchHistory, hasMoreHistory } = useChat();
     const [inputText, setInputText] = useState('');
     const [isFetchingMore, setIsFetchingMore] = useState(false);
@@ -581,7 +597,7 @@ export default function ChatScreen() {
 
     const renderMessage = ({ item, index }: { item: any, index: number }) => {
         if (item.isToolGroup) {
-            return <ToolGroupView key={item.id} item={item} prevMessage={groupedMessages[index + 1]} renderDateDivider={renderDateDivider} />;
+            return <ToolGroupView key={item.id} item={item} prevMessage={groupedMessages[index + 1]} renderDateDivider={renderDateDivider} isAdmin={isAdmin} />;
         }
 
         const isUser = item.role === 'user';

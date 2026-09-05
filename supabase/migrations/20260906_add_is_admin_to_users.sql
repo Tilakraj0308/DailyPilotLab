@@ -1,0 +1,2 @@
+ALTER TABLE public.users
+ADD COLUMN is_admin BOOLEAN DEFAULT FALSE;
