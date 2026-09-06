@@ -12,7 +12,20 @@ export function universalAlert(
     buttons?: AlertButton[]
 ) {
     if (Platform.OS === 'web') {
-        DeviceEventEmitter.emit("show_universal_alert", { title, message, buttons });
+        if (buttons && buttons.length > 0) {
+            // Find the destructive or primary action
+            const actionBtn = buttons.find(b => b.style === 'destructive' || b.text !== 'Cancel');
+            if (actionBtn && actionBtn.onPress) {
+                // If it's a confirmation
+                if (window.confirm(`${title}\n\n${message || ''}`)) {
+                    actionBtn.onPress();
+                }
+            } else {
+                window.alert(`${title}\n\n${message || ''}`);
+            }
+        } else {
+            window.alert(`${title}\n\n${message || ''}`);
+        }
         return;
     }
 

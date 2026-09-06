@@ -13,6 +13,7 @@ import LoginScreen from "./src/screens/LoginScreen";
 import HomeScreen from "./src/screens/HomeScreen";
 import ChatScreen from "./src/screens/ChatScreen";
 import SettingsScreen from "./src/screens/SettingsScreen";
+import AiSettingsScreen from "./src/screens/AiSettingsScreen";
 import TokenUsageScreen from "./src/screens/TokenUsageScreen";
 import ProfileScreen from "./src/screens/ProfileScreen";
 import MemoriesScreen from "./src/screens/MemoriesScreen";
@@ -182,6 +183,7 @@ function AppNavigator() {
               <Stack.Screen name="Memories" component={MemoriesScreen} />
               <Stack.Screen name="Profile" component={ProfileScreen} />
               <Stack.Screen name="Settings" component={SettingsScreen} />
+              <Stack.Screen name="AiSettings" component={AiSettingsScreen} />
               <Stack.Screen name="TokenUsage" component={TokenUsageScreen} />
               <Stack.Screen name="Connectors" component={ConnectorsScreen} />
               <Stack.Screen name="ToolAccess" component={ToolAccessScreen} />

@@ -53,7 +53,7 @@ export default function SettingsScreen() {
         {/* Profile Navigation Card */}
         <TouchableOpacity
           onPress={() => navigation.navigate("Profile")}
-          className="bg-surface-container-low p-4 rounded-2xl border border-outline-variant/15 flex-row items-center justify-between active:opacity-80"
+          className="bg-surface-container-low p-4 rounded-2xl border border-outline-variant/15 flex-row items-center justify-between mb-3 active:opacity-80"
         >
           <View className="flex-row items-center gap-3 flex-1">
             <View className="w-10 h-10 rounded-xl bg-secondary/10 items-center justify-center">
@@ -65,6 +65,27 @@ export default function SettingsScreen() {
               </Text>
               <Text className="text-xs text-on-surface-variant" style={{ fontFamily: "Inter_400Regular" }}>
                 Manage account, preferences, and Google integrations
+              </Text>
+            </View>
+          </View>
+          <MaterialIcons name="chevron-right" size={22} color="#94a3b8" />
+        </TouchableOpacity>
+
+        {/* AI Provider Settings Button */}
+        <TouchableOpacity
+          onPress={() => navigation.navigate("AiSettings")}
+          className="bg-surface-container-low p-4 rounded-2xl border border-outline-variant/15 flex-row items-center justify-between active:opacity-80"
+        >
+          <View className="flex-row items-center gap-3 flex-1">
+            <View className="w-10 h-10 rounded-xl bg-green-500/10 items-center justify-center">
+              <MaterialIcons name="smart-toy" size={22} color="#10b981" />
+            </View>
+            <View className="flex-1">
+              <Text className="text-base font-bold text-on-surface" style={{ fontFamily: "Manrope_700Bold" }}>
+                AI Provider Settings
+              </Text>
+              <Text className="text-xs text-on-surface-variant" style={{ fontFamily: "Inter_400Regular" }}>
+                Bring your own API key and choose models
               </Text>
             </View>
           </View>
