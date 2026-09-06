@@ -11,11 +11,24 @@ from openai import AsyncOpenAI
 from connectors.tool_registry import get_user_tools
 from connectors.tool_executor import execute_tool
 from tasks.tools import execute_task_tool, TASK_TOOL_NAMES
+from services.ai_factory import AIFactory
 
-client = AsyncOpenAI(api_key=os.getenv("OPENAPI"))
+default_client = AsyncOpenAI(api_key=os.getenv("OPENAPI"))
 
-async def transcribe_audio(audio_b64: str) -> str:
+def _get_async_client(user_id: str = None) -> AsyncOpenAI:
+    if user_id:
+        return AIFactory.get_async_openai_client(user_id)
+    return default_client
+
+def _get_user_model(user_id: str = None, default_model: str = "gpt-4o-mini") -> str:
+    if user_id:
+        settings = AIFactory.get_user_ai_settings(user_id)
+        return settings.get("model", default_model)
+    return default_model
+
+async def transcribe_audio(audio_b64: str, user_id: str = None) -> str:
     """Decode base64 WAV -> call Whisper -> return transcript."""
+    client = _get_async_client(user_id)
     audio_bytes = base64.b64decode(audio_b64)
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
         f.write(audio_bytes)
@@ -109,6 +122,9 @@ async def stream_chat(messages: list[dict], user_id: str) -> AsyncGenerator[Unio
     from tokens import TokenTracker
     import time
     
+    client = _get_async_client(user_id)
+    model_name_default = _get_user_model(user_id, "gpt-4o-mini")
+    
     request_start_time = time.time()
     system_tools = get_user_tools(user_id)
     openai_tools = _format_tools_for_openai(system_tools) if system_tools else None
@@ -145,7 +161,7 @@ async def stream_chat(messages: list[dict], user_id: str) -> AsyncGenerator[Unio
     trace_id = TokenTracker.start_trace(
         user_id=user_id,
         request_type="chat",
-        model="gpt-4o-mini",
+        model=model_name_default,
         metadata={"user_prompt_snippet": first_user_msg[:120]}
     )
     
@@ -162,7 +178,7 @@ async def stream_chat(messages: list[dict], user_id: str) -> AsyncGenerator[Unio
                 current_messages.append({"role": "assistant", "content": error_msg})
                 break
                 
-            model_name = "gpt-4o-mini"
+            model_name = model_name_default
             kwargs: dict[str, Any] = {
                 "model": model_name,
                 "messages": current_messages,

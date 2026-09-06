@@ -22,6 +22,7 @@ from services.chat_db import save_message, load_history
 from connectors import router as connectors_router
 from tasks.router import router as tasks_router
 from tokens.router import router as tokens_router
+from routes.settings import router as settings_router
 
 from utils.logger import setup_logger
 
@@ -41,6 +42,7 @@ app.add_middleware(
 app.include_router(connectors_router, prefix="/connectors", tags=["connectors"])
 app.include_router(tasks_router, prefix="/tasks", tags=["tasks"])
 app.include_router(tokens_router, prefix="/tokens", tags=["tokens"])
+app.include_router(settings_router, prefix="/settings", tags=["settings"])
 
 # ─── Health Check Endpoint ──────────────────────────────────────────────────
 

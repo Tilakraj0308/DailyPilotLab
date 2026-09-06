@@ -26,3 +26,15 @@ class AuthResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user: UserOut
+
+class AiSettingsIn(BaseModel):
+    """Payload to update AI settings."""
+    ai_provider: str
+    ai_model: str
+    api_key: str
+
+class AiSettingsOut(BaseModel):
+    """Public AI settings representation."""
+    ai_provider: Optional[str] = None
+    ai_model: Optional[str] = None
+    has_api_key: bool = False

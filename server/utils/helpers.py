@@ -30,7 +30,7 @@ def classify_ideas(user_input_text: list[Tuple[str, str]], user_id: str):
     system_msg = template["system"].format(personal_state=personal_state_data)
     user_msg = template["user"].format(user_input=json.dumps(user_input_text))
 
-    completion = openai_client.get_chat_completion(system_prompt=system_msg, user_prompt=user_msg, response_format=ClassificationResultList)
+    completion = openai_client.get_chat_completion(system_prompt=system_msg, user_prompt=user_msg, response_format=ClassificationResultList, user_id=user_id)
 
     return completion
 
@@ -50,7 +50,7 @@ def update_personal_state(user_input_text: list[str], user_id: str):
     system_msg = template["system"].format(personal_state=personal_state_data)
     user_msg = template["user"].format(user_input=json.dumps(user_input_text))
 
-    completion = openai_client.get_chat_completion(system_prompt=system_msg, user_prompt=user_msg, response_format=PersonalState)
+    completion = openai_client.get_chat_completion(system_prompt=system_msg, user_prompt=user_msg, response_format=PersonalState, user_id=user_id)
 
 
     data_store = defaultdict(list)
@@ -63,7 +63,7 @@ def update_personal_state(user_input_text: list[str], user_id: str):
     update_personal_state_db(user_id, merged_dict)
 
 # assign input parameters type
-def organize_ideas_into_topics(ideas: any, existing_topics: any) -> TopicsList:
+def organize_ideas_into_topics(ideas: any, existing_topics: any, user_id: str = None) -> TopicsList:
     """
     Organizes ideas into topics using LLM.
     
@@ -119,7 +119,8 @@ def organize_ideas_into_topics(ideas: any, existing_topics: any) -> TopicsList:
     completion = openai_client.get_chat_completion(
         system_prompt=system_prompt,
         user_prompt=user_prompt,
-        response_format=TopicsList
+        response_format=TopicsList,
+        user_id=user_id
     )
     return completion
 
@@ -133,7 +134,7 @@ def assign_idea_to_topic(user_id: str):
     existing_topics = get_all_topics(user_id)
     if len(unassigned_ideas) == 0:
         return {'status': 200, 'message': 'Assigned ideas successfully'}
-    ideas = organize_ideas_into_topics(unassigned_ideas, existing_topics)
+    ideas = organize_ideas_into_topics(unassigned_ideas, existing_topics, user_id)
     new_topics, existing_topics = [], []
     for topic in ideas.topics:
         if topic.is_new:
@@ -148,7 +149,7 @@ def assign_idea_to_topic(user_id: str):
 
 def semantic_search_memories(query: str, user_id: str, n_topics: int = 5, k_ideas: int = 3):
     idea_service = IdeaService()
-    query_embedding = openai_client.get_embeddings(query)[0].embedding
+    query_embedding = openai_client.get_embeddings(query, user_id=user_id)[0].embedding
     topic_similarity_threshold = float(os.getenv("TOPIC_SIMILARITY_THRESHOLD", 0.7))
     idea_similarity_threshold = float(os.getenv("IDEA_SIMILARITY_THRESHOLD", 0.8))
     rows = idea_service.search_topics_and_ideas(query_embedding, user_id, n_topics, k_ideas, topic_similarity_threshold, idea_similarity_threshold)
@@ -177,7 +178,7 @@ def semantic_search_memories(query: str, user_id: str, n_topics: int = 5, k_idea
     return [{"topic_id": tid, **data} for tid, data in topics.items()]
 
 
-def refine_raw_ideas(raw_ideas: list[str]):
+def refine_raw_ideas(raw_ideas: list[str], user_id: str = None):
     ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     prompt_path = os.path.join(ROOT_DIR, "config", "prompts", "idea_refiner.yaml")
     with open(prompt_path, "r") as f:
@@ -193,12 +194,13 @@ def refine_raw_ideas(raw_ideas: list[str]):
     completion = openai_client.get_chat_completion(
         system_prompt=system_prompt,
         user_prompt=user_prompt,
-        response_format=RefinedIdeaList
+        response_format=RefinedIdeaList,
+        user_id=user_id
     )
     return completion
 
 
-def extract_traits(payload_for_llm: str) -> TraitExtractionResponse:
+def extract_traits(payload_for_llm: str, user_id: str = None) -> TraitExtractionResponse:
     """
     Calls the LLM with the trait-extraction prompt and returns the structured
     list of TraitCandidate objects.
@@ -222,6 +224,7 @@ def extract_traits(payload_for_llm: str) -> TraitExtractionResponse:
         system_prompt=system_prompt,
         user_prompt=user_prompt,
         response_format=TraitExtractionResponse,
+        user_id=user_id
     )
     return completion
 
@@ -243,7 +246,7 @@ def update_traits(user_id: str):
         dict with status and count of traits processed.
     """
     topics_service = TopicsService()
-    traits_service = TraitsService(openai_client=openai_client.client)
+    traits_service = TraitsService(openai_client=openai_client._get_client(user_id))
 
     recency_threshold = os.getenv("RECENCY_THRESHOLD", 5)
     dominance_threshold = os.getenv("DOMINANCE_THRESHOLD", 15)
@@ -280,7 +283,7 @@ def update_traits(user_id: str):
     print("*****************8***********************")
 
     # 3. Call LLM
-    extraction_response = extract_traits(payload_for_llm)
+    extraction_response = extract_traits(payload_for_llm, user_id)
 
     print("This is the extraction response:")
     print(extraction_response)
