@@ -2,13 +2,14 @@ import os
 import json
 from db.dbConnection import get_dict_cursor
 
-def save_message(user_id: str, role: str, content: str, tool_calls: list = None, tool_call_id: str = None):
+def save_message(user_id: str, role: str, content: str, tool_calls: list = None, tool_call_id: str = None, metadata: dict = None):
     """Save a chat message to the database for a user."""
     tool_calls_json = json.dumps(tool_calls) if tool_calls else None
+    metadata_json = json.dumps(metadata) if metadata else None
     with get_dict_cursor() as cur:
         cur.execute(
-            "INSERT INTO public.chat_messages (user_id, role, content, tool_calls, tool_call_id) VALUES (%s, %s, %s, %s, %s)",
-            (user_id, role, content, tool_calls_json, tool_call_id)
+            "INSERT INTO public.chat_messages (user_id, role, content, tool_calls, tool_call_id, metadata) VALUES (%s, %s, %s, %s, %s, %s)",
+            (user_id, role, content, tool_calls_json, tool_call_id, metadata_json)
         )
 
 def load_history(user_id: str, limit: int = 15, offset: int = 0) -> list[dict]:
@@ -20,7 +21,7 @@ def load_history(user_id: str, limit: int = 15, offset: int = 0) -> list[dict]:
     with get_dict_cursor() as cur:
         cur.execute(
             """
-            SELECT id, role, content, created_at, tool_calls, tool_call_id 
+            SELECT id, role, content, created_at, tool_calls, tool_call_id, metadata 
             FROM public.chat_messages 
             WHERE user_id = %s 
             ORDER BY created_at DESC
