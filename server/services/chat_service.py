@@ -229,9 +229,14 @@ async def stream_chat(messages: list[dict], user_id: str) -> AsyncGenerator[Unio
             finish_reason = chunk.choices[0].finish_reason if (chunk and chunk.choices) else None
 
             # Extract token counts
+            cached_tokens = 0
             if usage_info:
                 p_tokens = getattr(usage_info, "prompt_tokens", 0)
                 c_tokens = getattr(usage_info, "completion_tokens", 0)
+                prompt_details = getattr(usage_info, "prompt_tokens_details", None)
+                if prompt_details:
+                    # In python sdk, it might be a pydantic model or dict
+                    cached_tokens = getattr(prompt_details, "cached_tokens", 0) if hasattr(prompt_details, "cached_tokens") else (prompt_details.get("cached_tokens", 0) if isinstance(prompt_details, dict) else 0)
             else:
                 # Fallback estimation if stream usage missing
                 p_tokens = sum(len(str(m.get("content", ""))) // 4 for m in current_messages)
@@ -257,7 +262,16 @@ async def stream_chat(messages: list[dict], user_id: str) -> AsyncGenerator[Unio
             # If the LLM did not call any tools, we are completely done.
             if finish_reason != "tool_calls" and not tool_calls_accumulator:
                 if assistant_content:
-                    current_messages.append({"role": "assistant", "content": assistant_content})
+                    current_messages.append({
+                        "role": "assistant",
+                        "content": assistant_content,
+                        "metadata": {
+                            "model_name": model_name,
+                            "prompt_tokens": p_tokens,
+                            "cached_tokens": cached_tokens,
+                            "completion_tokens": c_tokens
+                        }
+                    })
                 break
                 
             # The LLM wants to execute tools. Let's process them.
@@ -266,7 +280,13 @@ async def stream_chat(messages: list[dict], user_id: str) -> AsyncGenerator[Unio
             # Append the assistant's intention to call tools to the history
             assistant_msg = {
                 "role": "assistant",
-                "tool_calls": final_tool_calls
+                "tool_calls": final_tool_calls,
+                "metadata": {
+                    "model_name": model_name,
+                    "prompt_tokens": p_tokens,
+                    "cached_tokens": cached_tokens,
+                    "completion_tokens": c_tokens
+                }
             }
             if assistant_content:
                 assistant_msg["content"] = assistant_content

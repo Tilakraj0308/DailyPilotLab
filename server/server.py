@@ -352,7 +352,8 @@ async def chat_stream(req: ChatStreamRequest, payload: dict = Depends(get_curren
                         content = msg.get("content", "")
                         tool_calls = msg.get("tool_calls")
                         tool_call_id = msg.get("tool_call_id")
-                        await asyncio.to_thread(save_message, user_id, role, content, tool_calls, tool_call_id)
+                        metadata = msg.get("metadata")
+                        await asyncio.to_thread(save_message, user_id, role, content, tool_calls, tool_call_id, metadata)
                     continue
 
                 if isinstance(token, dict):

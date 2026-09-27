@@ -665,7 +665,8 @@ export default function ChatScreen() {
                     {!isUser && !isTyping && (
                         <View className="flex-row items-center mt-1 ml-11 gap-4">
                             <Text className="text-[10px] text-on-surface-variant/70 font-medium tracking-wide">
-                                {currentModelName}
+                                {item.metadata?.model_name || currentModelName}
+                                {item.metadata?.prompt_tokens != null && item.metadata?.completion_tokens != null ? ` · ${item.metadata.prompt_tokens} input tokens · ${item.metadata.cached_tokens || 0} cached tokens · ${item.metadata.completion_tokens} output tokens` : ''}
                             </Text>
                             <TouchableOpacity
                                 onPress={() => handleCopyMessage(item.id || index.toString(), item.content)}

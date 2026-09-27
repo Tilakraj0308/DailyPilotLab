@@ -16,6 +16,7 @@ export type ChatMessage = {
     created_at?: string;
     toolName?: string;
     toolArgs?: string;
+    metadata?: any;
 };
 
 export type ChatSessionSummary = {
@@ -112,7 +113,8 @@ export function useChat() {
                             role: m.role,
                             content: m.content,
                             created_at: m.created_at,
-                            toolName: m.toolName
+                            toolName: m.toolName,
+                            metadata: m.metadata
                         }));
                         if (fetchedMessages[0] && fetchedMessages[0].role === 'assistant') {
                             setMessages(fetchedMessages);
@@ -147,7 +149,8 @@ export function useChat() {
                         content: m.content,
                         created_at: m.created_at,
                         toolName: m.toolName,
-                        toolArgs: m.toolArgs
+                        toolArgs: m.toolArgs,
+                        metadata: m.metadata
                     }));
                     if (newMessages.length < limit) {
                         setHasMoreHistory(false);
