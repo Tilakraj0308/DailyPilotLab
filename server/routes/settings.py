@@ -32,6 +32,21 @@ def get_ai_settings(payload: dict = Depends(get_current_user)):
 def update_ai_settings(settings: AiSettingsIn, payload: dict = Depends(get_current_user)):
     user_id = payload.get("sub", "")
     
+    # If the user left the api_key blank, only update provider and model
+    if not settings.api_key:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE public.users 
+                    SET ai_provider = %s, ai_model = %s
+                    WHERE auth_id = %s
+                    """,
+                    (settings.ai_provider, settings.ai_model, user_id)
+                )
+                conn.commit()
+                return {"status": "success"}
+    
     # Generate data key from KMS
     try:
         plain_key, enc_data_key = kms_service.generate_data_key()

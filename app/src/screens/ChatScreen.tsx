@@ -230,7 +230,7 @@ const ToolGroupView = ({ item, prevMessage, renderDateDivider, isAdmin }: { item
 export default function ChatScreen() {
     const navigation = useNavigation<any>();
     const { isAdmin } = useAuth();
-    const { messages, status, sendText, sendAudio, isWaitingForResponse, isLoadingHistory, fetchHistory, hasMoreHistory } = useChat();
+    const { messages, status, sendText, sendAudio, isWaitingForResponse, isLoadingHistory, fetchHistory, hasMoreHistory, currentModelName } = useChat();
     const [inputText, setInputText] = useState('');
     const [isFetchingMore, setIsFetchingMore] = useState(false);
 
@@ -665,7 +665,7 @@ export default function ChatScreen() {
                     {!isUser && !isTyping && (
                         <View className="flex-row items-center mt-1 ml-11 gap-4">
                             <Text className="text-[10px] text-on-surface-variant/70 font-medium tracking-wide">
-                                Gemini 3.1 Pro
+                                {currentModelName}
                             </Text>
                             <TouchableOpacity
                                 onPress={() => handleCopyMessage(item.id || index.toString(), item.content)}
