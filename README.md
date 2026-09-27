@@ -30,6 +30,20 @@ The mobile client is an Expo React Native application. It features Supabase Auth
 
 👉 **[View App Setup Guide](./app/README.md)**
 
+### 3. EAS Android Test Builds
+
+The project is configured to create a standalone Android APK through Expo Application Services (EAS). The Preview build uses the FastAPI server already hosted at `https://dailypilotlab-2.onrender.com`, so the installed APK does not depend on a local development server or Expo Go.
+
+From the repository root, create a new downloadable APK in one command:
+
+```bash
+cd app && npx eas-cli@latest build --platform android --profile preview --non-interactive
+```
+
+EAS prints the build page and APK download link after the cloud build completes. Open that link on an Android phone to install the test build. This is private development distribution; it does not publish the app to Google Play.
+
+👉 **[View the complete hosted-server and EAS setup guide](./eas_setup_doc.md)**
+
 ---
 
 ## 🤝 Contributing
