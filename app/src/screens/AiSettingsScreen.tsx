@@ -24,15 +24,25 @@ export default function AiSettingsScreen() {
   const [viewMode, setViewMode] = useState<'view' | 'setup'>('view');
   const [wizardStep, setWizardStep] = useState<1 | 2 | 3>(1);
 
-  const models = [
+  const openAiModels = [
     { label: "GPT-4o Mini", value: "gpt-4o-mini" },
     { label: "GPT-4o", value: "gpt-4o" },
     { label: "GPT-4", value: "gpt-4" },
     { label: "GPT-5", value: "gpt-5" },
   ];
 
+  const openRouterModels = [
+    { label: "Llama 3.1 70B", value: "meta-llama/llama-3.1-70b-instruct" },
+    { label: "Claude 3.5 Sonnet", value: "anthropic/claude-3.5-sonnet" },
+    { label: "Google Gemini Flash", value: "google/gemini-1.5-flash" },
+    {label: "z-ai glm", value: "z-ai/glm-5.3-flash"}
+  ];
+
+  const models = provider === "openrouter" ? openRouterModels : openAiModels;
+
   const providers = [
-    { label: "OpenAI", value: "openai" }
+    { label: "OpenAI", value: "openai" },
+    { label: "OpenRouter", value: "openrouter" }
   ];
 
   useEffect(() => {
@@ -51,7 +61,7 @@ export default function AiSettingsScreen() {
       const data = await response.json();
       if (data && data.ai_provider) {
         setProvider(data.ai_provider);
-        setModel(data.ai_model || "gpt-4o-mini");
+        setModel(data.ai_model || (data.ai_provider === 'openrouter' ? "meta-llama/llama-3.1-70b-instruct" : "gpt-4o-mini"));
         setHasExistingKey(data.has_api_key);
         if (data.has_api_key) {
           setViewMode('view');
@@ -233,13 +243,17 @@ export default function AiSettingsScreen() {
             Select Provider
           </Text>
           <Text className="text-sm text-on-surface-variant mb-6" style={{ fontFamily: "Inter_400Regular" }}>
-            Choose the AI platform you want to connect. Currently, only OpenAI is supported.
+            Choose the AI platform you want to connect.
           </Text>
           
           {providers.map((p) => (
             <TouchableOpacity
               key={p.value}
-              onPress={() => setProvider(p.value)}
+              onPress={() => {
+                setProvider(p.value);
+                if (p.value === "openrouter") setModel("meta-llama/llama-3.1-70b-instruct");
+                else setModel("gpt-4o-mini");
+              }}
               className={`p-4 rounded-xl border flex-row items-center justify-between mb-4 ${
                 provider === p.value ? 'bg-primary/10 border-primary' : 'bg-surface-container-low border-outline-variant/20'
               }`}

@@ -37,6 +37,45 @@ export function useChat() {
     const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
     const [isLoadingHistory, setIsLoadingHistory] = useState(true); // default true 
     const [hasMoreHistory, setHasMoreHistory] = useState(true);
+    const [currentModelName, setCurrentModelName] = useState<string>("AI Assistant");
+
+    const fetchCurrentModel = async () => {
+        try {
+            const apiUrl = getApiUrl();
+            const { data } = await supabase.auth.getSession();
+            const token = data?.session?.access_token;
+            if (!token) return;
+            const res = await fetch(`${apiUrl}/settings/ai-settings`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
+                const json = await res.json();
+                const openRouterModels = [
+                    { label: "Llama 3.1 70B", value: "meta-llama/llama-3.1-70b-instruct" },
+                    { label: "Claude 3.5 Sonnet", value: "anthropic/claude-3.5-sonnet" },
+                    { label: "Google Gemini Flash", value: "google/gemini-1.5-flash" },
+                    { label: "z-ai glm", value: "z-ai/glm-5.3-flash" }
+                ];
+                const openAiModels = [
+                    { label: "GPT 4o Mini", value: "gpt-4o-mini" },
+                    { label: "GPT 4o", value: "gpt-4o" }
+                ];
+                const allModels = [...openRouterModels, ...openAiModels];
+                const found = allModels.find(m => m.value === json.ai_model);
+                if (found) {
+                    setCurrentModelName(found.label);
+                } else if (json.ai_model) {
+                    setCurrentModelName(json.ai_model);
+                }
+            }
+        } catch (e) {
+            console.error("Failed to fetch model name", e);
+        }
+    };
+
+    useEffect(() => {
+        fetchCurrentModel();
+    }, [user?.id]);
 
     const pollingRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -116,17 +155,23 @@ export function useChat() {
                     if (append) {
                         setMessages(prev => [...prev, ...newMessages]);
                     } else {
-                        // If the latest message in DB is from user, an assistant response is in progress
+                        // If the latest message in DB is from user, an assistant response might be in progress
                         if (!append && newMessages.length > 0 && newMessages[0].role === 'user') {
-                            setIsWaitingForResponse(true);
-                            const pendingPlaceholder: ChatMessage = {
-                                id: 'pending-assistant',
-                                role: 'assistant',
-                                content: '',
-                                created_at: new Date().toISOString()
-                            };
-                            setMessages([pendingPlaceholder, ...newMessages]);
-                            pollForResponse();
+                            const messageAge = Date.now() - new Date(newMessages[0].created_at).getTime();
+                            if (messageAge < 60000) { // Only wait if the message is less than 60s old
+                                setIsWaitingForResponse(true);
+                                const pendingPlaceholder: ChatMessage = {
+                                    id: 'pending-assistant',
+                                    role: 'assistant',
+                                    content: '',
+                                    created_at: new Date().toISOString()
+                                };
+                                setMessages([pendingPlaceholder, ...newMessages]);
+                                pollForResponse();
+                            } else {
+                                setIsWaitingForResponse(false);
+                                setMessages(newMessages);
+                            }
                         } else {
                             setIsWaitingForResponse(false);
                             setMessages(newMessages);
@@ -253,6 +298,16 @@ export function useChat() {
                         setIsWaitingForResponse(false);
                         es.removeAllEventListeners();
                         es.close();
+                    } else if (data.type === 'error') {
+                        console.error('Server returned stream error:', data.content);
+                        setIsWaitingForResponse(false);
+                        es.removeAllEventListeners();
+                        es.close();
+                        
+                        setMessages(prev => {
+                            const filtered = prev.filter(m => m.id !== assistantMessageId);
+                            return [{ id: assistantMessageId, role: 'assistant', content: `⚠️ Error: ${data.content || 'Failed to generate response'}`, created_at: new Date().toISOString() }, ...filtered];
+                        });
                     }
                 } catch (e) {
                     console.error('Error parsing SSE data line:', e);
@@ -331,5 +386,5 @@ export function useChat() {
         }
     };
 
-    return { messages, status, sendText, sendAudio, isWaitingForResponse, isLoadingHistory, fetchHistory, hasMoreHistory };
+    return { messages, status, sendText, sendAudio, isWaitingForResponse, isLoadingHistory, fetchHistory, hasMoreHistory, currentModelName };
 }

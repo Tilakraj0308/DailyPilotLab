@@ -26,9 +26,10 @@ class AIFactory:
                         # Decrypt the API key
                         api_key = encryption_service.decrypt_data(enc_key, nonce_b64, plain_data_key)
                         
+                        default_model = "meta-llama/llama-3.1-70b-instruct" if provider == "openrouter" else "gpt-4o-mini"
                         return {
                             "provider": provider or "openai",
-                            "model": model or "gpt-4o-mini",
+                            "model": model or default_model,
                             "api_key": api_key
                         }
         except Exception as e:
@@ -44,9 +45,13 @@ class AIFactory:
     @staticmethod
     def get_openai_client(user_id: str) -> OpenAI:
         settings = AIFactory.get_user_ai_settings(user_id)
+        if settings["provider"] == "openrouter":
+            return OpenAI(base_url="https://openrouter.ai/api/v1", api_key=settings["api_key"])
         return OpenAI(api_key=settings["api_key"])
         
     @staticmethod
     def get_async_openai_client(user_id: str) -> AsyncOpenAI:
         settings = AIFactory.get_user_ai_settings(user_id)
+        if settings["provider"] == "openrouter":
+            return AsyncOpenAI(base_url="https://openrouter.ai/api/v1", api_key=settings["api_key"])
         return AsyncOpenAI(api_key=settings["api_key"])
