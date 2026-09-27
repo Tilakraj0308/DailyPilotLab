@@ -60,7 +60,7 @@ Important files:
 - [app/eas.json](app/eas.json): EAS profiles.
 - [app/src/lib/env.ts](app/src/lib/env.ts): required public client configuration.
 - [app/src/lib/api.ts](app/src/lib/api.ts): shared API URL helper.
-- [app/EAS_CHECKPOINT.md](app/EAS_CHECKPOINT.md): shorter checkpoint checklist.
+- This file is the single source of truth for the EAS checkpoint and hosted-server setup.
 
 The canonical preview profile is:
 
