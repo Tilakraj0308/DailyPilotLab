@@ -42,8 +42,10 @@ function humanizeConnectorErrorReason(reason: string | null | undefined): string
     return reason;
 }
 
+import { getCache, setCache } from "../lib/cache";
+
 export default function ConnectorsSection() {
-    const { session } = useAuth();
+    const { session, user } = useAuth();
     const navigation = useNavigation<any>();
 
     const [items, setItems] = useState<ConnectorStatusItem[]>([]);
@@ -51,6 +53,8 @@ export default function ConnectorsSection() {
     const [busyId, setBusyId] = useState<string | null>(null);
 
     const token = session?.access_token;
+    const userId = user?.id || session?.user?.id;
+    const cacheKey = userId ? `@connectors_${userId}` : null;
 
     const load = useCallback(async () => {
         if (!token) {
@@ -58,19 +62,31 @@ export default function ConnectorsSection() {
             setLoading(false);
             return;
         }
+
+        // Try reading from cache first for 0ms render
+        if (cacheKey) {
+            const cached = await getCache<ConnectorStatusItem[]>(cacheKey);
+            if (cached && cached.length > 0) {
+                setItems(cached);
+                setLoading(false);
+            }
+        }
+
         try {
             const res = await fetchConnectors(token);
             setItems(res.connectors);
+            if (cacheKey) {
+                await setCache(cacheKey, res.connectors);
+            }
         } catch (e) {
             console.warn("connectors load", e);
         } finally {
             setLoading(false);
         }
-    }, [token]);
+    }, [token, cacheKey]);
 
     useFocusEffect(
         useCallback(() => {
-            setLoading(true);
             load().catch((e) => console.warn("connectors load", e));
         }, [load])
     );

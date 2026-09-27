@@ -13,6 +13,7 @@ import { ArrowLeft } from "lucide-react-native";
 
 import { useAuth } from "../context/AuthContext";
 import { universalAlert } from "../lib/alerts";
+import { getCache, setCache } from "../lib/cache";
 import {
   createGmailDraft,
   fetchGmailPriority,
@@ -104,23 +105,38 @@ export default function GmailConnectorScreen() {
   const [draftId, setDraftId] = useState<string | null>(null);
   const [reviewed, setReviewed] = useState(false);
 
+  const userId = user?.id || session?.user?.id;
+  const cacheKey = userId ? `@gmail_priority_${userId}` : null;
+
   const loadPriority = useCallback(async () => {
     if (!token) {
       setPriorityItems([]);
       setLoadingList(false);
       return;
     }
-    setLoadingList(true);
+
+    if (cacheKey) {
+      const cached = await getCache<{ query: string; items: GmailThreadSummary[] }>(cacheKey);
+      if (cached && cached.items) {
+        setQueryLabel(cached.query || "");
+        setPriorityItems(cached.items);
+        setLoadingList(false);
+      }
+    }
+
     try {
       const res = await fetchGmailPriority(token);
       setQueryLabel(res.query);
       setPriorityItems(res.items ?? []);
+      if (cacheKey) {
+        await setCache(cacheKey, { query: res.query, items: res.items ?? [] });
+      }
     } catch (e: any) {
       universalAlert("Gmail", e?.message || "Could not load priority threads.");
     } finally {
       setLoadingList(false);
     }
-  }, [token]);
+  }, [token, cacheKey]);
 
   useFocusEffect(
     useCallback(() => {
@@ -272,9 +288,8 @@ export default function GmailConnectorScreen() {
                 <TouchableOpacity
                   key={row.id}
                   onPress={() => openThread(row)}
-                  className={`rounded-xl p-3 border ${
-                    active ? "border-secondary bg-secondary-container/40" : "border-outline-variant/20 bg-surface-container-lowest"
-                  }`}
+                  className={`rounded-xl p-3 border ${active ? "border-secondary bg-secondary-container/40" : "border-outline-variant/20 bg-surface-container-lowest"
+                    }`}
                 >
                   <View className="flex-row items-start justify-between gap-2">
                     <Text
@@ -334,25 +349,25 @@ export default function GmailConnectorScreen() {
                   {threadDetail.messages.map((m) => {
                     const isDraft = (m.labelIds || []).includes("DRAFT");
                     return (
-                    <View key={m.id} className="mb-3 border-b border-outline-variant/10 pb-3 last:border-0">
-                      {isDraft ? (
-                        <Text
-                          className="text-[10px] text-amber-800 bg-amber-50 border border-amber-200 self-start px-2 py-0.5 rounded-md mb-1"
-                          style={{ fontFamily: "Inter_600SemiBold" }}
-                        >
-                          Draft — not sent
+                      <View key={m.id} className="mb-3 border-b border-outline-variant/10 pb-3 last:border-0">
+                        {isDraft ? (
+                          <Text
+                            className="text-[10px] text-amber-800 bg-amber-50 border border-amber-200 self-start px-2 py-0.5 rounded-md mb-1"
+                            style={{ fontFamily: "Inter_600SemiBold" }}
+                          >
+                            Draft — not sent
+                          </Text>
+                        ) : null}
+                        <Text className="text-[10px] text-on-surface-variant uppercase mb-1">
+                          {m.headers.from || "—"} → {m.headers.to || ""}
                         </Text>
-                      ) : null}
-                      <Text className="text-[10px] text-on-surface-variant uppercase mb-1">
-                        {m.headers.from || "—"} → {m.headers.to || ""}
-                      </Text>
-                      {m.headers.subject ? (
-                        <Text className="text-xs text-on-surface mb-1" style={{ fontFamily: "Inter_600SemiBold" }}>
-                          {m.headers.subject}
-                        </Text>
-                      ) : null}
-                      <Text className="text-xs text-on-surface-variant">{m.snippet || ""}</Text>
-                    </View>
+                        {m.headers.subject ? (
+                          <Text className="text-xs text-on-surface mb-1" style={{ fontFamily: "Inter_600SemiBold" }}>
+                            {m.headers.subject}
+                          </Text>
+                        ) : null}
+                        <Text className="text-xs text-on-surface-variant">{m.snippet || ""}</Text>
+                      </View>
                     );
                   })}
                 </ScrollView>

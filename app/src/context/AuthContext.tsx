@@ -3,6 +3,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Session, User } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabase";
 import { getApiUrl } from "../lib/api";
+import { clearUserCaches } from "../lib/cache";
 
 interface AuthContextType {
     session: Session | null;
@@ -23,7 +24,7 @@ const AuthContext = createContext<AuthContextType>({
     onboardingCompleted: false,
     isAdmin: false,
     personalState: {},
-    setOnboardingCompleted: () => {},
+    setOnboardingCompleted: () => { },
     signOut: async () => { },
     updatePersonalState: async () => { },
 });
@@ -104,6 +105,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
 
     const signOut = async () => {
+        if (session?.user?.id) {
+            await clearUserCaches(session.user.id).catch(console.error);
+        }
         // Prevents the next account on this device from reusing a global chat session id.
         await AsyncStorage.removeItem("@chat_session_id");
         await AsyncStorage.removeItem("@onboarding_draft");

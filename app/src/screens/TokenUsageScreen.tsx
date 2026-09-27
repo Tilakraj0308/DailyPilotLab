@@ -22,10 +22,14 @@ import {
     DailyHistoryItem,
 } from "../lib/tokensApi";
 
+import { useAuth } from "../context/AuthContext";
+import { getCache, setCache } from "../lib/cache";
+
 type TimeRangeKey = "today" | "7d" | "30d" | "all";
 
 export default function TokenUsageScreen() {
     const navigation = useNavigation<any>();
+    const { user } = useAuth();
 
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
@@ -39,15 +43,30 @@ export default function TokenUsageScreen() {
     const [traceDetail, setTraceDetail] = useState<TokenTraceDetail | null>(null);
     const [modalLoading, setModalLoading] = useState(false);
 
+    const cacheKey = user?.id ? `@token_usage_${user.id}_${selectedFilter}` : null;
+
     const loadData = async () => {
         try {
-            setLoading(true);
+            if (cacheKey && !refreshing) {
+                const cached = await getCache<{ rawStats: any; traces: any[] }>(cacheKey);
+                if (cached) {
+                    if (cached.rawStats) setRawStats(cached.rawStats);
+                    if (cached.traces) setTraces(cached.traces);
+                    setLoading(false);
+                }
+            } else if (!refreshing && !rawStats) {
+                setLoading(true);
+            }
+
             const [statsData, tracesData] = await Promise.all([
                 fetchTokenStats().catch(() => null),
                 fetchTokenTraces(30, 0, selectedFilter).catch(() => []),
             ]);
             setRawStats(statsData);
             setTraces(tracesData);
+            if (cacheKey) {
+                await setCache(cacheKey, { rawStats: statsData, traces: tracesData });
+            }
         } catch (e) {
             console.error("Error loading token usage data:", e);
         } finally {
@@ -367,8 +386,8 @@ export default function TokenUsageScreen() {
                                     key={f.id}
                                     onPress={() => setSelectedFilter(f.id)}
                                     className={`px-2.5 py-1 rounded-full border ${active
-                                            ? "bg-primary border-primary"
-                                            : "bg-surface-container-low border-outline-variant/20"
+                                        ? "bg-primary border-primary"
+                                        : "bg-surface-container-low border-outline-variant/20"
                                         }`}
                                 >
                                     <Text
