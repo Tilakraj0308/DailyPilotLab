@@ -69,6 +69,9 @@ The canonical preview profile is:
   "preview": {
     "distribution": "internal",
     "environment": "preview",
+    "env": {
+      "EXPO_PUBLIC_API_URL": "https://dailypilotlab-2.onrender.com"
+    },
     "android": { "buildType": "apk" }
   }
 }
