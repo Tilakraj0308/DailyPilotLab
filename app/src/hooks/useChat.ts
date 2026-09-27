@@ -6,6 +6,7 @@ import EventSource from 'react-native-sse';
 import * as FileSystem from 'expo-file-system/legacy';
 import { FileSystemUploadType } from 'expo-file-system/legacy';
 import { supabase } from '../lib/supabase';
+import { getApiUrl } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 
 export type ChatMessage = {
@@ -28,31 +29,6 @@ export type ChatSessionSummary = {
 
 const STORE_KEY = '@chat_session_id';
 
-
-/**
- * Get the API URL based on platform.
- */
-function getApiUrl(): string {
-    const envUrl = process.env.EXPO_PUBLIC_API_URL;
-
-    // For web/expo-web
-    if (!Platform.OS || Platform.OS === 'web') {
-        return envUrl || 'http://localhost:8000';
-    }
-
-    // If environment variable is set, use it (physical device)
-    if (envUrl) {
-        return envUrl;
-    }
-
-    // For Android emulator ONLY (when envUrl is not set), use special 10.0.2.2 address
-    if (Platform.OS === 'android') {
-        return 'http://10.0.2.2:8000';
-    }
-
-    // For iOS simulator & physical devices without env var, use localhost
-    return 'http://localhost:8000';
-}
 
 export function useChat() {
     const { user, isLoading: authLoading } = useAuth();

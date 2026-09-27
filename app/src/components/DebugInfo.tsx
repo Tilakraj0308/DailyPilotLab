@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Platform } from 'react-native';
+import { getApiUrl } from '../lib/api';
 
 /**
  * Debug component - shows which API URL is being used
@@ -10,17 +11,7 @@ export function DebugInfo() {
     const [wsUrl, setWsUrl] = useState('');
 
     useEffect(() => {
-        const envUrl = process.env.EXPO_PUBLIC_API_URL;
-        let finalUrl = '';
-
-        // Replicate the same logic from useChatSocket and AuthContext
-        if (!Platform.OS || Platform.OS === 'web') {
-            finalUrl = envUrl || 'http://localhost:8000';
-        } else if (Platform.OS === 'android') {
-            finalUrl = 'http://10.0.2.2:8000';
-        } else {
-            finalUrl = envUrl || 'http://localhost:8000';
-        }
+        const finalUrl = getApiUrl();
 
         setApiUrl(finalUrl);
         setWsUrl(finalUrl?.replace('http', 'ws') + '/ws/chat');

@@ -1,15 +1,8 @@
-import { Platform } from "react-native";
+import { publicEnv } from "./env";
 
 /**
- * Backend API base URL (same rules as AuthContext — LAN IP for devices).
+ * Backend API base URL supplied by the active local or EAS environment.
  */
 export function getApiUrl(): string {
-  const envUrl = process.env.EXPO_PUBLIC_API_URL;
-  let url = envUrl || "http://localhost:8000";
-
-  if (Platform.OS === "android" && !envUrl) {
-    url = "http://10.0.2.2:8000";
-  }
-
-  return url.replace(/\/+$/, "");
+  return publicEnv.apiUrl;
 }
