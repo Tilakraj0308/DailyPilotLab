@@ -6,6 +6,7 @@ import { useNavigation } from "@react-navigation/native";
 import { useAuth } from "../context/AuthContext";
 import { universalAlert } from "../lib/alerts";
 import { getApiUrl } from "../lib/api";
+import { getCache, setCache } from "../lib/cache";
 
 export default function AiSettingsScreen() {
   const navigation = useNavigation<any>();
@@ -15,7 +16,7 @@ export default function AiSettingsScreen() {
   const [provider, setProvider] = useState("openai");
   const [model, setModel] = useState("gpt-4o-mini");
   const [apiKey, setApiKey] = useState("");
-  
+
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [hasExistingKey, setHasExistingKey] = useState(false);
@@ -35,7 +36,7 @@ export default function AiSettingsScreen() {
     { label: "Llama 3.1 70B", value: "meta-llama/llama-3.1-70b-instruct" },
     { label: "Claude 3.5 Sonnet", value: "anthropic/claude-3.5-sonnet" },
     { label: "Google Gemini Flash", value: "google/gemini-1.5-flash" },
-    {label: "z-ai glm", value: "z-ai/glm-5.3-flash"}
+    { label: "z-ai glm", value: "z-ai/glm-5.3-flash" }
   ];
 
   const models = provider === "openrouter" ? openRouterModels : openAiModels;
@@ -45,13 +46,29 @@ export default function AiSettingsScreen() {
     { label: "OpenRouter", value: "openrouter" }
   ];
 
+  const userId = session?.user?.id;
+  const cacheKey = userId ? `@ai_settings_${userId}` : null;
+
   useEffect(() => {
     fetchSettings();
   }, []);
 
   const fetchSettings = async () => {
     if (!session?.access_token || !apiUrl) return;
-    setLoading(true);
+
+    if (cacheKey) {
+      const cached = await getCache<any>(cacheKey);
+      if (cached && cached.ai_provider) {
+        setProvider(cached.ai_provider);
+        setModel(cached.ai_model || (cached.ai_provider === 'openrouter' ? "meta-llama/llama-3.1-70b-instruct" : "gpt-4o-mini"));
+        setHasExistingKey(cached.has_api_key);
+        if (cached.has_api_key) setViewMode('view');
+        setLoading(false);
+      }
+    } else {
+      setLoading(true);
+    }
+
     try {
       const response = await fetch(`${apiUrl}/settings/ai-settings`, {
         headers: {
@@ -63,6 +80,7 @@ export default function AiSettingsScreen() {
         setProvider(data.ai_provider);
         setModel(data.ai_model || (data.ai_provider === 'openrouter' ? "meta-llama/llama-3.1-70b-instruct" : "gpt-4o-mini"));
         setHasExistingKey(data.has_api_key);
+        if (cacheKey) await setCache(cacheKey, data);
         if (data.has_api_key) {
           setViewMode('view');
         } else {
@@ -87,7 +105,7 @@ export default function AiSettingsScreen() {
       return;
     }
     if (!session?.access_token || !apiUrl) return;
-    
+
     setSaving(true);
     try {
       const response = await fetch(`${apiUrl}/settings/ai-settings`, {
@@ -102,11 +120,11 @@ export default function AiSettingsScreen() {
           api_key: apiKey
         })
       });
-      
+
       if (!response.ok) {
         throw new Error("Failed to save settings");
       }
-      
+
       universalAlert("Success", "AI Settings saved successfully.");
       setHasExistingKey(true);
       setApiKey(""); // Clear the input field for security
@@ -122,9 +140,9 @@ export default function AiSettingsScreen() {
   const deleteSettings = async () => {
     universalAlert("Remove API Key", "Are you sure you want to remove your API key?", [
       { text: "Cancel", style: "cancel" },
-      { 
-        text: "Remove", 
-        style: "destructive", 
+      {
+        text: "Remove",
+        style: "destructive",
         onPress: async () => {
           if (!session?.access_token || !apiUrl) return;
           setSaving(true);
@@ -136,7 +154,7 @@ export default function AiSettingsScreen() {
               }
             });
             if (!response.ok) throw new Error("Delete failed");
-            
+
             setHasExistingKey(false);
             setProvider("openai");
             setModel("gpt-4o-mini");
@@ -150,7 +168,7 @@ export default function AiSettingsScreen() {
           } finally {
             setSaving(false);
           }
-        } 
+        }
       }
     ]);
   };
@@ -245,7 +263,7 @@ export default function AiSettingsScreen() {
           <Text className="text-sm text-on-surface-variant mb-6" style={{ fontFamily: "Inter_400Regular" }}>
             Choose the AI platform you want to connect.
           </Text>
-          
+
           {providers.map((p) => (
             <TouchableOpacity
               key={p.value}
@@ -254,9 +272,8 @@ export default function AiSettingsScreen() {
                 if (p.value === "openrouter") setModel("meta-llama/llama-3.1-70b-instruct");
                 else setModel("gpt-4o-mini");
               }}
-              className={`p-4 rounded-xl border flex-row items-center justify-between mb-4 ${
-                provider === p.value ? 'bg-primary/10 border-primary' : 'bg-surface-container-low border-outline-variant/20'
-              }`}
+              className={`p-4 rounded-xl border flex-row items-center justify-between mb-4 ${provider === p.value ? 'bg-primary/10 border-primary' : 'bg-surface-container-low border-outline-variant/20'
+                }`}
             >
               <Text className={`text-base font-bold ${provider === p.value ? 'text-primary' : 'text-on-surface'}`}>{p.label}</Text>
               {provider === p.value && <MaterialIcons name="check-circle" size={24} color="#4e45e4" />}
@@ -283,7 +300,7 @@ export default function AiSettingsScreen() {
           <Text className="text-sm text-on-surface-variant mb-6" style={{ fontFamily: "Inter_400Regular" }}>
             Your key will be securely encrypted via AWS KMS before being stored in the database.
           </Text>
-          
+
           <TextInput
             className="bg-surface-container-low border border-outline-variant/30 rounded-xl px-4 py-4 text-on-surface text-base mb-2"
             placeholder={hasExistingKey ? "•••••••••••••••••••• (Leave blank to keep saved)" : "sk-..."}
@@ -295,7 +312,7 @@ export default function AiSettingsScreen() {
             autoCorrect={false}
             style={{ fontFamily: "Inter_500Medium" }}
           />
-          
+
           <View className="flex-1 justify-end mt-8 flex-row items-end">
             <TouchableOpacity
               onPress={() => setWizardStep(1)}
@@ -303,7 +320,7 @@ export default function AiSettingsScreen() {
             >
               <MaterialIcons name="arrow-back" size={20} color="#94a3b8" />
             </TouchableOpacity>
-            
+
             <TouchableOpacity
               onPress={() => {
                 if (!apiKey && !hasExistingKey) {
@@ -329,22 +346,21 @@ export default function AiSettingsScreen() {
           <Text className="text-sm text-on-surface-variant mb-6" style={{ fontFamily: "Inter_400Regular" }}>
             Choose the default model to use for chat and generation. We recommend a mini model for faster responses.
           </Text>
-          
+
           <View className="mb-6">
             {models.map((m) => (
               <TouchableOpacity
                 key={m.value}
                 onPress={() => setModel(m.value)}
-                className={`p-4 rounded-xl border flex-row items-center justify-between mb-3 ${
-                  model === m.value ? 'bg-primary/10 border-primary' : 'bg-surface-container-low border-outline-variant/20'
-                }`}
+                className={`p-4 rounded-xl border flex-row items-center justify-between mb-3 ${model === m.value ? 'bg-primary/10 border-primary' : 'bg-surface-container-low border-outline-variant/20'
+                  }`}
               >
                 <Text className={`text-base font-bold ${model === m.value ? 'text-primary' : 'text-on-surface'}`}>{m.label}</Text>
                 {model === m.value && <MaterialIcons name="check-circle" size={24} color="#4e45e4" />}
               </TouchableOpacity>
             ))}
           </View>
-          
+
           <View className="flex-1 justify-end mt-4 flex-row items-end">
             <TouchableOpacity
               onPress={() => setWizardStep(2)}
@@ -353,7 +369,7 @@ export default function AiSettingsScreen() {
             >
               <MaterialIcons name="arrow-back" size={20} color="#94a3b8" />
             </TouchableOpacity>
-            
+
             <TouchableOpacity
               onPress={saveSettings}
               disabled={saving}
@@ -377,14 +393,14 @@ export default function AiSettingsScreen() {
   return (
     <SafeAreaView className="flex-1 bg-background">
       <View className="flex-row items-center px-5 py-4 border-b border-outline-variant/10 bg-background">
-        <TouchableOpacity 
+        <TouchableOpacity
           onPress={() => {
             if (viewMode === 'setup' && hasExistingKey) {
               setViewMode('view');
             } else {
               navigation.goBack();
             }
-          }} 
+          }}
           className="mr-3 p-1"
         >
           <MaterialIcons name="arrow-back" size={24} color="#2b3437" />

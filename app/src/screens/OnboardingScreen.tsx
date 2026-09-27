@@ -429,28 +429,24 @@ export default function OnboardingScreen() {
     };
 
     const handleSkip = () => {
+        // Immediately unlock app navigation
+        setOnboardingCompleted(true);
+        AsyncStorage.removeItem("@onboarding_draft").catch(() => { });
+
+        // Fire-and-forget sync to backend
         const apiUrl = getApiUrl();
-        fetch(`${apiUrl}/onboarding/complete`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${session?.access_token}`,
-            },
-            body: JSON.stringify({ answers }),
-        })
-            .then((resp) => {
-                if (!resp.ok) {
-                    alert(`Server returned ${resp.status}`);
-                } else {
-                    setTimeout(() => {
-                        setOnboardingCompleted(true);
-                        AsyncStorage.removeItem("@onboarding_draft").catch(() => { });
-                    }, 100);
-                }
-            })
-            .catch((e) => {
-                alert(`Network Error: ${e.message}\nAPI URL: ${apiUrl}\nCould not reach the backend!`);
+        if (session?.access_token && apiUrl) {
+            fetch(`${apiUrl}/onboarding/complete`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${session.access_token}`,
+                },
+                body: JSON.stringify({ answers: answers || {} }),
+            }).catch((e) => {
+                console.warn("Background onboarding complete sync error:", e);
             });
+        }
     };
 
     // ─── Render Question Content ────────────────────────────────────────

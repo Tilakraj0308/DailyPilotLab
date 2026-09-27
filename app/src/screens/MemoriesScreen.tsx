@@ -6,6 +6,8 @@ import { useNavigation } from '@react-navigation/native';
 import { supabase } from '../lib/supabase';
 import { getApiUrl } from '../lib/api';
 
+import { getCache, setCache } from '../lib/cache';
+
 export default function MemoriesScreen() {
     const navigation = useNavigation<any>();
     const [searchQuery, setSearchQuery] = useState('');
@@ -22,26 +24,48 @@ export default function MemoriesScreen() {
     }, [searchQuery]);
 
     const fetchMemories = async () => {
-        setIsLoading(true);
         try {
             const { data } = await supabase.auth.getSession();
             const token = data?.session?.access_token;
+            const userId = data?.session?.user?.id;
+            const cacheKey = userId ? `@memories_${userId}` : null;
+
             if (!token) return;
+
+            if (cacheKey && traits.length === 0 && activeIdeas.length === 0) {
+                const cached = await getCache<{ traits: any[]; activeIdeas: any[] }>(cacheKey);
+                if (cached) {
+                    if (cached.traits) setTraits(cached.traits);
+                    if (cached.activeIdeas) setActiveIdeas(cached.activeIdeas);
+                } else {
+                    setIsLoading(true);
+                }
+            } else if (traits.length === 0) {
+                setIsLoading(true);
+            }
 
             const apiUrl = getApiUrl();
             const [traitsRes, ideasRes] = await Promise.all([
                 fetch(`${apiUrl}/users/traits`, { headers: { 'Authorization': `Bearer ${token}` } }),
-                // Need an endpoint for active ideas.
                 fetch(`${apiUrl}/ideas/raw`, { headers: { 'Authorization': `Bearer ${token}` } })
             ]);
 
+            let fetchedTraits = traits;
+            let fetchedIdeas = activeIdeas;
+
             if (traitsRes.ok) {
                 const json = await traitsRes.json();
-                setTraits(json.traits || []);
+                fetchedTraits = json.traits || [];
+                setTraits(fetchedTraits);
             }
             if (ideasRes.ok) {
                 const json = await ideasRes.json();
-                setActiveIdeas(json.ideas || []);
+                fetchedIdeas = json.ideas || [];
+                setActiveIdeas(fetchedIdeas);
+            }
+
+            if (cacheKey) {
+                await setCache(cacheKey, { traits: fetchedTraits, activeIdeas: fetchedIdeas });
             }
         } catch (e) {
             console.error("Failed to fetch memories", e);
@@ -129,7 +153,7 @@ export default function MemoriesScreen() {
                 </ScrollView>
             ) : (
                 <ScrollView className="flex-1 px-4 pt-2" contentContainerStyle={{ paddingBottom: 40 }}>
-                    
+
                     <Text className="text-lg font-bold text-on-surface mt-4 mb-3" style={{ fontFamily: "Manrope_700Bold" }}>Long-Term Traits</Text>
                     {traits.length === 0 ? (
                         <Text className="text-sm text-on-surface-variant mb-4" style={{ fontFamily: "Inter_400Regular" }}>No traits learned yet.</Text>

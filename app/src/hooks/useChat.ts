@@ -27,8 +27,9 @@ export type ChatSessionSummary = {
 };
 
 
-const STORE_KEY = '@chat_session_id';
+import { getCache, setCache } from '../lib/cache';
 
+const STORE_KEY = '@chat_session_id';
 
 export function useChat() {
     const { user, isLoading: authLoading } = useAuth();
@@ -39,6 +40,8 @@ export function useChat() {
     const [isLoadingHistory, setIsLoadingHistory] = useState(true); // default true 
     const [hasMoreHistory, setHasMoreHistory] = useState(true);
     const [currentModelName, setCurrentModelName] = useState<string>("AI Assistant");
+
+    const cacheKey = user?.id ? `@chat_history_${user.id}` : null;
 
     const fetchCurrentModel = async () => {
         try {
@@ -118,6 +121,7 @@ export function useChat() {
                         }));
                         if (fetchedMessages[0] && fetchedMessages[0].role === 'assistant') {
                             setMessages(fetchedMessages);
+                            if (cacheKey) setCache(cacheKey, fetchedMessages.slice(0, 30));
                             setIsWaitingForResponse(false);
                             stopPolling();
                         }
@@ -130,7 +134,8 @@ export function useChat() {
     };
 
     const fetchHistory = async (offset: number = 0, limit: number = 15, append: boolean = false) => {
-        if (!append) {
+        // Only show spinner on initial load if no messages exist yet
+        if (!append && messages.length === 0) {
             setIsLoadingHistory(true);
         }
         try {
@@ -158,6 +163,9 @@ export function useChat() {
                     if (append) {
                         setMessages(prev => [...prev, ...newMessages]);
                     } else {
+                        if (cacheKey && newMessages.length > 0) {
+                            setCache(cacheKey, newMessages.slice(0, 30));
+                        }
                         // If the latest message in DB is from user, an assistant response might be in progress
                         if (!append && newMessages.length > 0 && newMessages[0].role === 'user') {
                             const messageAge = Date.now() - new Date(newMessages[0].created_at).getTime();
@@ -201,25 +209,35 @@ export function useChat() {
     }, []);
 
     useEffect(() => {
-        // Fetch initial continuous history
         setStatus('connected');
-        fetchHistory(0, 30, false).then(() => {
-            // Check if returning from a successful OAuth flow
-            if (Platform.OS === 'web' && typeof window !== 'undefined') {
-                const params = new URLSearchParams(window.location.search);
-                if (params.get('connector_status') === 'success') {
-                    AsyncStorage.getItem('@pending_reauth_prompt').then(savedPrompt => {
-                        if (savedPrompt) {
-                            AsyncStorage.removeItem('@pending_reauth_prompt').catch(console.error);
-                            if (window.history && window.history.replaceState) {
-                                window.history.replaceState({}, document.title, window.location.pathname);
-                            }
-                            console.log('🔄 Auto-retrying prompt after re-authentication:', savedPrompt);
-                            sendText(savedPrompt);
-                        }
-                    }).catch(console.error);
-                }
+        if (!user?.id) return;
+
+        // Step 1: Load from local cache instantly for 0ms latency
+        const currentCacheKey = `@chat_history_${user.id}`;
+        getCache<ChatMessage[]>(currentCacheKey).then(cached => {
+            if (cached && cached.length > 0) {
+                setMessages(cached);
+                setIsLoadingHistory(false);
             }
+            // Step 2: Perform background revalidation (SWR)
+            fetchHistory(0, 30, false).then(() => {
+                // Check if returning from a successful OAuth flow
+                if (Platform.OS === 'web' && typeof window !== 'undefined') {
+                    const params = new URLSearchParams(window.location.search);
+                    if (params.get('connector_status') === 'success') {
+                        AsyncStorage.getItem('@pending_reauth_prompt').then(savedPrompt => {
+                            if (savedPrompt) {
+                                AsyncStorage.removeItem('@pending_reauth_prompt').catch(console.error);
+                                if (window.history && window.history.replaceState) {
+                                    window.history.replaceState({}, document.title, window.location.pathname);
+                                }
+                                console.log('🔄 Auto-retrying prompt after re-authentication:', savedPrompt);
+                                sendText(savedPrompt);
+                            }
+                        }).catch(console.error);
+                    }
+                }
+            });
         });
     }, [authLoading, user?.id]);
 
@@ -301,12 +319,18 @@ export function useChat() {
                         setIsWaitingForResponse(false);
                         es.removeAllEventListeners();
                         es.close();
+                        setMessages(latest => {
+                            if (cacheKey && latest.length > 0) {
+                                setCache(cacheKey, latest.slice(0, 30));
+                            }
+                            return latest;
+                        });
                     } else if (data.type === 'error') {
                         console.error('Server returned stream error:', data.content);
                         setIsWaitingForResponse(false);
                         es.removeAllEventListeners();
                         es.close();
-                        
+
                         setMessages(prev => {
                             const filtered = prev.filter(m => m.id !== assistantMessageId);
                             return [{ id: assistantMessageId, role: 'assistant', content: `⚠️ Error: ${data.content || 'Failed to generate response'}`, created_at: new Date().toISOString() }, ...filtered];
